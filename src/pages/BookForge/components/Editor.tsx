@@ -34,8 +34,15 @@ import {
     AlignJustifyIcon, LinkIcon, ImageIcon, TableIcon, MinusIcon, ListIcon, ListOrderedIcon,
     CheckSquareIcon, PaletteIcon, Wand2Icon, UserIcon, MessageSquareIcon, 
     ChevronDownIcon, SparklesIcon, StickyNoteIcon, SlashIcon,
-    PenIcon, PlusIcon
+    PenIcon, PlusIcon, TheaterIcon
 } from '../../../constants';
+
+// Import custom extensions
+import { SceneBeatExtension } from '../../../extensions/SceneBeatExtension';
+import { NoteSectionExtension } from '../../../extensions/NoteSectionExtension';
+import { CharacterImpersonationExtension } from '../../../extensions/CharacterImpersonationExtension';
+import { TestExtension } from '../../../extensions/TestExtension';
+import { SimpleExtension } from '../../../extensions/SimpleExtension';
 
 const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }> = ({ trigger, children }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -137,7 +144,9 @@ const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }
                             maxHeight: '300px',
                             overflowY: 'auto',
                             boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
-                            position: 'fixed'
+                            position: 'fixed',
+                            //top: position.top,
+                            //left: position.left  //dON'T ADD THIS AS THIS IMAPCTS THE POSITIONING OFTHE DROPDOWN MENUS
                         }}
                     >
                         {children}
@@ -287,8 +296,31 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
         const updateMenu = () => {
             const { from, to } = editor.state.selection;
             const hasSelection = from !== to;
-            
-            if (hasSelection) {
+            console.log('Selection update:', { from, to, hasSelection });
+            const selectedText = editor.state.doc.textBetween(from, to).trim();
+            console.log('Selected text:', selectedText);
+            if (hasSelection && selectedText.length > 0) {
+                // Check if selection is within a custom node (prevent bubble menu in custom nodes)
+                const $from = editor.state.doc.resolve(from);
+                console.log('Selection resolved:', $from);
+                // Look up the node tree to see if we're inside a custom node
+                let isInCustomNode = false;
+                for (let i = $from.depth; i >= 0; i--) {
+                    const node = $from.node(i);
+                    if (node.type.name === 'sceneBeat' || 
+                        node.type.name === 'noteSection' || 
+                        node.type.name === 'characterImpersonation') {
+                        isInCustomNode = true;
+                        break;
+                    }
+                }
+                
+                // Don't show bubble menu if selection is within a custom node
+                if (isInCustomNode) {
+                    setIsVisible(false);
+                    return;
+                }
+                
                 const startPos = editor.view.coordsAtPos(from);
                 const endPos = editor.view.coordsAtPos(to);
                 
@@ -1482,13 +1514,81 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
             description: 'Continue with regular text'
         },
         { 
-            name: 'Scene Beat', 
+            name: '🔗 Scene Beat', 
             icon: SparklesIcon, 
             action: () => {
-                // Remove the "/" and insert a scene beat
-                editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).insertContent('<h3>Scene Beat</h3><p></p>').run();
+                console.log('Scene Beat action called');
+                console.log('Editor chain available:', !!editor.chain);
+                console.log('setSceneBeat command available:', !!editor.commands.setSceneBeat);
+                
+                // Remove the "/" and insert a scene beat node
+                editor.chain().focus().deleteRange({ 
+                    from: editor.state.selection.from - 1, 
+                    to: editor.state.selection.from 
+                }).setSceneBeat({
+                    chapterName: 'Chapter 1',
+                    sceneBeatIndex: 1,
+                    summary: '',
+                    goal: '',
+                    characters: [],
+                    worldEntities: [],
+                    status: 'Draft'
+                }).run();
+                
+                // Clear selection after a brief delay to prevent bubble menu
+                setTimeout(() => {
+                    editor.chain().blur().run();
+                }, 50);
             },
-            description: 'Add a new scene beat or transition'
+            description: 'Add a scene beat section with React Flow integration'
+        },
+        { 
+            name: '🗒️ Note Section', 
+            icon: StickyNoteIcon, 
+            action: () => {
+                console.log('Note Section action called');
+                console.log('Editor chain available:', !!editor.chain);
+                console.log('setNoteSection command available:', !!editor.commands.setNoteSection);
+                
+                // Remove the "/" and insert a note section
+                editor.chain().focus().deleteRange({ 
+                    from: editor.state.selection.from - 1, 
+                    to: editor.state.selection.from 
+                }).setNoteSection({
+                    content: '',
+                    labels: []
+                }).run();
+                
+                // Clear selection after a brief delay to prevent bubble menu
+                setTimeout(() => {
+                    editor.chain().blur().run();
+                }, 50);
+            },
+            description: 'Add a persistent note/reminder section'
+        },
+        { 
+            name: '🎭 Character Impersonation', 
+            icon: TheaterIcon, 
+            action: () => {
+                console.log('Character Impersonation action called');
+                console.log('Editor chain available:', !!editor.chain);
+                console.log('setCharacterImpersonation command available:', !!editor.commands.setCharacterImpersonation);
+                
+                // Remove the "/" and insert a character impersonation section
+                editor.chain().focus().deleteRange({ 
+                    from: editor.state.selection.from - 1, 
+                    to: editor.state.selection.from 
+                }).setCharacterImpersonation({
+                    activeCharacter: 'Nemar',
+                    availableCharacters: ['Nemar', 'Attican', 'Elissa', 'Ferris', 'Garius']
+                }).run();
+                
+                // Clear selection after a brief delay to prevent bubble menu
+                setTimeout(() => {
+                    editor.chain().blur().run();
+                }, 50);
+            },
+            description: 'Start an AI-powered character roleplay session'
         },
         { 
             name: 'Add section', 
@@ -1498,15 +1598,6 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
                 editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).insertContent('<h2>New Section</h2><p></p>').run();
             },
             description: 'Add a new section to your manuscript'
-        },
-        { 
-            name: 'Add note section', 
-            icon: StickyNoteIcon, 
-            action: () => {
-                // Remove the "/" and insert a note section
-                editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).insertContent('<blockquote><strong>Note:</strong> </blockquote><p></p>').run();
-            },
-            description: 'Add a note or annotation section'
         }
     ];
 
@@ -1547,28 +1638,41 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
         };
 
         const handleKeyDown = (event: KeyboardEvent) => {
-            if (!isVisible) return;
+            if (!isVisible) return false;
+
+            console.log('Floating menu keydown:', event.key, 'selectedIndex:', selectedIndex);
 
             switch (event.key) {
                 case 'ArrowDown':
                     event.preventDefault();
+                    event.stopPropagation();
+                    console.log('Arrow down - changing selection');
                     setSelectedIndex((prev) => (prev + 1) % floatingMenuOptions.length);
-                    break;
+                    return true;
                 case 'ArrowUp':
                     event.preventDefault();
+                    event.stopPropagation();
+                    console.log('Arrow up - changing selection');
                     setSelectedIndex((prev) => (prev - 1 + floatingMenuOptions.length) % floatingMenuOptions.length);
-                    break;
+                    return true;
                 case 'Enter':
                     event.preventDefault();
+                    event.stopPropagation();
+                    console.log('Enter pressed, executing action for:', floatingMenuOptions[selectedIndex].name);
+                    console.log('Action function:', floatingMenuOptions[selectedIndex].action);
                     floatingMenuOptions[selectedIndex].action();
                     setIsVisible(false);
-                    break;
+                    return true;
                 case 'Escape':
                     event.preventDefault();
+                    event.stopPropagation();
+                    console.log('Escape pressed - closing menu');
                     setIsVisible(false);
                     // Remove the "/" character
                     editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).run();
-                    break;
+                    return true;
+                default:
+                    return false;
             }
         };
 
@@ -1581,13 +1685,44 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
         editor.on('selectionUpdate', updateMenu);
         editor.on('transaction', updateMenu);
         editor.view.dom.addEventListener('input', handleInput);
-        document.addEventListener('keydown', handleKeyDown);
+        
+        // Add keyboard event listener directly to the document with higher priority
+        const keydownHandler = (event: KeyboardEvent) => {
+            if (!isVisible) return;
+            
+            console.log('Document keydown handler - event:', event.key, 'isVisible:', isVisible);
+            
+            // Only handle when our floating menu is visible
+            if (handleKeyDown(event)) {
+                // Event was handled, don't let it propagate
+                return;
+            }
+        };
+        
+        // Also add a keypress handler as fallback for Enter key
+        const keypressHandler = (event: KeyboardEvent) => {
+            if (!isVisible) return;
+            
+            if (event.key === 'Enter') {
+                console.log('Document keypress handler - Enter key, executing:', floatingMenuOptions[selectedIndex].name);
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+                floatingMenuOptions[selectedIndex].action();
+                setIsVisible(false);
+            }
+        };
+        
+        // Use capture phase to intercept events before they reach the editor
+        document.addEventListener('keydown', keydownHandler, true);
+        document.addEventListener('keypress', keypressHandler, true);
 
         return () => {
             editor.off('selectionUpdate', updateMenu);
             editor.off('transaction', updateMenu);
             editor.view.dom.removeEventListener('input', handleInput);
-            document.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('keydown', keydownHandler, true);
+            document.removeEventListener('keypress', keypressHandler, true);
         };
     }, [editor, isVisible, selectedIndex]);
 
@@ -1788,6 +1923,13 @@ const Editor: React.FC<{
                 },
             }),
             
+            // Custom Node Extensions
+            SceneBeatExtension,
+            NoteSectionExtension,
+            CharacterImpersonationExtension,
+            TestExtension,
+            SimpleExtension,
+            
             // Placeholder
             Placeholder.configure({
                 placeholder: 'Start writing your masterpiece...',
@@ -1804,6 +1946,23 @@ const Editor: React.FC<{
     if (!editor) {
         return null;
     }
+
+    // Debug logging - remove in production
+    console.log('Editor extensions loaded:', editor.extensionManager.extensions.map(ext => ext.name));
+    console.log('Available commands:', Object.keys(editor.commands));
+    console.log('Custom commands available:', {
+        setSceneBeat: !!editor.commands.setSceneBeat,
+        setNoteSection: !!editor.commands.setNoteSection,
+        setCharacterImpersonation: !!editor.commands.setCharacterImpersonation,
+        setTestNode: !!editor.commands.setTestNode,
+        setSimpleNode: !!editor.commands.setSimpleNode,
+    });
+
+    // Check if extensions are properly loaded
+    const customExtensions = editor.extensionManager.extensions.filter(ext => 
+        ['sceneBeat', 'noteSection', 'characterImpersonation', 'testNode', 'simpleNode'].includes(ext.name)
+    );
+    console.log('Custom extensions found:', customExtensions.map(ext => ext.name));
 
     return (
         <main className="flex-grow w-full overflow-y-auto custom-scrollbar relative pb-12">
@@ -1956,6 +2115,29 @@ const Editor: React.FC<{
                     
                     .dark hr {
                         border-top-color: #4b5563;
+                    }
+                    
+                    /* Prevent text selection within custom nodes to avoid bubble menu */
+                    .scene-beat-node *,
+                    .note-section-node *,
+                    .character-impersonation-node * {
+                        user-select: none;
+                        -webkit-user-select: none;
+                        -moz-user-select: none;
+                        -ms-user-select: none;
+                    }
+                    
+                    /* Allow selection only for editable content areas within nodes */
+                    .scene-beat-node textarea,
+                    .scene-beat-node input,
+                    .note-section-node textarea,
+                    .note-section-node input,
+                    .character-impersonation-node textarea,
+                    .character-impersonation-node input {
+                        user-select: text;
+                        -webkit-user-select: text;
+                        -moz-user-select: text;
+                        -ms-user-select: text;
                     }
                 `}
             </style>
