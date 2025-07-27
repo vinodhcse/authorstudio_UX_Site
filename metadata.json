@@ -1,0 +1,6 @@
+{
+  "name": "AuthorStudio",
+  "description": "A modern, responsive authoring dashboard inspired by Netflix and Tiptap.com aesthetics. It provides authors a beautiful and functional interface to manage their books, track progress, and collaborate, with support for both light and dark modes.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}

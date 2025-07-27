@@ -1,0 +1,47 @@
+
+
+import React from 'react';
+import { useParams, Navigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Book, Theme } from '../../types';
+import EditorHeader from './components/EditorHeader';
+import Editor from './components/Editor';
+import ScrollMinimap from './components/ScrollMinimap';
+import EditorFooter from './components/EditorFooter';
+import FloatingActionButton from './components/FloatingActionButton';
+
+interface BookForgePageProps {
+    books: Book[];
+    theme: Theme;
+    setTheme: (theme: Theme) => void;
+}
+
+const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme }) => {
+    const { bookId, versionId } = useParams<{ bookId: string, versionId: string }>();
+    
+    const book = books.find(b => b.id === bookId);
+    const version = book?.versions?.find(v => v.id === versionId);
+
+    if (!book || !version) {
+        return <Navigate to="/" replace />;
+    }
+
+    return (
+        <motion.div
+            className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+        >
+            <EditorHeader book={book} version={version} theme={theme} setTheme={setTheme} />
+            <div className="flex-grow flex relative overflow-hidden">
+                <Editor />
+                <ScrollMinimap />
+            </div>
+            <EditorFooter book={book} />
+            <FloatingActionButton />
+        </motion.div>
+    );
+};
+
+export default BookForgePage;
