@@ -106,6 +106,10 @@ const NoteSectionNode: React.FC<NoteSectionNodeProps> = ({
     <NodeViewWrapper>
       <motion.div
         className="note-section-node my-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-md hover:shadow-lg transition-all duration-200"
+        data-node-type="note"
+        data-node-id={data.id}
+        data-content={data.content}
+        data-labels={data.labels?.join(',')}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}

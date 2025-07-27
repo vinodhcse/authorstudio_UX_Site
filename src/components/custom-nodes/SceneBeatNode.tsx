@@ -108,6 +108,11 @@ const SceneBeatNode: React.FC<SceneBeatNodeProps> = ({
     <NodeViewWrapper>
       <motion.div
         className="scene-beat-node my-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-md hover:shadow-lg transition-all duration-200"
+        data-node-type="sceneBeat"
+        data-node-id={data.id || `scene-beat-${data.sceneBeatIndex}`}
+        data-chapter-name={data.chapterName}
+        data-scene-beat-index={data.sceneBeatIndex}
+        data-scene-title={data.summary}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}

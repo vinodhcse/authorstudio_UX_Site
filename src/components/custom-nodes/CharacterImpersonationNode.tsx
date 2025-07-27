@@ -162,6 +162,10 @@ const CharacterImpersonationNode: React.FC<CharacterImpersonationNodeProps> = ({
     <NodeViewWrapper>
       <motion.div
         className="character-impersonation-node my-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-md hover:shadow-lg transition-all duration-200"
+        data-node-type="impersonation"
+        data-node-id={data.id}
+        data-active-character={data.activeCharacter}
+        data-conversation-count={data.conversation?.length || 0}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}

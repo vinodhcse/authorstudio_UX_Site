@@ -1800,7 +1800,8 @@ const Editor: React.FC<{
     showTypographySettings?: boolean;
     onCloseTypographySettings?: () => void;
     onOpenTypographySettings?: () => void;
-}> = ({ showTypographySettings = false, onCloseTypographySettings, onOpenTypographySettings }) => {
+    onEditorReady?: (editor: TipTapEditor) => void;
+}> = ({ showTypographySettings = false, onCloseTypographySettings, onOpenTypographySettings, onEditorReady }) => {
     
     // Remove the internal state since it's now managed by parent
     // const [showTypographySettings, setShowTypographySettings] = useState(false);
@@ -1964,9 +1965,16 @@ const Editor: React.FC<{
     );
     console.log('Custom extensions found:', customExtensions.map(ext => ext.name));
 
+    // Notify parent when editor is ready
+    useEffect(() => {
+        if (editor && onEditorReady) {
+            onEditorReady(editor);
+        }
+    }, [editor, onEditorReady]);
+
     return (
         <main className="flex-grow w-full overflow-y-auto custom-scrollbar relative pb-12">
-            <style>
+                <style>
                 {`
                     .ProseMirror {
                         min-height: 100%;
