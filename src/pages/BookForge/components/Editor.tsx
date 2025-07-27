@@ -33,7 +33,7 @@ import {
     HighlightIcon, CodeIcon, TextQuoteIcon, AlignLeftIcon, AlignCenterIcon, AlignRightIcon, 
     AlignJustifyIcon, LinkIcon, ImageIcon, TableIcon, MinusIcon, ListIcon, ListOrderedIcon,
     CheckSquareIcon, PaletteIcon, Wand2Icon, UserIcon, MessageSquareIcon, 
-    ChevronDownIcon, SparklesIcon, StickyNoteIcon, SlashIcon, TypeIcon,
+    ChevronDownIcon, SparklesIcon, StickyNoteIcon, SlashIcon,
     PenIcon, PlusIcon
 } from '../../../constants';
 
@@ -556,6 +556,9 @@ const TypographySettingsPopup: React.FC<{
     onApply: (settings: TypographySettings) => void;
     editor: TipTapEditor;
 }> = ({ isOpen, onClose, onApply, editor }) => {
+    // Early return MUST be before any hooks to maintain hook order
+    if (!isOpen) return null;
+
     const [settings, setSettings] = useState<TypographySettings>({
         fontFamily: 'Georgia, serif',
         fontSize: 'text-base',
@@ -596,20 +599,38 @@ const TypographySettingsPopup: React.FC<{
 
     // Create flat array for easy filtering
     const allFonts = Object.values(fontFamilies).flat();
-    const kdpFonts = allFonts.filter(font => font.kdp);
-    const ingramFonts = allFonts.filter(font => font.ingram);
-    const bothPlatformFonts = allFonts.filter(font => font.kdp && font.ingram);
+    const [fontFilter, setFontFilter] = useState<'all' | 'kdp' | 'ingram' | 'both'>('all');
+    const [showFontFilter, setShowFontFilter] = useState(false);
+
+    // 3D mouse movement tracking for BookCard-like effect
+    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+    const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = event.clientX - rect.left - rect.width / 2;
+        const y = event.clientY - rect.top - rect.height / 2;
+        setMousePosition({ x: x / 10, y: y / 10 }); // Reduced sensitivity
+    };
 
     // Apply settings in real-time to editor
     const applySettingsToEditor = (newSettings: TypographySettings) => {
+        console.log('Applying settings to editor:', newSettings);
         const editorElement = editor.view.dom as HTMLElement;
         const container = editorElement.closest('.prose') as HTMLElement;
         
         if (container) {
-            // Apply font family
+            // Create a unique ID for this editor instance
+            const editorId = 'typography-editor-' + Math.random().toString(36).substr(2, 9);
+            container.setAttribute('data-typography-id', editorId);
+            
+            // Remove any existing typography styles
+            const existingStyle = document.getElementById('typography-styles');
+            if (existingStyle) {
+                existingStyle.remove();
+            }
+            
+            // Apply font family and size to container
             container.style.fontFamily = newSettings.fontFamily;
             
-            // Apply font size
             const sizeMap = {
                 'text-sm': '14px',
                 'text-base': '16px', 
@@ -617,15 +638,6 @@ const TypographySettingsPopup: React.FC<{
                 'text-xl': '20px'
             };
             container.style.fontSize = sizeMap[newSettings.fontSize as keyof typeof sizeMap];
-            
-            // Apply text indent
-            const indentMap = {
-                'none': '0',
-                'small': '1em',
-                'medium': '2em',
-                'large': '3em'
-            };
-            container.style.setProperty('--text-indent', indentMap[newSettings.textIndent as keyof typeof indentMap]);
             
             // Apply line height
             const lineHeightMap = {
@@ -636,19 +648,11 @@ const TypographySettingsPopup: React.FC<{
             };
             container.style.lineHeight = lineHeightMap[newSettings.lineHeight as keyof typeof lineHeightMap];
             
-            // Apply paragraph spacing
-            container.style.setProperty('--paragraph-spacing', newSettings.paragraphSpacing);
-            
-            // Clear editor selection to prevent bubble menu
-            editor.chain().blur().run();
-            
-            // Apply text alignment to current content without selecting all
+            // Apply text alignment
             if (newSettings.textAlignment === 'justified') {
-                // Apply justify alignment to all paragraphs via CSS
-                container.style.setProperty('text-align', 'justify');
+                container.style.textAlign = 'justify';
             } else {
-                // Apply alignment to all paragraphs via CSS
-                container.style.setProperty('text-align', newSettings.textAlignment as string);
+                container.style.textAlign = newSettings.textAlignment as string;
             }
             
             // Apply page width
@@ -664,6 +668,52 @@ const TypographySettingsPopup: React.FC<{
                 editorContainer.style.width = '100%';
                 editorContainer.style.margin = '0 auto';
             }
+            
+            // Create CSS rules for text indent and paragraph spacing
+            const indentMap = {
+                'none': '0',
+                'small': '1em',
+                'medium': '2em',
+                'large': '3em'
+            };
+            const indentValue = indentMap[newSettings.textIndent as keyof typeof indentMap];
+            const spacingValue = newSettings.paragraphSpacing;
+            
+            console.log('Applying text indent:', newSettings.textIndent, '->', indentValue);
+            console.log('Applying paragraph spacing:', spacingValue);
+            
+            // Inject CSS styles that will actually apply the formatting
+            const styleElement = document.createElement('style');
+            styleElement.id = 'typography-styles';
+            styleElement.innerHTML = `
+                [data-typography-id="${editorId}"] p {
+                    text-indent: ${indentValue} !important;
+                    margin-bottom: ${spacingValue} !important;
+                }
+                [data-typography-id="${editorId}"] p:first-of-type {
+                    text-indent: 0 !important;
+                }
+                [data-typography-id="${editorId}"] blockquote p,
+                [data-typography-id="${editorId}"] li p {
+                    text-indent: 0 !important;
+                }
+            `;
+            document.head.appendChild(styleElement);
+            
+            const paragraphs = container.querySelectorAll('p');
+            console.log(`Found paragraphs: ${paragraphs.length}, applied indent: ${indentValue}, spacing: ${spacingValue}`);
+            
+            // Clear editor selection to prevent bubble menu
+            editor.chain().blur().run();
+            
+            // Force a repaint to ensure styles are applied
+            container.style.transform = 'translateZ(0)';
+            setTimeout(() => {
+                container.style.transform = '';
+            }, 10);
+            
+        } else {
+            console.log('Could not find prose container');
         }
     };
 
@@ -695,13 +745,14 @@ const TypographySettingsPopup: React.FC<{
     // Apply changes in real-time
     useEffect(() => {
         if (isOpen) {
+            console.log('Settings changed, applying to editor:', settings);
             applySettingsToEditor(settings);
         }
     }, [settings, isOpen, editor]);
 
     const handleApply = () => {
         // Settings are already applied in real-time, just cleanup and close
-        setOriginalSettings(null);
+        setOriginalSettings(settings);
         onApply(settings);
         onClose();
     };
@@ -715,352 +766,537 @@ const TypographySettingsPopup: React.FC<{
         onClose();
     };
 
-    if (!isOpen) return null;
+    // Cleanup function to remove injected styles
+    const cleanupStyles = () => {
+        const existingStyle = document.getElementById('typography-styles');
+        if (existingStyle) {
+            existingStyle.remove();
+        }
+    };
+
+    // Cleanup styles when component unmounts or closes
+    useEffect(() => {
+        return () => {
+            if (!isOpen) {
+                cleanupStyles();
+            }
+        };
+    }, [isOpen]);
+
+    // Filter fonts based on selected filter
+    const getFilteredFonts = () => {
+        const filteredFamilies: Record<string, typeof allFonts> = {};
+        
+        Object.entries(fontFamilies).forEach(([category, fonts]) => {
+            let filteredFonts = fonts;
+            
+            switch (fontFilter) {
+                case 'kdp':
+                    filteredFonts = fonts.filter(font => font.kdp);
+                    break;
+                case 'ingram':
+                    filteredFonts = fonts.filter(font => font.ingram);
+                    break;
+                case 'both':
+                    filteredFonts = fonts.filter(font => font.kdp && font.ingram);
+                    break;
+                default:
+                    filteredFonts = fonts;
+            }
+            
+            if (filteredFonts.length > 0) {
+                filteredFamilies[category] = filteredFonts;
+            }
+        });
+        
+        return filteredFamilies;
+    };
+
+    const filteredFontFamilies = getFilteredFonts();
+    
+    // Close font filter when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as HTMLElement;
+            if (!target.closest('.font-filter-container')) {
+                setShowFontFilter(false);
+            }
+        };
+        
+        if (showFontFilter) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+        // Always return a cleanup function (even if empty) to maintain hook consistency
+        return () => {};
+    }, [showFontFilter]);
 
     return (
-        <div className="fixed inset-0 bg-black/30 z-50 flex">
-            {/* Backdrop - click to close */}
+        <div className="fixed inset-0 z-50 flex">
+            {/* No backdrop opacity - just click area */}
             <div 
                 className="flex-1 cursor-pointer" 
                 onClick={onClose}
             />
             
-            {/* Side Panel */}
+            {/* Card styled like BookCard with 3D tilt */}
             <motion.div
                 initial={{ opacity: 0, x: 400 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 400 }}
                 transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                className="bg-white dark:bg-gray-800 shadow-2xl w-[420px] h-auto max-h-[90vh] overflow-hidden flex flex-col"
-                style={{
-                    background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
-                    backdropFilter: 'blur(10px)',
-                    border: '1px solid rgba(255,255,255,0.1)'
+                className="relative w-[420px] h-auto max-h-[90vh] overflow-hidden flex flex-col m-4 mr-6 group cursor-default"
+                style={{ perspective: 1000 }}
+                onMouseMove={handleMouseMove}
+                onMouseLeave={() => setMousePosition({ x: 0, y: 0 })}
+                whileHover={{ 
+                    rotateY: mousePosition.x * 0.1, 
+                    rotateX: -mousePosition.y * 0.1, 
+                    scale: 1.01,
+                    transition: { duration: 0.1 }
                 }}
             >
-                {/* Gradient overlay similar to BookCard */}
-                <div className="absolute -inset-2 bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 opacity-10 blur-xl z-0"></div>
+                {/* Animated gradient border effect exactly like BookCard */}
+                <div className="absolute -inset-2 bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 opacity-75 group-hover:opacity-100 transition-opacity duration-500 group-hover:animate-border-blob-spin blur-xl z-0 rounded-2xl"></div>
                 
-                <div className="relative z-10 bg-gradient-to-br from-gray-50/80 to-gray-100/80 dark:from-gray-900/80 dark:to-black/80 flex flex-col rounded-lg">
-                {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-gray-200/50 dark:border-gray-700/50 backdrop-blur-sm">
-                    <motion.div 
-                        className="flex items-center gap-3"
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.1 }}
-                    >
-                        <TypeIcon className="w-6 h-6 text-blue-600" />
-                        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                            TYPOGRAPHY
-                        </h2>
-                    </motion.div>
-                    <motion.button
-                        onClick={handleCancel}
-                        className="p-2 hover:bg-gray-100/50 dark:hover:bg-gray-700/50 rounded-lg transition-colors"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.2 }}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </motion.button>
-                </div>
-
-                {/* Content - 2-Column Grid Layout */}
-                <div 
-                    className="p-4 overflow-y-auto max-h-[70vh] scrollbar-hide" 
-                    style={{ 
-                        scrollbarWidth: 'none', 
-                        msOverflowStyle: 'none'
-                    }}
+                {/* Main card with exact BookCard styling and 3D transform */}
+                <motion.div 
+                    className="relative bg-gradient-to-br from-gray-200 to-gray-50 dark:from-gray-900 dark:to-black rounded-2xl p-6 h-full flex flex-col shadow-lg border border-transparent z-10"
+                    style={{ transformStyle: "preserve-3d" }}
                 >
-                    <div className="grid grid-cols-2 gap-4">
+                    
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-6 pb-4 border-b border-black/10 dark:border-white/10">
+                        <motion.div 
+                            className="flex items-center gap-3"
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.1 }}
+                        >
+                            <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10M12 3v18M8 7h8" />
+                            </svg>
+                            <h2 className="text-xl font-bold text-gray-800 dark:text-white">
+                                TYPOGRAPHY
+                            </h2>
+                        </motion.div>
+                        <motion.button
+                            onClick={handleCancel}
+                            className="p-2 hover:bg-gray-100/50 dark:hover:bg-gray-700/50 rounded-lg transition-colors"
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.2 }}
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                        >
+                            <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </motion.button>
+                    </div>
+
+                    {/* Content - 2-Column Grid Layout with hidden scrollbar */}
+                    <div 
+                        className="flex-1 overflow-y-auto space-y-6 pr-2" 
+                        style={{
+                            scrollbarWidth: 'none', /* Firefox */
+                            msOverflowStyle: 'none', /* IE and Edge */
+                        }}
+                    >
+                        <style dangerouslySetInnerHTML={{
+                            __html: `
+                                .flex-1::-webkit-scrollbar {
+                                    display: none; /* Safari and Chrome */
+                                }
+                            `
+                        }} />
                         
                         {/* Row 1: Font Family (Full Width) */}
                         <motion.div 
-                            className="col-span-2 space-y-2"
+                            className="space-y-3"
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.1 }}
                         >
                             <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10M12 3v18M8 7h8" />
                                 </svg>
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Font Family</h3>
+                                <h3 className="font-semibold text-gray-800 dark:text-white text-sm">Font Family</h3>
                             </div>
-                            <select
-                                value={settings.fontFamily}
-                                onChange={(e) => {
-                                    setSettings({...settings, fontFamily: e.target.value});
-                                }}
-                                className="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white/70 dark:bg-gray-700/70 text-gray-800 dark:text-gray-200 backdrop-blur-sm transition-all duration-200"
-                                style={{ fontFamily: settings.fontFamily }}
+                            
+                            {/* Font Family Dropdown with Filter Icon */}
+                            <div className="relative font-filter-container">
+                                <select
+                                    value={settings.fontFamily}
+                                    onChange={(e) => {
+                                        setSettings(prev => ({...prev, fontFamily: e.target.value}));
+                                    }}
+                                    className="w-full p-3 pr-12 text-sm border border-gray-300/50 dark:border-gray-600/50 rounded-lg bg-white/70 dark:bg-gray-700/70 text-gray-800 dark:text-gray-200 backdrop-blur-sm transition-all duration-200"
+                                    style={{ fontFamily: settings.fontFamily }}
+                                >
+                                    {Object.entries(filteredFontFamilies).map(([category, fonts]) => (
+                                        <optgroup key={category} label={category}>
+                                            {fonts.map((font) => (
+                                                <option key={font.name} value={font.value} style={{ fontFamily: font.value }}>
+                                                    {font.name}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                    ))}
+                                </select>
+                                
+                                {/* Filter Icon */}
+                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                                    <button
+                                        onClick={() => setShowFontFilter(!showFontFilter)}
+                                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors"
+                                        title="Filter fonts by platform"
+                                    >
+                                        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                
+                                {/* Filter Dropdown */}
+                                {showFontFilter && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg z-50 min-w-[140px]"
+                                    >
+                                        <div className="p-2 space-y-1">
+                                            {[
+                                                { key: 'all', label: 'All Fonts', icon: '🌐' },
+                                                { key: 'kdp', label: 'KDP Only', icon: '📚' },
+                                                { key: 'ingram', label: 'Ingram Only', icon: '📖' },
+                                                { key: 'both', label: 'Both Platforms', icon: '✅' }
+                                            ].map(filter => (
+                                                <button
+                                                    key={filter.key}
+                                                    onClick={() => {
+                                                        setFontFilter(filter.key as any);
+                                                        setShowFontFilter(false);
+                                                    }}
+                                                    className={`w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 ${
+                                                        fontFilter === filter.key ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' : ''
+                                                    }`}
+                                                >
+                                                    <span>{filter.icon}</span>
+                                                    {filter.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </div>
+                            
+                            {/* Display current font with badges */}
+                            <div className="text-xs text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                                <span>Selected:</span>
+                                <span className="font-medium">{allFonts.find(f => f.value === settings.fontFamily)?.name}</span>
+                                {allFonts.find(f => f.value === settings.fontFamily) && (
+                                    <div className="flex gap-1">
+                                        {allFonts.find(f => f.value === settings.fontFamily)?.kdp && (
+                                            <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs font-medium">
+                                                KDP
+                                            </span>
+                                        )}
+                                        {allFonts.find(f => f.value === settings.fontFamily)?.ingram && (
+                                            <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-xs font-medium">
+                                                Ingram
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </motion.div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            {/* Row 2: Text Size | Text Alignment */}
+                            <motion.div 
+                                className="space-y-3"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.2 }}
                             >
-                                {Object.entries(fontFamilies).map(([category, fonts]) => (
-                                    <optgroup key={category} label={category}>
-                                        {fonts.map((font) => (
-                                            <option key={font.name} value={font.value} style={{ fontFamily: font.value }}>
-                                                {font.name} {font.kdp && font.ingram ? '(KDP, IngramSpark)' : 
-                                                              font.kdp ? '(KDP)' : 
-                                                              font.ingram ? '(IngramSpark)' : ''}
-                                            </option>
-                                        ))}
-                                    </optgroup>
-                                ))}
-                            </select>
-                        </motion.div>
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+                                    </svg>
+                                    <h3 className="font-semibold text-gray-800 dark:text-white text-sm">Size</h3>
+                                </div>
+                                <div className="flex gap-1">
+                                    {[
+                                        { name: 'S', value: 'text-sm', size: 'text-xs' },
+                                        { name: 'M', value: 'text-base', size: 'text-sm' },
+                                        { name: 'L', value: 'text-lg', size: 'text-base' },
+                                        { name: 'XL', value: 'text-xl', size: 'text-lg' },
+                                    ].map((size) => (
+                                        <motion.button
+                                            key={size.value}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setSettings(prev => ({...prev, fontSize: size.value}));
+                                            }}
+                                            className={`p-2 rounded-lg border transition-all duration-200 flex-1 ${
+                                                settings.fontSize === size.value
+                                                    ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
+                                                    : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
+                                            }`}
+                                            title={size.name}
+                                            whileHover={{ scale: 1.05 }}
+                                            whileTap={{ scale: 0.95 }}
+                                        >
+                                            <div className="text-xs font-bold">{size.name}</div>
+                                        </motion.button>
+                                    ))}
+                                </div>
+                            </motion.div>
 
-                        {/* Row 2: Text Size | Text Alignment */}
-                        <motion.div 
-                            className="space-y-2"
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.2 }}
-                        >
-                            <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
-                                </svg>
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Text Size</h3>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                {[
-                                    { name: 'Small', value: 'text-sm', size: 'text-xs' },
-                                    { name: 'Normal', value: 'text-base', size: 'text-sm' },
-                                    { name: 'Large', value: 'text-lg', size: 'text-base' },
-                                    { name: 'XL', value: 'text-xl', size: 'text-lg' },
-                                ].map((size) => (
-                                    <motion.button
-                                        key={size.value}
-                                        onClick={() => setSettings({...settings, fontSize: size.value})}
-                                        className={`p-1.5 rounded-lg border transition-all duration-200 ${
-                                            settings.fontSize === size.value
-                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
-                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
-                                        }`}
-                                        title={size.name}
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        layout
-                                    >
-                                        <div className={`font-bold ${size.size}`}>Aa</div>
-                                    </motion.button>
-                                ))}
-                            </div>
-                        </motion.div>
+                            <motion.div 
+                                className="space-y-3"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.3 }}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h8m-8 6h16" />
+                                    </svg>
+                                    <h3 className="font-semibold text-gray-800 dark:text-white text-sm">Align</h3>
+                                </div>
+                                <div className="flex gap-1">
+                                    {[
+                                        { name: 'Left', value: 'left', icon: '←' },
+                                        { name: 'Center', value: 'center', icon: '↔' },
+                                        { name: 'Right', value: 'right', icon: '→' },
+                                        { name: 'Justify', value: 'justified', icon: '≡' }
+                                    ].map((align) => (
+                                        <motion.button
+                                            key={align.value}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setSettings(prev => ({...prev, textAlignment: align.value}));
+                                            }}
+                                            className={`p-2 rounded-lg border transition-all duration-200 flex-1 ${
+                                                settings.textAlignment === align.value
+                                                    ? 'border-green-500 bg-green-50/80 dark:bg-green-900/30 text-green-600 dark:text-green-400 shadow-md'
+                                                    : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
+                                            }`}
+                                            title={align.name}
+                                            whileHover={{ scale: 1.05 }}
+                                            whileTap={{ scale: 0.95 }}
+                                        >
+                                            <div className="text-sm">{align.icon}</div>
+                                        </motion.button>
+                                    ))}
+                                </div>
+                            </motion.div>
 
-                        <motion.div 
-                            className="space-y-2"
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.3 }}
-                        >
-                            <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h8m-8 6h16" />
-                                </svg>
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Alignment</h3>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                {[
-                                    { name: 'Left', value: 'left', icon: '⬅' },
-                                    { name: 'Center', value: 'center', icon: '⬌' },
-                                    { name: 'Right', value: 'right', icon: '➡' },
-                                    { name: 'Justify', value: 'justified', icon: '⬍' }
-                                ].map((align) => (
-                                    <motion.button
-                                        key={align.value}
-                                        onClick={() => setSettings({...settings, textAlignment: align.value})}
-                                        className={`p-1.5 rounded-lg border transition-all duration-200 ${
-                                            settings.textAlignment === align.value
-                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
-                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
-                                        }`}
-                                        title={align.name}
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        layout
-                                    >
-                                        <div className="text-sm">{align.icon}</div>
-                                    </motion.button>
-                                ))}
-                            </div>
-                        </motion.div>
+                            {/* Row 3: Indent | Line Height */}
+                            <motion.div 
+                                className="space-y-3"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.4 }}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4l-8 8 8 8m8-16l-8 8 8 8" />
+                                    </svg>
+                                    <h3 className="font-semibold text-gray-800 dark:text-white text-sm">Indent</h3>
+                                    <span className="text-xs text-gray-500">({settings.textIndent})</span>
+                                </div>
+                                <div className="flex gap-1" key={`indent-${settings.textIndent}`}>
+                                    {[
+                                        { name: 'None', value: 'none', icon: '|' },
+                                        { name: 'Small', value: 'small', icon: '|→' },
+                                        { name: 'Med', value: 'medium', icon: '| →' },
+                                        { name: 'Large', value: 'large', icon: '|  →' }
+                                    ].map((indent) => (
+                                        <motion.button
+                                            key={indent.value}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                console.log('Indent clicked:', indent.value, 'Current:', settings.textIndent);
+                                                setSettings(prev => {
+                                                    const newSettings = {...prev, textIndent: indent.value};
+                                                    console.log('New settings after indent click:', newSettings);
+                                                    return newSettings;
+                                                });
+                                            }}
+                                            className={`p-2 rounded-lg border transition-all duration-200 text-xs flex-1 ${
+                                                settings.textIndent === indent.value
+                                                    ? 'border-orange-500 bg-orange-50/80 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 shadow-md'
+                                                    : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
+                                            }`}
+                                            title={indent.name}
+                                            whileHover={{ scale: 1.05 }}
+                                            whileTap={{ scale: 0.95 }}
+                                        >
+                                            <div className="font-mono text-xs">{indent.icon}</div>
+                                        </motion.button>
+                                    ))}
+                                </div>
+                            </motion.div>
 
-                        {/* Row 3: Indent | Line Height */}
-                        <motion.div 
-                            className="space-y-2"
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.4 }}
-                        >
-                            <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4l-8 8 8 8m8-16l-8 8 8 8" />
-                                </svg>
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Indent</h3>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                {[
-                                    { name: 'None', value: 'none', icon: '|' },
-                                    { name: 'Small', value: 'small', icon: '| →' },
-                                    { name: 'Medium', value: 'medium', icon: '|  →' },
-                                    { name: 'Large', value: 'large', icon: '|   →' }
-                                ].map((indent) => (
-                                    <motion.button
-                                        key={indent.value}
-                                        onClick={() => setSettings({...settings, textIndent: indent.value})}
-                                        className={`p-1.5 rounded-lg border transition-all duration-200 text-xs ${
-                                            settings.textIndent === indent.value
-                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
-                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
-                                        }`}
-                                        title={indent.name}
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        layout
-                                    >
-                                        <div className="font-mono">{indent.icon}</div>
-                                    </motion.button>
-                                ))}
-                            </div>
-                        </motion.div>
+                            <motion.div 
+                                className="space-y-3"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.5 }}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                                    </svg>
+                                    <h3 className="font-semibold text-gray-800 dark:text-white text-sm">Line</h3>
+                                </div>
+                                <div className="flex gap-1">
+                                    {[
+                                        { name: 'Tight', value: 'tight', icon: '≡' },
+                                        { name: 'Normal', value: 'normal', icon: '⩘' },
+                                        { name: 'Relax', value: 'relaxed', icon: '⩙' },
+                                        { name: 'Loose', value: 'loose', icon: '⩚' }
+                                    ].map((height) => (
+                                        <motion.button
+                                            key={height.value}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setSettings(prev => ({...prev, lineHeight: height.value}));
+                                            }}
+                                            className={`p-2 rounded-lg border transition-all duration-200 flex-1 ${
+                                                settings.lineHeight === height.value
+                                                    ? 'border-red-500 bg-red-50/80 dark:bg-red-900/30 text-red-600 dark:text-red-400 shadow-md'
+                                                    : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
+                                            }`}
+                                            title={height.name}
+                                            whileHover={{ scale: 1.05 }}
+                                            whileTap={{ scale: 0.95 }}
+                                        >
+                                            <div className="text-sm">{height.icon}</div>
+                                        </motion.button>
+                                    ))}
+                                </div>
+                            </motion.div>
 
-                        <motion.div 
-                            className="space-y-2"
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.5 }}
-                        >
-                            <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                                </svg>
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Line Height</h3>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                {[
-                                    { name: 'Tight', value: 'tight', icon: '≡' },
-                                    { name: 'Normal', value: 'normal', icon: '⩘' },
-                                    { name: 'Relaxed', value: 'relaxed', icon: '⩙' },
-                                    { name: 'Loose', value: 'loose', icon: '⩚' }
-                                ].map((height) => (
-                                    <motion.button
-                                        key={height.value}
-                                        onClick={() => setSettings({...settings, lineHeight: height.value})}
-                                        className={`p-1.5 rounded-lg border transition-all duration-200 ${
-                                            settings.lineHeight === height.value
-                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
-                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
-                                        }`}
-                                        title={height.name}
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        layout
-                                    >
-                                        <div className="text-sm">{height.icon}</div>
-                                    </motion.button>
-                                ))}
-                            </div>
-                        </motion.div>
+                            {/* Row 4: Paragraph Spacing | Page Width */}
+                            <motion.div 
+                                className="space-y-3"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.6 }}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                    </svg>
+                                    <h3 className="font-semibold text-gray-800 dark:text-white text-sm">Para</h3>
+                                    <span className="text-xs text-gray-500">({settings.paragraphSpacing})</span>
+                                </div>
+                                <div className="flex gap-1" key={`spacing-${settings.paragraphSpacing}`}>
+                                    {[
+                                        { name: 'None', value: '0', icon: '▬' },
+                                        { name: 'Small', value: '0.25em', icon: '▬▬' },
+                                        { name: 'Med', value: '0.5em', icon: '▬ ▬' },
+                                        { name: 'Large', value: '1em', icon: '▬  ▬' }
+                                    ].map((spacing) => (
+                                        <motion.button
+                                            key={spacing.value}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                console.log('Paragraph spacing clicked:', spacing.value, 'Current:', settings.paragraphSpacing);
+                                                setSettings(prev => {
+                                                    const newSettings = {...prev, paragraphSpacing: spacing.value};
+                                                    console.log('New settings after spacing click:', newSettings, ' spacing.value:', spacing.value);
+                                                    return newSettings;
+                                                });
+                                            }}
+                                            className={`p-2 rounded-lg border transition-all duration-200 text-xs flex-1 ${
+                                                settings.paragraphSpacing === spacing.value
+                                                    ? 'border-indigo-500 bg-indigo-50/80 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 shadow-md'
+                                                    : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
+                                            }`}
+                                            title={spacing.name}
+                                            whileHover={{ scale: 1.05 }}
+                                            whileTap={{ scale: 0.95 }}
+                                        >
+                                            <div className="font-mono text-xs">{spacing.icon}</div>
+                                        </motion.button>
+                                    ))}
+                                </div>
+                            </motion.div>
 
-                        {/* Row 4: Paragraph Spacing | Page Width */}
-                        <motion.div 
-                            className="space-y-2"
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.6 }}
-                        >
-                            <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                </svg>
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Paragraph</h3>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                {[
-                                    { name: 'None', value: '0', icon: '▬' },
-                                    { name: 'Small', value: '0.25em', icon: '▬ ▬' },
-                                    { name: 'Medium', value: '0.5em', icon: '▬  ▬' },
-                                    { name: 'Large', value: '1em', icon: '▬   ▬' }
-                                ].map((spacing) => (
-                                    <motion.button
-                                        key={spacing.value}
-                                        onClick={() => setSettings({...settings, paragraphSpacing: spacing.value})}
-                                        className={`p-1.5 rounded-lg border transition-all duration-200 text-xs ${
-                                            settings.paragraphSpacing === spacing.value
-                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
-                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
-                                        }`}
-                                        title={spacing.name}
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        layout
-                                    >
-                                        <div className="font-mono">{spacing.icon}</div>
-                                    </motion.button>
-                                ))}
-                            </div>
-                        </motion.div>
+                            <motion.div 
+                                className="space-y-3"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.7 }}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                    </svg>
+                                    <h3 className="font-semibold text-gray-800 dark:text-white text-sm">Width</h3>
+                                </div>
+                                <div className="flex gap-1">
+                                    {[
+                                        { name: 'Narrow', value: 'narrow', icon: '│' },
+                                        { name: 'Med', value: 'medium', icon: '┃' },
+                                        { name: 'Wide', value: 'wide', icon: '█' },
+                                        { name: 'Full', value: 'full', icon: '■' }
+                                    ].map((width) => (
+                                        <motion.button
+                                            key={width.value}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setSettings(prev => ({...prev, pageWidth: width.value}));
+                                            }}
+                                            className={`p-2 rounded-lg border transition-all duration-200 flex-1 ${
+                                                settings.pageWidth === width.value
+                                                    ? 'border-teal-500 bg-teal-50/80 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 shadow-md'
+                                                    : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
+                                            }`}
+                                            title={width.name}
+                                            whileHover={{ scale: 1.05 }}
+                                            whileTap={{ scale: 0.95 }}
+                                        >
+                                            <div className="text-sm">{width.icon}</div>
+                                        </motion.button>
+                                    ))}
+                                </div>
+                            </motion.div>
+                        </div>
 
+                        {/* Additional Settings */}
                         <motion.div 
-                            className="space-y-2"
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.7 }}
-                        >
-                            <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                                </svg>
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Page Width</h3>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                {[
-                                    { name: 'Narrow', value: 'narrow', icon: '│' },
-                                    { name: 'Medium', value: 'medium', icon: '┃' },
-                                    { name: 'Wide', value: 'wide', icon: '█' },
-                                    { name: 'Full', value: 'full', icon: '■' }
-                                ].map((width) => (
-                                    <motion.button
-                                        key={width.value}
-                                        onClick={() => setSettings({...settings, pageWidth: width.value})}
-                                        className={`p-1.5 rounded-lg border transition-all duration-200 ${
-                                            settings.pageWidth === width.value
-                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
-                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
-                                        }`}
-                                        title={width.name}
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        layout
-                                    >
-                                        <div className="text-sm">{width.icon}</div>
-                                    </motion.button>
-                                ))}
-                            </div>
-                        </motion.div>
-
-                        {/* Additional Settings - Compact (Full Width) */}
-                        <motion.div 
-                            className="col-span-2 space-y-2 pt-3 border-t border-gray-200/50 dark:border-gray-700/50"
+                            className="space-y-4 pt-4 border-t border-black/10 dark:border-white/10"
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.8 }}
                         >
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-2 gap-4">
                                 {/* Scene Divider */}
-                                <div className="space-y-1">
-                                    <h4 className="text-xs font-medium text-gray-700 dark:text-gray-300">Scene Divider</h4>
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <svg className="w-4 h-4 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01" />
+                                        </svg>
+                                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Scene Divider</h4>
+                                    </div>
                                     <select
                                         value={settings.sceneDivider}
-                                        onChange={(e) => setSettings({...settings, sceneDivider: e.target.value})}
-                                        className="w-full p-1 text-xs border border-gray-300/50 dark:border-gray-600/50 rounded bg-white/70 dark:bg-gray-700/70 backdrop-blur-sm"
+                                        onChange={(e) => setSettings(prev => ({...prev, sceneDivider: e.target.value}))}
+                                        className="w-full p-2 text-sm border border-gray-300/50 dark:border-gray-600/50 rounded bg-white/70 dark:bg-gray-700/70 backdrop-blur-sm"
                                     >
                                         <option value="asterisks">* * *</option>
                                         <option value="boxes">■ ■ ■</option>
@@ -1070,70 +1306,72 @@ const TypographySettingsPopup: React.FC<{
                                 </div>
 
                                 {/* Checkboxes */}
-                                <div className="space-y-1">
-                                    <label className="flex items-center gap-1 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={settings.chicagoStyle}
-                                            onChange={(e) => setSettings({...settings, chicagoStyle: e.target.checked})}
-                                            className="w-3 h-3 text-blue-600 rounded"
-                                        />
-                                        <span className="text-xs text-gray-600 dark:text-gray-400">Chicago</span>
-                                    </label>
-                                    <label className="flex items-center gap-1 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={settings.typewriterMode}
-                                            onChange={(e) => setSettings({...settings, typewriterMode: e.target.checked})}
-                                            className="w-3 h-3 text-blue-600 rounded"
-                                        />
-                                        <span className="text-xs text-gray-600 dark:text-gray-400">Typewriter</span>
-                                    </label>
-                                    <label className="flex items-center gap-1 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={settings.rememberPosition}
-                                            onChange={(e) => setSettings({...settings, rememberPosition: e.target.checked})}
-                                            className="w-3 h-3 text-blue-600 rounded"
-                                        />
-                                        <span className="text-xs text-gray-600 dark:text-gray-400">Remember</span>
-                                    </label>
+                                <div className="space-y-2">
+                                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                        <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        Options
+                                    </h4>
+                                    <div className="space-y-1">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={settings.chicagoStyle}
+                                                onChange={(e) => setSettings(prev => ({...prev, chicagoStyle: e.target.checked}))}
+                                                className="w-3 h-3 text-purple-600 rounded"
+                                            />
+                                            <span className="text-sm text-gray-600 dark:text-gray-400">Chicago Style</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={settings.typewriterMode}
+                                                onChange={(e) => setSettings(prev => ({...prev, typewriterMode: e.target.checked}))}
+                                                className="w-3 h-3 text-purple-600 rounded"
+                                            />
+                                            <span className="text-sm text-gray-600 dark:text-gray-400">Typewriter Mode</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={settings.rememberPosition}
+                                                onChange={(e) => setSettings(prev => ({...prev, rememberPosition: e.target.checked}))}
+                                                className="w-3 h-3 text-purple-600 rounded"
+                                            />
+                                            <span className="text-sm text-gray-600 dark:text-gray-400">Remember Position</span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                         </motion.div>
                     </div>
-                </div>
 
-                {/* Footer - Compact */}
-                <motion.div 
-                    className="flex items-center justify-between p-3 border-t border-gray-200/50 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-900/50 backdrop-blur-sm"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.9 }}
-                >
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                        ●● = KDP + IS • ●○ = KDP • ○● = IS
-                    </div>
-                    <div className="flex gap-2">
+                    {/* Footer like BookCard */}
+                    <motion.div 
+                        className="mt-6 pt-4 border-t border-black/10 dark:border-white/10 flex justify-end gap-3"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.9 }}
+                    >
                         <motion.button
                             onClick={handleCancel}
-                            className="px-3 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors rounded hover:bg-gray-100/50 dark:hover:bg-gray-800/50"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
+                            className="px-6 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-200/50 dark:bg-gray-700/50 hover:bg-gray-300/50 dark:hover:bg-gray-600/50 rounded-lg transition-colors"
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
                         >
                             Cancel
                         </motion.button>
                         <motion.button
                             onClick={handleApply}
-                            className="px-4 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors font-medium shadow-md"
-                            whileHover={{ scale: 1.05, boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)" }}
-                            whileTap={{ scale: 0.95 }}
+                            className="px-6 py-2 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 rounded-lg shadow-lg transition-all duration-200"
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
                         >
-                            Apply
+                            Apply Changes
                         </motion.button>
-                    </div>
+                    </motion.div>
                 </motion.div>
-            </div>
             </motion.div>
         </div>
     );
