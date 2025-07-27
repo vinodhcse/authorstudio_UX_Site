@@ -34,7 +34,6 @@ import {
     AlignJustifyIcon, LinkIcon, ImageIcon, TableIcon, MinusIcon, ListIcon, ListOrderedIcon,
     CheckSquareIcon, PaletteIcon, Wand2Icon, UserIcon, MessageSquareIcon, 
     ChevronDownIcon, SparklesIcon, StickyNoteIcon, SlashIcon, TypeIcon,
-    FontIcon, IndentIcon, LineHeightIcon, SpacingIcon, WidthIcon, DividerIcon, CursorIcon, TypewriterIcon,
     PenIcon, PlusIcon
 } from '../../../constants';
 
@@ -573,19 +572,33 @@ const TypographySettingsPopup: React.FC<{
 
     const [originalSettings, setOriginalSettings] = useState<TypographySettings | null>(null);
 
-    // Professional fonts for publishing - simplified for dropdown
-    const fontFamilies = [
-        { name: 'Garamond', value: 'Garamond, serif', kdp: true, ingram: true },
-        { name: 'Baskerville', value: 'Baskerville, serif', kdp: true, ingram: true },
-        { name: 'Georgia', value: 'Georgia, serif', kdp: true, ingram: true },
-        { name: 'Palatino', value: 'Palatino, serif', kdp: true, ingram: true },
-        { name: 'Times New Roman', value: 'Times New Roman, serif', kdp: true, ingram: true },
-        { name: 'Bookerly', value: 'Bookerly, serif', kdp: true, ingram: false },
-        { name: 'Arial', value: 'Arial, sans-serif', kdp: true, ingram: true },
-        { name: 'Helvetica', value: 'Helvetica, sans-serif', kdp: true, ingram: true },
-        { name: 'Courier', value: 'Courier, monospace', kdp: true, ingram: true },
-        { name: 'Courier Prime', value: 'Courier Prime, monospace', kdp: true, ingram: true },
-    ];
+    // Professional fonts for publishing - organized by categories
+    const fontFamilies = {
+        'Serif Fonts (Traditional)': [
+            { name: 'Garamond', value: 'Garamond, serif', kdp: true, ingram: true },
+            { name: 'Baskerville', value: 'Baskerville, serif', kdp: true, ingram: true },
+            { name: 'Georgia', value: 'Georgia, serif', kdp: true, ingram: true },
+            { name: 'Palatino', value: 'Palatino, serif', kdp: true, ingram: true },
+            { name: 'Times New Roman', value: 'Times New Roman, serif', kdp: true, ingram: true },
+            { name: 'Bookerly', value: 'Bookerly, serif', kdp: true, ingram: false },
+        ],
+        'Sans-Serif Fonts (Modern)': [
+            { name: 'Arial', value: 'Arial, sans-serif', kdp: true, ingram: true },
+            { name: 'Helvetica', value: 'Helvetica, sans-serif', kdp: true, ingram: true },
+            { name: 'Calibri', value: 'Calibri, sans-serif', kdp: true, ingram: false },
+        ],
+        'Monospace Fonts (Typewriter)': [
+            { name: 'Courier', value: 'Courier, monospace', kdp: true, ingram: true },
+            { name: 'Courier Prime', value: 'Courier Prime, monospace', kdp: true, ingram: true },
+            { name: 'Consolas', value: 'Consolas, monospace', kdp: true, ingram: false },
+        ]
+    };
+
+    // Create flat array for easy filtering
+    const allFonts = Object.values(fontFamilies).flat();
+    const kdpFonts = allFonts.filter(font => font.kdp);
+    const ingramFonts = allFonts.filter(font => font.ingram);
+    const bothPlatformFonts = allFonts.filter(font => font.kdp && font.ingram);
 
     // Apply settings in real-time to editor
     const applySettingsToEditor = (newSettings: TypographySettings) => {
@@ -626,23 +639,30 @@ const TypographySettingsPopup: React.FC<{
             // Apply paragraph spacing
             container.style.setProperty('--paragraph-spacing', newSettings.paragraphSpacing);
             
-            // Apply text alignment to all content
+            // Clear editor selection to prevent bubble menu
+            editor.chain().blur().run();
+            
+            // Apply text alignment to current content without selecting all
             if (newSettings.textAlignment === 'justified') {
-                editor.chain().focus().selectAll().setTextAlign('justify').run();
+                // Apply justify alignment to all paragraphs via CSS
+                container.style.setProperty('text-align', 'justify');
             } else {
-                editor.chain().focus().selectAll().setTextAlign(newSettings.textAlignment).run();
+                // Apply alignment to all paragraphs via CSS
+                container.style.setProperty('text-align', newSettings.textAlignment as string);
             }
             
             // Apply page width
             const widthMap = {
-                'fixed': 'max-w-lg',
-                'medium': 'max-w-3xl', 
-                'full': 'max-w-5xl',
-                'edge': 'max-w-none'
+                'narrow': '400px',
+                'medium': '600px', 
+                'wide': '800px',
+                'full': '100%'
             };
-            const parentContainer = container.parentElement;
-            if (parentContainer) {
-                parentContainer.className = parentContainer.className.replace(/max-w-\w+/, widthMap[newSettings.pageWidth as keyof typeof widthMap]);
+            const editorContainer = container.parentElement?.parentElement;
+            if (editorContainer) {
+                editorContainer.style.maxWidth = widthMap[newSettings.pageWidth as keyof typeof widthMap];
+                editorContainer.style.width = '100%';
+                editorContainer.style.margin = '0 auto';
             }
         }
     };
@@ -711,317 +731,409 @@ const TypographySettingsPopup: React.FC<{
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 400 }}
                 transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                className="bg-white dark:bg-gray-800 shadow-2xl w-[500px] h-full overflow-hidden flex flex-col"
+                className="bg-white dark:bg-gray-800 shadow-2xl w-[420px] h-auto max-h-[90vh] overflow-hidden flex flex-col"
+                style={{
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+                    backdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(255,255,255,0.1)'
+                }}
             >
+                {/* Gradient overlay similar to BookCard */}
+                <div className="absolute -inset-2 bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 opacity-10 blur-xl z-0"></div>
+                
+                <div className="relative z-10 bg-gradient-to-br from-gray-50/80 to-gray-100/80 dark:from-gray-900/80 dark:to-black/80 flex flex-col rounded-lg">
                 {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between p-4 border-b border-gray-200/50 dark:border-gray-700/50 backdrop-blur-sm">
+                    <motion.div 
+                        className="flex items-center gap-3"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 }}
+                    >
                         <TypeIcon className="w-6 h-6 text-blue-600" />
-                        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
                             TYPOGRAPHY
                         </h2>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    </motion.div>
+                    <motion.button
+                        onClick={handleCancel}
+                        className="p-2 hover:bg-gray-100/50 dark:hover:bg-gray-700/50 rounded-lg transition-colors"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: 0.2 }}
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
-                    </button>
+                    </motion.button>
                 </div>
 
-                {/* Content */}
-                <div className="p-6 overflow-y-auto flex-1">
-                    <div className="space-y-6">
+                {/* Content - 2-Column Grid Layout */}
+                <div 
+                    className="p-4 overflow-y-auto max-h-[70vh] scrollbar-hide" 
+                    style={{ 
+                        scrollbarWidth: 'none', 
+                        msOverflowStyle: 'none'
+                    }}
+                >
+                    <div className="grid grid-cols-2 gap-4">
                         
-                        {/* Font Family Dropdown */}
-                        <div className="space-y-3">
+                        {/* Row 1: Font Family (Full Width) */}
+                        <motion.div 
+                            className="col-span-2 space-y-2"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1 }}
+                        >
                             <div className="flex items-center gap-2">
-                                <FontIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Font Family</h3>
+                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10M12 3v18M8 7h8" />
+                                </svg>
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Font Family</h3>
                             </div>
                             <select
                                 value={settings.fontFamily}
-                                onChange={(e) => setSettings({...settings, fontFamily: e.target.value})}
-                                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm"
+                                onChange={(e) => {
+                                    setSettings({...settings, fontFamily: e.target.value});
+                                }}
+                                className="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white/70 dark:bg-gray-700/70 text-gray-800 dark:text-gray-200 backdrop-blur-sm transition-all duration-200"
                                 style={{ fontFamily: settings.fontFamily }}
                             >
-                                {fontFamilies.map((font) => (
-                                    <option key={font.value} value={font.value} style={{ fontFamily: font.value }}>
-                                        {font.name} {font.kdp && font.ingram ? '(KDP • IS)' : font.kdp ? '(KDP)' : font.ingram ? '(IS)' : ''}
-                                    </option>
+                                {Object.entries(fontFamilies).map(([category, fonts]) => (
+                                    <optgroup key={category} label={category}>
+                                        {fonts.map((font) => (
+                                            <option key={font.name} value={font.value} style={{ fontFamily: font.value }}>
+                                                {font.name} {font.kdp && font.ingram ? '(KDP, IngramSpark)' : 
+                                                              font.kdp ? '(KDP)' : 
+                                                              font.ingram ? '(IngramSpark)' : ''}
+                                            </option>
+                                        ))}
+                                    </optgroup>
                                 ))}
                             </select>
-                        </div>
+                        </motion.div>
 
-                        {/* Text Size Icons */}
-                        <div className="space-y-3">
+                        {/* Row 2: Text Size | Text Alignment */}
+                        <motion.div 
+                            className="space-y-2"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.2 }}
+                        >
                             <div className="flex items-center gap-2">
-                                <TypeIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Text Size</h3>
+                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+                                </svg>
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Text Size</h3>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="grid grid-cols-2 gap-1">
                                 {[
-                                    { name: 'Small', value: 'text-sm', icon: 'Aa' },
-                                    { name: 'Normal', value: 'text-base', icon: 'Aa' },
-                                    { name: 'Large', value: 'text-lg', icon: 'Aa' },
-                                    { name: 'Extra Large', value: 'text-xl', icon: 'Aa' },
-                                ].map((size, index) => (
-                                    <button
+                                    { name: 'Small', value: 'text-sm', size: 'text-xs' },
+                                    { name: 'Normal', value: 'text-base', size: 'text-sm' },
+                                    { name: 'Large', value: 'text-lg', size: 'text-base' },
+                                    { name: 'XL', value: 'text-xl', size: 'text-lg' },
+                                ].map((size) => (
+                                    <motion.button
                                         key={size.value}
                                         onClick={() => setSettings({...settings, fontSize: size.value})}
-                                        className={`flex-1 p-3 rounded-lg border-2 transition-all ${
+                                        className={`p-1.5 rounded-lg border transition-all duration-200 ${
                                             settings.fontSize === size.value
-                                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                                                : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
+                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
                                         }`}
                                         title={size.name}
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        layout
                                     >
-                                        <div className={`font-bold ${
-                                            index === 0 ? 'text-sm' : 
-                                            index === 1 ? 'text-base' : 
-                                            index === 2 ? 'text-lg' : 'text-xl'
-                                        }`}>
-                                            {size.icon}
-                                        </div>
-                                    </button>
+                                        <div className={`font-bold ${size.size}`}>Aa</div>
+                                    </motion.button>
                                 ))}
                             </div>
-                        </div>
+                        </motion.div>
 
-                        {/* Text Indent & Line Height */}
-                        <div className="grid grid-cols-2 gap-6">
-                            {/* Text Indent Icons */}
-                            <div className="space-y-3">
-                                <div className="flex items-center gap-2">
-                                    <IndentIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Text Indent</h3>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {[
-                                        { name: 'None', value: 'none', icon: '⫷' },
-                                        { name: 'Small', value: 'small', icon: '⫸' },
-                                        { name: 'Medium', value: 'medium', icon: '⫸⫸' },
-                                        { name: 'Large', value: 'large', icon: '⫸⫸⫸' }
-                                    ].map((indent) => (
-                                        <button
-                                            key={indent.value}
-                                            onClick={() => setSettings({...settings, textIndent: indent.value})}
-                                            className={`p-2 rounded-lg border-2 transition-all text-sm ${
-                                                settings.textIndent === indent.value
-                                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                                                    : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
-                                            }`}
-                                            title={indent.name}
-                                        >
-                                            <div className="font-mono">{indent.icon}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                                <label className="flex items-center gap-2 cursor-pointer mt-2">
-                                    <input
-                                        type="checkbox"
-                                        checked={settings.chicagoStyle}
-                                        onChange={(e) => setSettings({...settings, chicagoStyle: e.target.checked})}
-                                        className="text-blue-600"
-                                    />
-                                    <span className="text-sm text-gray-600 dark:text-gray-400">Chicago Style first-line</span>
-                                </label>
+                        <motion.div 
+                            className="space-y-2"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.3 }}
+                        >
+                            <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h8m-8 6h16" />
+                                </svg>
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Alignment</h3>
                             </div>
-
-                            {/* Line Height Icons */}
-                            <div className="space-y-3">
-                                <div className="flex items-center gap-2">
-                                    <LineHeightIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Line Height</h3>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {[
-                                        { name: 'Tight', value: 'tight', icon: '≡' },
-                                        { name: 'Normal', value: 'normal', icon: '⩘' },
-                                        { name: 'Relaxed', value: 'relaxed', icon: '⩙' },
-                                        { name: 'Loose', value: 'loose', icon: '⩚' }
-                                    ].map((height) => (
-                                        <button
-                                            key={height.value}
-                                            onClick={() => setSettings({...settings, lineHeight: height.value})}
-                                            className={`p-2 rounded-lg border-2 transition-all text-sm ${
-                                                settings.lineHeight === height.value
-                                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                                                    : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
-                                            }`}
-                                            title={height.name}
-                                        >
-                                            <div className="font-mono text-lg">{height.icon}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Paragraph Spacing & Page Width */}
-                        <div className="grid grid-cols-2 gap-6">
-                            {/* Paragraph Spacing Dropdown */}
-                            <div className="space-y-3">
-                                <div className="flex items-center gap-2">
-                                    <SpacingIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Paragraph Spacing</h3>
-                                </div>
-                                <select
-                                    value={settings.paragraphSpacing}
-                                    onChange={(e) => setSettings({...settings, paragraphSpacing: e.target.value})}
-                                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm"
-                                >
-                                    <option value="0">None</option>
-                                    <option value="0.25em">Small (0.25em)</option>  
-                                    <option value="0.5em">Medium (0.5em)</option>
-                                    <option value="1em">Large (1em)</option>
-                                    <option value="1.5em">Extra Large (1.5em)</option>
-                                </select>
-                            </div>
-
-                            {/* Page Width Icons */}
-                            <div className="space-y-3">
-                                <div className="flex items-center gap-2">
-                                    <WidthIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Page Width</h3>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {[
-                                        { name: 'Fixed', value: 'fixed', icon: '▋' },
-                                        { name: 'Medium', value: 'medium', icon: '▊' },
-                                        { name: 'Full', value: 'full', icon: '█' },
-                                        { name: 'Edge', value: 'edge', icon: '⬛' }
-                                    ].map((width) => (
-                                        <button
-                                            key={width.value}
-                                            onClick={() => setSettings({...settings, pageWidth: width.value})}
-                                            className={`p-2 rounded-lg border-2 transition-all text-sm ${
-                                                settings.pageWidth === width.value
-                                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                                                    : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
-                                            }`}
-                                            title={width.name}
-                                        >
-                                            <div className="font-mono">{width.icon}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Text Alignment Icons */}
-                        <div className="space-y-3">
-                            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Text Alignment</h3>
-                            <div className="flex gap-2">
+                            <div className="grid grid-cols-2 gap-1">
                                 {[
                                     { name: 'Left', value: 'left', icon: '⬅' },
-                                    { name: 'Center', value: 'center', icon: '↔' },
+                                    { name: 'Center', value: 'center', icon: '⬌' },
                                     { name: 'Right', value: 'right', icon: '➡' },
-                                    { name: 'Justify', value: 'justified', icon: '⬌' }
+                                    { name: 'Justify', value: 'justified', icon: '⬍' }
                                 ].map((align) => (
-                                    <button
+                                    <motion.button
                                         key={align.value}
                                         onClick={() => setSettings({...settings, textAlignment: align.value})}
-                                        className={`flex-1 p-3 rounded-lg border-2 transition-all ${
+                                        className={`p-1.5 rounded-lg border transition-all duration-200 ${
                                             settings.textAlignment === align.value
-                                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                                                : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
+                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
                                         }`}
                                         title={align.name}
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        layout
                                     >
-                                        <div className="font-mono text-lg">{align.icon}</div>
-                                    </button>
+                                        <div className="text-sm">{align.icon}</div>
+                                    </motion.button>
                                 ))}
                             </div>
-                        </div>
+                        </motion.div>
 
-                        {/* Scene Divider */}
-                        <div className="space-y-3">
+                        {/* Row 3: Indent | Line Height */}
+                        <motion.div 
+                            className="space-y-2"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.4 }}
+                        >
                             <div className="flex items-center gap-2">
-                                <DividerIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Scene Divider Style</h3>
+                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4l-8 8 8 8m8-16l-8 8 8 8" />
+                                </svg>
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Indent</h3>
                             </div>
-                            <select
-                                value={settings.sceneDivider}
-                                onChange={(e) => setSettings({...settings, sceneDivider: e.target.value})}
-                                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                            >
-                                <option value="boxes">Boxes (■ ■ ■)</option>
-                                <option value="lines">Lines (— — —)</option>
-                                <option value="dots">Dots (• • •)</option>
-                                <option value="asterisks">Asterisks (* * *)</option>
-                                <option value="custom">Custom Symbol</option>
-                            </select>
-                        </div>
+                            <div className="grid grid-cols-2 gap-1">
+                                {[
+                                    { name: 'None', value: 'none', icon: '|' },
+                                    { name: 'Small', value: 'small', icon: '| →' },
+                                    { name: 'Medium', value: 'medium', icon: '|  →' },
+                                    { name: 'Large', value: 'large', icon: '|   →' }
+                                ].map((indent) => (
+                                    <motion.button
+                                        key={indent.value}
+                                        onClick={() => setSettings({...settings, textIndent: indent.value})}
+                                        className={`p-1.5 rounded-lg border transition-all duration-200 text-xs ${
+                                            settings.textIndent === indent.value
+                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
+                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
+                                        }`}
+                                        title={indent.name}
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        layout
+                                    >
+                                        <div className="font-mono">{indent.icon}</div>
+                                    </motion.button>
+                                ))}
+                            </div>
+                        </motion.div>
 
-                        {/* Cursor & Jump Behavior */}
-                        <div className="space-y-3">
+                        <motion.div 
+                            className="space-y-2"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.5 }}
+                        >
                             <div className="flex items-center gap-2">
-                                <CursorIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Cursor & Jump</h3>
+                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                                </svg>
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Line Height</h3>
                             </div>
-                            <div className="space-y-3">
-                                <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                    Jump position in manuscript when switching scenes
+                            <div className="grid grid-cols-2 gap-1">
+                                {[
+                                    { name: 'Tight', value: 'tight', icon: '≡' },
+                                    { name: 'Normal', value: 'normal', icon: '⩘' },
+                                    { name: 'Relaxed', value: 'relaxed', icon: '⩙' },
+                                    { name: 'Loose', value: 'loose', icon: '⩚' }
+                                ].map((height) => (
+                                    <motion.button
+                                        key={height.value}
+                                        onClick={() => setSettings({...settings, lineHeight: height.value})}
+                                        className={`p-1.5 rounded-lg border transition-all duration-200 ${
+                                            settings.lineHeight === height.value
+                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
+                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
+                                        }`}
+                                        title={height.name}
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        layout
+                                    >
+                                        <div className="text-sm">{height.icon}</div>
+                                    </motion.button>
+                                ))}
+                            </div>
+                        </motion.div>
+
+                        {/* Row 4: Paragraph Spacing | Page Width */}
+                        <motion.div 
+                            className="space-y-2"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.6 }}
+                        >
+                            <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                </svg>
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Paragraph</h3>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1">
+                                {[
+                                    { name: 'None', value: '0', icon: '▬' },
+                                    { name: 'Small', value: '0.25em', icon: '▬ ▬' },
+                                    { name: 'Medium', value: '0.5em', icon: '▬  ▬' },
+                                    { name: 'Large', value: '1em', icon: '▬   ▬' }
+                                ].map((spacing) => (
+                                    <motion.button
+                                        key={spacing.value}
+                                        onClick={() => setSettings({...settings, paragraphSpacing: spacing.value})}
+                                        className={`p-1.5 rounded-lg border transition-all duration-200 text-xs ${
+                                            settings.paragraphSpacing === spacing.value
+                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
+                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
+                                        }`}
+                                        title={spacing.name}
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        layout
+                                    >
+                                        <div className="font-mono">{spacing.icon}</div>
+                                    </motion.button>
+                                ))}
+                            </div>
+                        </motion.div>
+
+                        <motion.div 
+                            className="space-y-2"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.7 }}
+                        >
+                            <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                </svg>
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Page Width</h3>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1">
+                                {[
+                                    { name: 'Narrow', value: 'narrow', icon: '│' },
+                                    { name: 'Medium', value: 'medium', icon: '┃' },
+                                    { name: 'Wide', value: 'wide', icon: '█' },
+                                    { name: 'Full', value: 'full', icon: '■' }
+                                ].map((width) => (
+                                    <motion.button
+                                        key={width.value}
+                                        onClick={() => setSettings({...settings, pageWidth: width.value})}
+                                        className={`p-1.5 rounded-lg border transition-all duration-200 ${
+                                            settings.pageWidth === width.value
+                                                ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 shadow-md'
+                                                : 'border-gray-200/50 dark:border-gray-600/50 hover:border-gray-300 dark:hover:border-gray-500 bg-white/50 dark:bg-gray-700/50'
+                                        }`}
+                                        title={width.name}
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        layout
+                                    >
+                                        <div className="text-sm">{width.icon}</div>
+                                    </motion.button>
+                                ))}
+                            </div>
+                        </motion.div>
+
+                        {/* Additional Settings - Compact (Full Width) */}
+                        <motion.div 
+                            className="col-span-2 space-y-2 pt-3 border-t border-gray-200/50 dark:border-gray-700/50"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.8 }}
+                        >
+                            <div className="grid grid-cols-2 gap-3">
+                                {/* Scene Divider */}
+                                <div className="space-y-1">
+                                    <h4 className="text-xs font-medium text-gray-700 dark:text-gray-300">Scene Divider</h4>
+                                    <select
+                                        value={settings.sceneDivider}
+                                        onChange={(e) => setSettings({...settings, sceneDivider: e.target.value})}
+                                        className="w-full p-1 text-xs border border-gray-300/50 dark:border-gray-600/50 rounded bg-white/70 dark:bg-gray-700/70 backdrop-blur-sm"
+                                    >
+                                        <option value="asterisks">* * *</option>
+                                        <option value="boxes">■ ■ ■</option>
+                                        <option value="lines">— — —</option>
+                                        <option value="dots">• • •</option>
+                                    </select>
                                 </div>
-                                <div className="flex gap-2">
-                                    <button className="flex-1 p-2 text-left rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm border border-gray-200 dark:border-gray-600">
-                                        ↑ Start of scene
-                                    </button>
-                                    <button className="flex-1 p-2 text-left rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm border border-gray-200 dark:border-gray-600">
-                                        ↓ End of scene
-                                    </button>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="flex items-center gap-2 cursor-pointer">
+
+                                {/* Checkboxes */}
+                                <div className="space-y-1">
+                                    <label className="flex items-center gap-1 cursor-pointer">
                                         <input
                                             type="checkbox"
-                                            checked={settings.rememberPosition}
-                                            onChange={(e) => setSettings({...settings, rememberPosition: e.target.checked})}
-                                            className="text-blue-600"
+                                            checked={settings.chicagoStyle}
+                                            onChange={(e) => setSettings({...settings, chicagoStyle: e.target.checked})}
+                                            className="w-3 h-3 text-blue-600 rounded"
                                         />
-                                        <span className="text-sm">Remember where I left off</span>
+                                        <span className="text-xs text-gray-600 dark:text-gray-400">Chicago</span>
                                     </label>
-                                    <label className="flex items-center gap-2 cursor-pointer">
+                                    <label className="flex items-center gap-1 cursor-pointer">
                                         <input
                                             type="checkbox"
                                             checked={settings.typewriterMode}
                                             onChange={(e) => setSettings({...settings, typewriterMode: e.target.checked})}
-                                            className="text-blue-600"
+                                            className="w-3 h-3 text-blue-600 rounded"
                                         />
-                                        <div className="flex items-center gap-2">
-                                            <TypewriterIcon className="w-4 h-4" />
-                                            <span className="text-sm">Typewriter Mode</span>
-                                        </div>
+                                        <span className="text-xs text-gray-600 dark:text-gray-400">Typewriter</span>
+                                    </label>
+                                    <label className="flex items-center gap-1 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={settings.rememberPosition}
+                                            onChange={(e) => setSettings({...settings, rememberPosition: e.target.checked})}
+                                            className="w-3 h-3 text-blue-600 rounded"
+                                        />
+                                        <span className="text-xs text-gray-600 dark:text-gray-400">Remember</span>
                                     </label>
                                 </div>
                             </div>
-                        </div>
+                        </motion.div>
                     </div>
                 </div>
 
-                {/* Footer */}
-                <div className="flex items-center justify-between p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                        KDP = Amazon KDP compatible • IS = IngramSpark compatible
+                {/* Footer - Compact */}
+                <motion.div 
+                    className="flex items-center justify-between p-3 border-t border-gray-200/50 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-900/50 backdrop-blur-sm"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.9 }}
+                >
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                        ●● = KDP + IS • ●○ = KDP • ○● = IS
                     </div>
-                    <div className="flex gap-3">
-                        <button
+                    <div className="flex gap-2">
+                        <motion.button
                             onClick={handleCancel}
-                            className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                            className="px-3 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors rounded hover:bg-gray-100/50 dark:hover:bg-gray-800/50"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
                         >
                             Cancel
-                        </button>
-                        <button
+                        </motion.button>
+                        <motion.button
                             onClick={handleApply}
-                            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                            className="px-4 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors font-medium shadow-md"
+                            whileHover={{ scale: 1.05, boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)" }}
+                            whileTap={{ scale: 0.95 }}
                         >
-                            Apply Settings
-                        </button>
+                            Apply
+                        </motion.button>
                     </div>
-                </div>
+                </motion.div>
+            </div>
             </motion.div>
         </div>
     );
