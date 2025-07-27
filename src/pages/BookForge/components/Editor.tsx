@@ -693,7 +693,7 @@ const TypographySettingsPopup: React.FC<{
                 {/* Content */}
                 <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        
+                         
                         {/* Font Family */}
                         <div className="space-y-4">
                             <div className="flex items-center gap-2">
