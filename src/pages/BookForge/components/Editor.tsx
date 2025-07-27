@@ -39,7 +39,9 @@ import {
 
 const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }> = ({ trigger, children }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [position, setPosition] = useState({ top: 0, left: 0 });
     const ref = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -47,20 +49,96 @@ const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }
                 setIsOpen(false);
             }
         };
+        
+        const handleScroll = () => {
+            if (isOpen) {
+                setIsOpen(false);
+            }
+        };
+        
         document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [ref]);
+        window.addEventListener("scroll", handleScroll, true);
+        window.addEventListener("resize", handleScroll);
+        
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+            window.removeEventListener("scroll", handleScroll, true);
+            window.removeEventListener("resize", handleScroll);
+        };
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (isOpen && triggerRef.current) {
+            // Use requestAnimationFrame to ensure DOM is updated
+            requestAnimationFrame(() => {
+                if (!triggerRef.current) return;
+                
+                const rect = triggerRef.current.getBoundingClientRect();
+                const dropdownWidth = 192; // w-48 = 12rem = 192px
+                const dropdownHeight = 300; // max height
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                
+                // Get scroll offsets to account for any scrolling
+                const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+                const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+                
+                console.log('Trigger rect:', rect);
+                console.log('Scroll:', { x: scrollX, y: scrollY });
+                console.log('Viewport:', { width: viewportWidth, height: viewportHeight });
+                
+                // Calculate left position - align dropdown with trigger button
+                let leftPosition = rect.left; // Use viewport relative position for fixed positioning
+                
+                // If dropdown would go off the right edge, align it to the right edge of trigger
+                if (leftPosition + dropdownWidth > viewportWidth - 16) {
+                    leftPosition = rect.right - dropdownWidth;
+                }
+                
+                // Ensure it doesn't go off the left edge
+                leftPosition = Math.max(16, leftPosition);
+                
+                // Calculate top position
+                let topPosition = rect.bottom + 4; // Use viewport relative position
+                
+                // If dropdown would go off the bottom, position it above the trigger
+                if (topPosition + dropdownHeight > viewportHeight - 16) {
+                    topPosition = rect.top - dropdownHeight - 4;
+                    
+                    // If still goes off screen, position at bottom of viewport
+                    if (topPosition < 16) {
+                        topPosition = viewportHeight - dropdownHeight - 16;
+                    }
+                }
+                
+                const finalPosition = {
+                    top: Math.max(16, topPosition),
+                    left: leftPosition
+                };
+                
+                console.log('Final position:', finalPosition);
+                setPosition(finalPosition);
+            });
+        }
+    }, [isOpen]);
 
     return (
         <div ref={ref} className="relative">
-            <div onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
+            <div ref={triggerRef} onClick={() => setIsOpen(!isOpen)}>{trigger}</div>
             <AnimatePresence>
                 {isOpen && (
                     <motion.div
                         initial={{ opacity: 0, y: -5 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -5 }}
-                        className="absolute top-full -right-2 mt-2 w-48 bg-gray-900 dark:bg-slate-200 rounded-lg shadow-lg p-2 z-20 border border-gray-700/50 dark:border-gray-200/50"
+                        className="fixed w-48 bg-gray-900 dark:bg-slate-200 rounded-lg shadow-xl border border-gray-700/50 dark:border-gray-200/50 p-2"
+                        style={{ 
+                            zIndex: 60,
+                            maxHeight: '300px',
+                            overflowY: 'auto',
+                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
+                            position: 'fixed'
+                        }}
                     >
                         {children}
                     </motion.div>
@@ -273,10 +351,11 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
                 top: position.top,
                 left: position.left,
                 transform: 'translateX(-50%)',
+                overflow: 'visible'
             }}
         >
             {/* Header with Quick Actions */}
-            <div className="flex items-center gap-2 p-2 border-b border-gray-700/50 dark:border-gray-200/50">
+            <div className="flex items-center gap-2 p-2 border-b border-gray-700/50 dark:border-gray-200/50" style={{ overflow: 'visible' }}>
                 {/* Blockquote */}
                 <motion.button 
                     whileHover={{ scale: 1.1 }}
@@ -360,7 +439,14 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
             </div>
 
             {/* Main toolbar - single line with horizontal scroll if needed */}
-            <div className="flex items-center gap-2 p-3 overflow-x-auto">
+            <div 
+                className="flex items-center gap-2 p-3"
+                style={{ 
+                    overflowX: 'auto',
+                    overflowY: 'visible',
+                    scrollbarWidth: 'thin'
+                }}
+            >
                 {/* Basic Formatting */}
                 <div className="flex items-center gap-1 flex-shrink-0">{basicFormatting.map(tool => (
                     <motion.button 
@@ -375,12 +461,12 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
                         <tool.icon className="w-4 h-4" />
                     </motion.button>
                 ))}
-            </div>
+                </div>
 
-            <div className="w-px h-6 bg-gray-600 dark:bg-gray-400 flex-shrink-0" />
+                <div className="w-px h-6 bg-gray-600 dark:bg-gray-400 flex-shrink-0" />
 
-            {/* Advanced Formatting Dropdown */}
-            <div className="flex-shrink-0">
+                {/* Advanced Formatting Dropdown */}
+                <div className="flex-shrink-0">
                 <Dropdown trigger={
                     <motion.button 
                         whileHover={{ scale: 1.1 }}
@@ -402,10 +488,10 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
                         ))}
                     </div>
                 </Dropdown>
-            </div>
+                </div>
 
-            {/* Alignment Dropdown */}
-            <div className="flex-shrink-0">
+                {/* Alignment Dropdown */}
+                <div className="flex-shrink-0">
                 <Dropdown trigger={
                     <motion.button 
                         whileHover={{ scale: 1.1 }}
@@ -427,10 +513,10 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
                         ))}
                     </div>
                 </Dropdown>
-            </div>
+                </div>
 
-            {/* Lists Dropdown */}
-            <div className="flex-shrink-0">
+                {/* Lists Dropdown */}
+                <div className="flex-shrink-0">
                 <Dropdown trigger={
                     <motion.button 
                         whileHover={{ scale: 1.1 }}
@@ -452,10 +538,10 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
                         ))}
                     </div>
                 </Dropdown>
-            </div>
+                </div>
 
-            {/* Insert Elements Dropdown */}
-            <div className="flex-shrink-0">
+                {/* Insert Elements Dropdown */}
+                <div className="flex-shrink-0">
                 <Dropdown trigger={
                     <motion.button 
                         whileHover={{ scale: 1.1 }}
@@ -477,12 +563,12 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
                         ))}
                     </div>
                 </Dropdown>
-            </div>
+                </div>
 
-            <div className="w-px h-6 bg-gray-600 dark:bg-gray-400 flex-shrink-0" />
+                <div className="w-px h-6 bg-gray-600 dark:bg-gray-400 flex-shrink-0" />
 
-            {/* AI Tools Dropdown */}
-            <div className="flex-shrink-0">
+                {/* AI Tools Dropdown */}
+                <div className="flex-shrink-0">
                 <Dropdown trigger={
                     <motion.button 
                         whileHover={{ scale: 1.05 }}
@@ -504,7 +590,7 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
                         ))}
                     </div>
                 </Dropdown>
-            </div>
+                </div>
             </div>
         </div>
         {showNoteModal && (
@@ -832,7 +918,7 @@ const TypographySettingsPopup: React.FC<{
     }, [showFontFilter]);
 
     return (
-        <div className="fixed inset-0 z-50 flex">
+        <div className="fixed inset-0 z-[100] flex">
             {/* No backdrop opacity - just click area */}
             <div 
                 className="flex-1 cursor-pointer" 
@@ -965,7 +1051,7 @@ const TypographySettingsPopup: React.FC<{
                                         initial={{ opacity: 0, y: -10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: -10 }}
-                                        className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg z-50 min-w-[140px]"
+                                        className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg z-10 min-w-[140px]"
                                     >
                                         <div className="p-2 space-y-1">
                                             {[
