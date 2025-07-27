@@ -558,7 +558,7 @@ const TypographySettingsPopup: React.FC<{
     editor: TipTapEditor;
 }> = ({ isOpen, onClose, onApply, editor }) => {
     const [settings, setSettings] = useState<TypographySettings>({
-        fontFamily: 'serif',
+        fontFamily: 'Georgia, serif',
         fontSize: 'text-base',
         textIndent: 'none',
         chicagoStyle: false,
@@ -571,51 +571,39 @@ const TypographySettingsPopup: React.FC<{
         rememberPosition: true,
     });
 
-    // Professional fonts for publishing
-    const fontFamilies = {
-        serif: [
-            { name: 'Garamond', value: 'Garamond, serif', kdp: true, ingram: true },
-            { name: 'Baskerville', value: 'Baskerville, serif', kdp: true, ingram: true },
-            { name: 'Georgia', value: 'Georgia, serif', kdp: true, ingram: true },
-            { name: 'Palatino', value: 'Palatino, serif', kdp: true, ingram: true },
-            { name: 'Times New Roman', value: 'Times New Roman, serif', kdp: true, ingram: true },
-            { name: 'Bookerly', value: 'Bookerly, serif', kdp: true, ingram: false },
-            { name: 'Caecilia', value: 'Caecilia, serif', kdp: true, ingram: true },
-            { name: 'Literata', value: 'Literata, serif', kdp: true, ingram: true },
-            { name: 'Roboto Serif', value: 'Roboto Serif, serif', kdp: true, ingram: true },
-            { name: 'Zilla Slab', value: 'Zilla Slab, serif', kdp: true, ingram: true },
-        ],
-        sansSerif: [
-            { name: 'Arial', value: 'Arial, sans-serif', kdp: true, ingram: true },
-            { name: 'Helvetica', value: 'Helvetica, sans-serif', kdp: true, ingram: true },
-            { name: 'Verdana', value: 'Verdana, sans-serif', kdp: true, ingram: true },
-            { name: 'Barlow', value: 'Barlow, sans-serif', kdp: true, ingram: true },
-            { name: 'Exo 2', value: 'Exo 2, sans-serif', kdp: true, ingram: true },
-            { name: 'Atkinson Hyperlegible', value: 'Atkinson Hyperlegible, sans-serif', kdp: true, ingram: true },
-            { name: 'OpenDyslexic', value: 'OpenDyslexic, sans-serif', kdp: false, ingram: false },
-        ],
-        monospace: [
-            { name: 'Courier', value: 'Courier, monospace', kdp: true, ingram: true },
-            { name: 'Courier Prime', value: 'Courier Prime, monospace', kdp: true, ingram: true },
-            { name: 'iA Writer Duospace', value: 'iA Writer Duospace, monospace', kdp: true, ingram: true },
-            { name: 'Recursive', value: 'Recursive, monospace', kdp: true, ingram: true },
-        ],
-    };
+    const [originalSettings, setOriginalSettings] = useState<TypographySettings | null>(null);
 
-    const handleApply = () => {
-        // Apply settings to editor
+    // Professional fonts for publishing - simplified for dropdown
+    const fontFamilies = [
+        { name: 'Garamond', value: 'Garamond, serif', kdp: true, ingram: true },
+        { name: 'Baskerville', value: 'Baskerville, serif', kdp: true, ingram: true },
+        { name: 'Georgia', value: 'Georgia, serif', kdp: true, ingram: true },
+        { name: 'Palatino', value: 'Palatino, serif', kdp: true, ingram: true },
+        { name: 'Times New Roman', value: 'Times New Roman, serif', kdp: true, ingram: true },
+        { name: 'Bookerly', value: 'Bookerly, serif', kdp: true, ingram: false },
+        { name: 'Arial', value: 'Arial, sans-serif', kdp: true, ingram: true },
+        { name: 'Helvetica', value: 'Helvetica, sans-serif', kdp: true, ingram: true },
+        { name: 'Courier', value: 'Courier, monospace', kdp: true, ingram: true },
+        { name: 'Courier Prime', value: 'Courier Prime, monospace', kdp: true, ingram: true },
+    ];
+
+    // Apply settings in real-time to editor
+    const applySettingsToEditor = (newSettings: TypographySettings) => {
         const editorElement = editor.view.dom as HTMLElement;
         const container = editorElement.closest('.prose') as HTMLElement;
         
         if (container) {
             // Apply font family
-            const selectedFont = Object.values(fontFamilies).flat().find(f => f.value === settings.fontFamily);
-            if (selectedFont) {
-                container.style.fontFamily = selectedFont.value;
-            }
+            container.style.fontFamily = newSettings.fontFamily;
             
             // Apply font size
-            container.className = container.className.replace(/text-(sm|base|lg|xl|2xl)/, settings.fontSize);
+            const sizeMap = {
+                'text-sm': '14px',
+                'text-base': '16px', 
+                'text-lg': '18px',
+                'text-xl': '20px'
+            };
+            container.style.fontSize = sizeMap[newSettings.fontSize as keyof typeof sizeMap];
             
             // Apply text indent
             const indentMap = {
@@ -624,7 +612,7 @@ const TypographySettingsPopup: React.FC<{
                 'medium': '2em',
                 'large': '3em'
             };
-            container.style.setProperty('--text-indent', indentMap[settings.textIndent as keyof typeof indentMap]);
+            container.style.setProperty('--text-indent', indentMap[newSettings.textIndent as keyof typeof indentMap]);
             
             // Apply line height
             const lineHeightMap = {
@@ -633,32 +621,77 @@ const TypographySettingsPopup: React.FC<{
                 'relaxed': '1.75',
                 'loose': '2'
             };
-            container.style.lineHeight = lineHeightMap[settings.lineHeight as keyof typeof lineHeightMap];
+            container.style.lineHeight = lineHeightMap[newSettings.lineHeight as keyof typeof lineHeightMap];
             
             // Apply paragraph spacing
-            container.style.setProperty('--paragraph-spacing', settings.paragraphSpacing);
+            container.style.setProperty('--paragraph-spacing', newSettings.paragraphSpacing);
             
             // Apply text alignment to all content
-            if (settings.textAlignment === 'justified') {
+            if (newSettings.textAlignment === 'justified') {
                 editor.chain().focus().selectAll().setTextAlign('justify').run();
             } else {
-                editor.chain().focus().selectAll().setTextAlign('left').run();
+                editor.chain().focus().selectAll().setTextAlign(newSettings.textAlignment).run();
             }
             
             // Apply page width
             const widthMap = {
                 'fixed': 'max-w-lg',
-                'medium': 'max-w-3xl',
+                'medium': 'max-w-3xl', 
                 'full': 'max-w-5xl',
                 'edge': 'max-w-none'
             };
             const parentContainer = container.parentElement;
             if (parentContainer) {
-                parentContainer.className = parentContainer.className.replace(/max-w-\w+/, widthMap[settings.pageWidth as keyof typeof widthMap]);
+                parentContainer.className = parentContainer.className.replace(/max-w-\w+/, widthMap[newSettings.pageWidth as keyof typeof widthMap]);
             }
         }
-        
+    };
+
+    // Store original settings when panel opens
+    useEffect(() => {
+        if (isOpen && !originalSettings) {
+            const editorElement = editor.view.dom as HTMLElement;
+            const container = editorElement.closest('.prose') as HTMLElement;
+            
+            if (container) {
+                const current: TypographySettings = {
+                    fontFamily: container.style.fontFamily || 'Georgia, serif',
+                    fontSize: 'text-base', // default
+                    textIndent: 'none',
+                    chicagoStyle: false,
+                    lineHeight: 'normal',
+                    paragraphSpacing: '0.5em',
+                    pageWidth: 'medium',
+                    textAlignment: 'left',
+                    sceneDivider: 'asterisks',
+                    typewriterMode: false,
+                    rememberPosition: true,
+                };
+                setOriginalSettings(current);
+            }
+        }
+    }, [isOpen, originalSettings, editor]);
+
+    // Apply changes in real-time
+    useEffect(() => {
+        if (isOpen) {
+            applySettingsToEditor(settings);
+        }
+    }, [settings, isOpen, editor]);
+
+    const handleApply = () => {
+        // Settings are already applied in real-time, just cleanup and close
+        setOriginalSettings(null);
         onApply(settings);
+        onClose();
+    };
+
+    const handleCancel = () => {
+        // Revert to original settings if they exist
+        if (originalSettings) {
+            applySettingsToEditor(originalSettings);
+        }
+        setOriginalSettings(null);
         onClose();
     };
 
@@ -699,130 +732,137 @@ const TypographySettingsPopup: React.FC<{
                 </div>
 
                 {/* Content */}
-                <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                         
-                        {/* Font Family */}
-                        <div className="space-y-4">
+                <div className="p-6 overflow-y-auto flex-1">
+                    <div className="space-y-6">
+                        
+                        {/* Font Family Dropdown */}
+                        <div className="space-y-3">
                             <div className="flex items-center gap-2">
                                 <FontIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                                 <h3 className="font-semibold text-gray-800 dark:text-gray-200">Font Family</h3>
                             </div>
-                            
-                            {Object.entries(fontFamilies).map(([category, fonts]) => (
-                                <div key={category} className="space-y-2">
-                                    <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 capitalize">
-                                        {category === 'sansSerif' ? 'Sans-Serif' : category}
-                                    </h4>
-                                    <div className="space-y-1">
-                                        {fonts.map((font) => (
-                                            <label key={font.value} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
-                                                <input
-                                                    type="radio"
-                                                    name="fontFamily"
-                                                    value={font.value}
-                                                    checked={settings.fontFamily === font.value}
-                                                    onChange={(e) => setSettings({...settings, fontFamily: e.target.value})}
-                                                    className="text-blue-600"
-                                                />
-                                                <span className="flex-1" style={{ fontFamily: font.value }}>
-                                                    {font.name}
-                                                </span>
-                                                <div className="flex gap-1">
-                                                    {font.kdp && <span className="text-xs bg-green-100 text-green-800 px-1.5 py-0.5 rounded">KDP</span>}
-                                                    {font.ingram && <span className="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">IS</span>}
-                                                </div>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
+                            <select
+                                value={settings.fontFamily}
+                                onChange={(e) => setSettings({...settings, fontFamily: e.target.value})}
+                                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm"
+                                style={{ fontFamily: settings.fontFamily }}
+                            >
+                                {fontFamilies.map((font) => (
+                                    <option key={font.value} value={font.value} style={{ fontFamily: font.value }}>
+                                        {font.name} {font.kdp && font.ingram ? '(KDP • IS)' : font.kdp ? '(KDP)' : font.ingram ? '(IS)' : ''}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
 
-                        {/* Typography Controls */}
-                        <div className="space-y-6">
-                            
-                            {/* Font Size */}
+                        {/* Text Size Icons */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                                <TypeIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Text Size</h3>
+                            </div>
+                            <div className="flex gap-2">
+                                {[
+                                    { name: 'Small', value: 'text-sm', icon: 'Aa' },
+                                    { name: 'Normal', value: 'text-base', icon: 'Aa' },
+                                    { name: 'Large', value: 'text-lg', icon: 'Aa' },
+                                    { name: 'Extra Large', value: 'text-xl', icon: 'Aa' },
+                                ].map((size, index) => (
+                                    <button
+                                        key={size.value}
+                                        onClick={() => setSettings({...settings, fontSize: size.value})}
+                                        className={`flex-1 p-3 rounded-lg border-2 transition-all ${
+                                            settings.fontSize === size.value
+                                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                                : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+                                        }`}
+                                        title={size.name}
+                                    >
+                                        <div className={`font-bold ${
+                                            index === 0 ? 'text-sm' : 
+                                            index === 1 ? 'text-base' : 
+                                            index === 2 ? 'text-lg' : 'text-xl'
+                                        }`}>
+                                            {size.icon}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Text Indent & Line Height */}
+                        <div className="grid grid-cols-2 gap-6">
+                            {/* Text Indent Icons */}
                             <div className="space-y-3">
                                 <div className="flex items-center gap-2">
-                                    <TypeIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Text Size</h3>
+                                    <IndentIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Text Indent</h3>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     {[
-                                        { name: 'Small', value: 'text-sm' },
-                                        { name: 'Normal', value: 'text-base' },
-                                        { name: 'Large', value: 'text-lg' },
-                                        { name: 'Extra Large', value: 'text-xl' },
-                                    ].map((size) => (
-                                        <label key={size.value} className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="fontSize"
-                                                value={size.value}
-                                                checked={settings.fontSize === size.value}
-                                                onChange={(e) => setSettings({...settings, fontSize: e.target.value})}
-                                                className="text-blue-600"
-                                            />
-                                            <span>{size.name}</span>
-                                        </label>
+                                        { name: 'None', value: 'none', icon: '⫷' },
+                                        { name: 'Small', value: 'small', icon: '⫸' },
+                                        { name: 'Medium', value: 'medium', icon: '⫸⫸' },
+                                        { name: 'Large', value: 'large', icon: '⫸⫸⫸' }
+                                    ].map((indent) => (
+                                        <button
+                                            key={indent.value}
+                                            onClick={() => setSettings({...settings, textIndent: indent.value})}
+                                            className={`p-2 rounded-lg border-2 transition-all text-sm ${
+                                                settings.textIndent === indent.value
+                                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                                    : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+                                            }`}
+                                            title={indent.name}
+                                        >
+                                            <div className="font-mono">{indent.icon}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                                <label className="flex items-center gap-2 cursor-pointer mt-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings.chicagoStyle}
+                                        onChange={(e) => setSettings({...settings, chicagoStyle: e.target.checked})}
+                                        className="text-blue-600"
+                                    />
+                                    <span className="text-sm text-gray-600 dark:text-gray-400">Chicago Style first-line</span>
+                                </label>
+                            </div>
+
+                            {/* Line Height Icons */}
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <LineHeightIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Line Height</h3>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {[
+                                        { name: 'Tight', value: 'tight', icon: '≡' },
+                                        { name: 'Normal', value: 'normal', icon: '⩘' },
+                                        { name: 'Relaxed', value: 'relaxed', icon: '⩙' },
+                                        { name: 'Loose', value: 'loose', icon: '⩚' }
+                                    ].map((height) => (
+                                        <button
+                                            key={height.value}
+                                            onClick={() => setSettings({...settings, lineHeight: height.value})}
+                                            className={`p-2 rounded-lg border-2 transition-all text-sm ${
+                                                settings.lineHeight === height.value
+                                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                                    : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+                                            }`}
+                                            title={height.name}
+                                        >
+                                            <div className="font-mono text-lg">{height.icon}</div>
+                                        </button>
                                     ))}
                                 </div>
                             </div>
+                        </div>
 
-                            {/* Text Indent & Line Height */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-3">
-                                    <div className="flex items-center gap-2">
-                                        <IndentIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                        <h3 className="font-semibold text-gray-800 dark:text-gray-200">Text Indent</h3>
-                                    </div>
-                                    {['none', 'small', 'medium', 'large'].map((indent) => (
-                                        <label key={indent} className="flex items-center gap-2 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="textIndent"
-                                                value={indent}
-                                                checked={settings.textIndent === indent}
-                                                onChange={(e) => setSettings({...settings, textIndent: e.target.value})}
-                                                className="text-blue-600"
-                                            />
-                                            <span className="capitalize">{indent}</span>
-                                        </label>
-                                    ))}
-                                    <label className="flex items-center gap-2 cursor-pointer mt-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={settings.chicagoStyle}
-                                            onChange={(e) => setSettings({...settings, chicagoStyle: e.target.checked})}
-                                            className="text-blue-600"
-                                        />
-                                        <span className="text-sm">Chicago Style first-line</span>
-                                    </label>
-                                </div>
-
-                                <div className="space-y-3">
-                                    <div className="flex items-center gap-2">
-                                        <LineHeightIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                        <h3 className="font-semibold text-gray-800 dark:text-gray-200">Line Height</h3>
-                                    </div>
-                                    {['tight', 'normal', 'relaxed', 'loose'].map((height) => (
-                                        <label key={height} className="flex items-center gap-2 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="lineHeight"
-                                                value={height}
-                                                checked={settings.lineHeight === height}
-                                                onChange={(e) => setSettings({...settings, lineHeight: e.target.value})}
-                                                className="text-blue-600"
-                                            />
-                                            <span className="capitalize">{height}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Paragraph Spacing */}
+                        {/* Paragraph Spacing & Page Width */}
+                        <div className="grid grid-cols-2 gap-6">
+                            {/* Paragraph Spacing Dropdown */}
                             <div className="space-y-3">
                                 <div className="flex items-center gap-2">
                                     <SpacingIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -831,17 +871,17 @@ const TypographySettingsPopup: React.FC<{
                                 <select
                                     value={settings.paragraphSpacing}
                                     onChange={(e) => setSettings({...settings, paragraphSpacing: e.target.value})}
-                                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm"
                                 >
                                     <option value="0">None</option>
-                                    <option value="0.25em">Small (0.25em)</option>
+                                    <option value="0.25em">Small (0.25em)</option>  
                                     <option value="0.5em">Medium (0.5em)</option>
                                     <option value="1em">Large (1em)</option>
                                     <option value="1.5em">Extra Large (1.5em)</option>
                                 </select>
                             </div>
 
-                            {/* Page Width */}
+                            {/* Page Width Icons */}
                             <div className="space-y-3">
                                 <div className="flex items-center gap-2">
                                     <WidthIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -849,87 +889,92 @@ const TypographySettingsPopup: React.FC<{
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     {[
-                                        { name: 'Fixed', value: 'fixed' },
-                                        { name: 'Medium', value: 'medium' },
-                                        { name: 'Full', value: 'full' },
-                                        { name: 'Edge-to-edge', value: 'edge' },
+                                        { name: 'Fixed', value: 'fixed', icon: '▋' },
+                                        { name: 'Medium', value: 'medium', icon: '▊' },
+                                        { name: 'Full', value: 'full', icon: '█' },
+                                        { name: 'Edge', value: 'edge', icon: '⬛' }
                                     ].map((width) => (
-                                        <label key={width.value} className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="pageWidth"
-                                                value={width.value}
-                                                checked={settings.pageWidth === width.value}
-                                                onChange={(e) => setSettings({...settings, pageWidth: e.target.value})}
-                                                className="text-blue-600"
-                                            />
-                                            <span>{width.name}</span>
-                                        </label>
+                                        <button
+                                            key={width.value}
+                                            onClick={() => setSettings({...settings, pageWidth: width.value})}
+                                            className={`p-2 rounded-lg border-2 transition-all text-sm ${
+                                                settings.pageWidth === width.value
+                                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                                    : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+                                            }`}
+                                            title={width.name}
+                                        >
+                                            <div className="font-mono">{width.icon}</div>
+                                        </button>
                                     ))}
                                 </div>
                             </div>
+                        </div>
 
-                            {/* Text Alignment */}
-                            <div className="space-y-3">
-                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Text Alignment</h3>
-                                <div className="flex gap-4">
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            name="textAlignment"
-                                            value="left"
-                                            checked={settings.textAlignment === 'left'}
-                                            onChange={(e) => setSettings({...settings, textAlignment: e.target.value})}
-                                            className="text-blue-600"
-                                        />
-                                        <span>Left</span>
-                                    </label>
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            name="textAlignment"
-                                            value="justified"
-                                            checked={settings.textAlignment === 'justified'}
-                                            onChange={(e) => setSettings({...settings, textAlignment: e.target.value})}
-                                            className="text-blue-600"
-                                        />
-                                        <span>Justified</span>
-                                    </label>
-                                </div>
+                        {/* Text Alignment Icons */}
+                        <div className="space-y-3">
+                            <h3 className="font-semibold text-gray-800 dark:text-gray-200">Text Alignment</h3>
+                            <div className="flex gap-2">
+                                {[
+                                    { name: 'Left', value: 'left', icon: '⬅' },
+                                    { name: 'Center', value: 'center', icon: '↔' },
+                                    { name: 'Right', value: 'right', icon: '➡' },
+                                    { name: 'Justify', value: 'justified', icon: '⬌' }
+                                ].map((align) => (
+                                    <button
+                                        key={align.value}
+                                        onClick={() => setSettings({...settings, textAlignment: align.value})}
+                                        className={`flex-1 p-3 rounded-lg border-2 transition-all ${
+                                            settings.textAlignment === align.value
+                                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                                : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+                                        }`}
+                                        title={align.name}
+                                    >
+                                        <div className="font-mono text-lg">{align.icon}</div>
+                                    </button>
+                                ))}
                             </div>
+                        </div>
 
-                            {/* Scene Divider */}
-                            <div className="space-y-3">
-                                <div className="flex items-center gap-2">
-                                    <DividerIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Scene Divider Style</h3>
-                                </div>
-                                <select
-                                    value={settings.sceneDivider}
-                                    onChange={(e) => setSettings({...settings, sceneDivider: e.target.value})}
-                                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                                >
-                                    <option value="boxes">Boxes (■ ■ ■)</option>
-                                    <option value="lines">Lines (— — —)</option>
-                                    <option value="dots">Dots (• • •)</option>
-                                    <option value="asterisks">Asterisks (* * *)</option>
-                                    <option value="custom">Custom Symbol</option>
-                                </select>
+                        {/* Scene Divider */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                                <DividerIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Scene Divider Style</h3>
                             </div>
+                            <select
+                                value={settings.sceneDivider}
+                                onChange={(e) => setSettings({...settings, sceneDivider: e.target.value})}
+                                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                            >
+                                <option value="boxes">Boxes (■ ■ ■)</option>
+                                <option value="lines">Lines (— — —)</option>
+                                <option value="dots">Dots (• • •)</option>
+                                <option value="asterisks">Asterisks (* * *)</option>
+                                <option value="custom">Custom Symbol</option>
+                            </select>
+                        </div>
 
-                            {/* Cursor & Jump Behavior */}
+                        {/* Cursor & Jump Behavior */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                                <CursorIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                                <h3 className="font-semibold text-gray-800 dark:text-gray-200">Cursor & Jump</h3>
+                            </div>
                             <div className="space-y-3">
-                                <div className="flex items-center gap-2">
-                                    <CursorIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Cursor & Jump</h3>
+                                <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                                    Jump position in manuscript when switching scenes
+                                </div>
+                                <div className="flex gap-2">
+                                    <button className="flex-1 p-2 text-left rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm border border-gray-200 dark:border-gray-600">
+                                        ↑ Start of scene
+                                    </button>
+                                    <button className="flex-1 p-2 text-left rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm border border-gray-200 dark:border-gray-600">
+                                        ↓ End of scene
+                                    </button>
                                 </div>
                                 <div className="space-y-2">
-                                    <button className="w-full text-left p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm">
-                                        Jump to Start of Scene
-                                    </button>
-                                    <button className="w-full text-left p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm">
-                                        Jump to End of Scene
-                                    </button>
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
                                             type="checkbox"
@@ -964,7 +1009,7 @@ const TypographySettingsPopup: React.FC<{
                     </div>
                     <div className="flex gap-3">
                         <button
-                            onClick={onClose}
+                            onClick={handleCancel}
                             className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
                         >
                             Cancel
