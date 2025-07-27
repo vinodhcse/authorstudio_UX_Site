@@ -53,12 +53,12 @@ const EditorFooter: React.FC<{ book: Book }> = ({ book }) => {
 
     return (
         <motion.footer 
-            className="fixed bottom-6 left-0 right-0 z-30 flex justify-center"
+            className="fixed bottom-0 left-0 right-10 z-30 flex justify-center"
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.5, ease: 'easeOut', delay: 0.5 }}
         >
-             <div className="h-16 w-[95%] max-w-4xl rounded-full bg-gradient-to-br from-gray-800 to-black dark:from-slate-200 dark:to-gray-50 border border-gray-700/50 dark:border-gray-300/50 shadow-2xl flex items-center justify-between px-6">
+             <div className="h-8 w-[98%] max-w-5xl rounded-t-2xl bg-gradient-to-br from-gray-800 to-black dark:from-slate-200 dark:to-gray-50 border-t border-l border-r border-gray-700/50 dark:border-gray-300/50 shadow-2xl flex items-center justify-between px-8">
                 {/* Left: word counts */}
                 <div className="flex items-center gap-6 text-xs text-white/70 dark:text-black/70 font-medium w-1/4">
                     <span>Words: 213</span>
@@ -67,7 +67,7 @@ const EditorFooter: React.FC<{ book: Book }> = ({ book }) => {
                 
                 {/* Middle: Job progress or Book Title */}
                 <div className="flex-grow flex justify-center items-center h-full">
-                    <div className="relative w-full max-w-sm h-10 rounded-full bg-white/5 dark:bg-black/5 shadow-inner overflow-hidden">
+                    <div className="relative w-full max-w-sm h-6 rounded-full bg-white/5 dark:bg-black/5 shadow-inner overflow-hidden">
                         <AnimatePresence mode="wait">
                             {jobProgress !== null ? (
                                 <motion.div
@@ -96,7 +96,7 @@ const EditorFooter: React.FC<{ book: Book }> = ({ book }) => {
                                     animate={{ opacity: 1 }}
                                     exit={{ opacity: 0 }}
                                 >
-                                    <p className="font-bold text-white dark:text-black truncate text-base leading-tight text-shadow-sm">{book.title}</p>
+                                    <p className="font-bold text-white dark:text-black truncate text-sm leading-tight text-shadow-sm">{book.title}</p>
                                 </motion.div>
                             )}
                         </AnimatePresence>
@@ -109,9 +109,9 @@ const EditorFooter: React.FC<{ book: Book }> = ({ book }) => {
                         onClick={() => setSaveMenuOpen(!isSaveMenuOpen)}
                         className="flex items-center gap-2 text-xs text-white/70 dark:text-black/70 font-medium"
                     >
-                        <span className="relative flex h-3 w-3">
+                        <span className="relative flex h-2 w-2">
                           <span className={`animate-pulse-dot absolute inline-flex h-full w-full rounded-full ${currentStatus.pulseColor} opacity-75`}></span>
-                          <span className={`relative inline-flex rounded-full h-3 w-3 ${currentStatus.color}`}></span>
+                          <span className={`relative inline-flex rounded-full h-2 w-2 ${currentStatus.color}`}></span>
                         </span>
                         <span>{currentStatus.text}</span>
                     </button>
