@@ -1,9 +1,9 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence, Variants } from 'framer-motion';
+import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Book, Version, Theme } from '../../../types';
-import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, FilePlusIcon, TypeIcon } from '../../../constants';
+import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon } from '../../../constants';
 import ChapterSettingsModal from './ChapterSettingsModal';
 
 const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNode; className?: string }> = ({ trigger, children, className }) => {
@@ -29,7 +29,7 @@ const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNo
   );
 };
 
-const ChapterProgressBar: React.FC<{ book: Book, version: Version, onOpenSettings: () => void }> = ({ book, version, onOpenSettings }) => {
+const ChapterProgressBar: React.FC<{ book: Book, onOpenSettings: () => void, onOpenTypographySettings: () => void }> = ({ book, onOpenSettings, onOpenTypographySettings }) => {
     const [isOpen, setIsOpen] = useState(false);
     const triggerRef = useRef<HTMLDivElement>(null);
 
@@ -67,10 +67,7 @@ const ChapterProgressBar: React.FC<{ book: Book, version: Version, onOpenSetting
                     </div>
                     <motion.button 
                         onClick={() => {
-                            // Trigger typography settings
-                            if ((window as any).__openTypographySettings) {
-                                (window as any).__openTypographySettings();
-                            }
+                            onOpenTypographySettings();
                         }}
                         className="p-2 hover:bg-white/10 dark:hover:bg-black/10 rounded-full transition-colors z-10"
                         whileHover={{ scale: 1.2, rotate: 15 }}
@@ -161,9 +158,10 @@ interface EditorHeaderProps {
     version: Version;
     theme: Theme;
     setTheme: (theme: Theme) => void;
+    onOpenTypographySettings: () => void;
 }
 
-const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTheme }) => {
+const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTheme, onOpenTypographySettings }) => {
     const editorModes = ['Writing', 'Planning', 'Formatting', 'Brainstorming'];
     const [activeMode, setActiveMode] = useState('Writing');
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
@@ -189,7 +187,11 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTh
                             </div>
 
                             <div className="w-[32rem]">
-                                <ChapterProgressBar book={book} version={version} onOpenSettings={() => setChapterSettingsOpen(true)} />
+                                <ChapterProgressBar 
+                                    book={book} 
+                                    onOpenSettings={() => setChapterSettingsOpen(true)}
+                                    onOpenTypographySettings={onOpenTypographySettings}
+                                />
                             </div>
 
                             <div className="flex gap-2 justify-start">

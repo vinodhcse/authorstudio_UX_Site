@@ -33,7 +33,7 @@ import {
     HighlightIcon, CodeIcon, TextQuoteIcon, AlignLeftIcon, AlignCenterIcon, AlignRightIcon, 
     AlignJustifyIcon, LinkIcon, ImageIcon, TableIcon, MinusIcon, ListIcon, ListOrderedIcon,
     CheckSquareIcon, PaletteIcon, Wand2Icon, UserIcon, MessageSquareIcon, 
-    ChevronDownIcon, SparklesIcon, StickyNoteIcon, SlashIcon, SettingsIcon, TypeIcon,
+    ChevronDownIcon, SparklesIcon, StickyNoteIcon, SlashIcon, TypeIcon,
     FontIcon, IndentIcon, LineHeightIcon, SpacingIcon, WidthIcon, DividerIcon, CursorIcon, TypewriterIcon,
     PenIcon, PlusIcon
 } from '../../../constants';
@@ -665,12 +665,20 @@ const TypographySettingsPopup: React.FC<{
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/30 z-50 flex">
+            {/* Backdrop - click to close */}
+            <div 
+                className="flex-1 cursor-pointer" 
+                onClick={onClose}
+            />
+            
+            {/* Side Panel */}
             <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden"
+                initial={{ opacity: 0, x: 400 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 400 }}
+                transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                className="bg-white dark:bg-gray-800 shadow-2xl w-[500px] h-full overflow-hidden flex flex-col"
             >
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
@@ -1023,7 +1031,7 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
 
     useEffect(() => {
         const updateMenu = () => {
-            const { $from, from, to } = editor.state.selection;
+            const { $from, from } = editor.state.selection;
             const isEmptyParagraph = $from.parent.content.size === 0 && $from.parent.type.name === 'paragraph';
             
             // Get the text content of the current paragraph
@@ -1172,14 +1180,24 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
 
 
 
-const Editor: React.FC<{ onOpenTypographySettings?: () => void }> = ({ onOpenTypographySettings }) => {
-    const [showTypographySettings, setShowTypographySettings] = useState(false);
+const Editor: React.FC<{ 
+    showTypographySettings?: boolean;
+    onCloseTypographySettings?: () => void;
+    onOpenTypographySettings?: () => void;
+}> = ({ showTypographySettings = false, onCloseTypographySettings, onOpenTypographySettings }) => {
+    
+    // Remove the internal state since it's now managed by parent
+    // const [showTypographySettings, setShowTypographySettings] = useState(false);
     
     // Expose the function to parent components through useEffect
     useEffect(() => {
         if (onOpenTypographySettings) {
             // This allows parent components to trigger the typography settings
-            (window as any).__openTypographySettings = () => setShowTypographySettings(true);
+            (window as any).__openTypographySettings = () => {
+                if (onOpenTypographySettings) {
+                    onOpenTypographySettings();
+                }
+            };
         }
         return () => {
             delete (window as any).__openTypographySettings;
@@ -1465,7 +1483,7 @@ const Editor: React.FC<{ onOpenTypographySettings?: () => void }> = ({ onOpenTyp
             <EditorFloatingMenu editor={editor} />
             <TypographySettingsPopup 
                 isOpen={showTypographySettings}
-                onClose={() => setShowTypographySettings(false)}
+                onClose={() => onCloseTypographySettings && onCloseTypographySettings()}
                 onApply={(settings) => {
                     console.log('Applied typography settings:', settings);
                     // Settings are already applied in the popup's handleApply function
