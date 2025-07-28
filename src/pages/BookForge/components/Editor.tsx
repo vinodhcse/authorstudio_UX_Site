@@ -44,9 +44,13 @@ import { CharacterImpersonationExtension } from '../../../extensions/CharacterIm
 import { TestExtension } from '../../../extensions/TestExtension';
 import { SimpleExtension } from '../../../extensions/SimpleExtension';
 
+//Tauri
+import { useClipboard } from '../../../hooks/useClipboard';
+import { toast } from '../../../hooks/use-toast';
+import { Toaster } from '../../../components/ui/toaster';
+
 const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }> = ({ trigger, children }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [position, setPosition] = useState({ top: 0, left: 0 });
     const ref = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLDivElement>(null);
 
@@ -124,7 +128,7 @@ const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }
                 };
                 
                 console.log('Final position:', finalPosition);
-                setPosition(finalPosition);
+                // Position is handled by the fixed positioning in the style
             });
         }
     }, [isOpen]);
@@ -219,6 +223,7 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
     const [position, setPosition] = useState({ top: 0, left: 0 });
     const [showNoteModal, setShowNoteModal] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+    
 
     // AI Tools
     const aiTools = [
@@ -1805,6 +1810,8 @@ const Editor: React.FC<{
     
     // Remove the internal state since it's now managed by parent
     // const [showTypographySettings, setShowTypographySettings] = useState(false);
+
+    const { copyToClipboard, canCopy } = useClipboard();
     
     // Expose the function to parent components through useEffect
     useEffect(() => {
@@ -1941,6 +1948,53 @@ const Editor: React.FC<{
             attributes: {
                 class: 'prose dark:prose-invert prose-lg max-w-none focus:outline-none font-serif text-gray-800 dark:text-gray-300 leading-relaxed book-prose',
             },
+            handleKeyDown(view, event) {
+            // Handle Ctrl+C / Cmd+C
+            if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
+                event.preventDefault();
+                const { state } = view;
+                const { from, to } = state.selection;
+                const selectedText = state.doc.textBetween(from, to);
+                
+                if (selectedText) {
+                    copyToClipboard(selectedText).then((success) => {
+                        if (!success) {
+                            // Show toast notification for blocked copy attempt
+                            toast({
+                                title: "Copy Blocked",
+                                description: "Copy operation was blocked by clipboard control. Please check your permissions.",
+                                variant: "destructive",
+                            });
+                        } else {
+                            // Show success toast for successful copy (only for short text to avoid spam)
+                            if (selectedText.length < 500) {
+                                toast({
+                                    title: "Text Copied",
+                                    description: `Copied ${selectedText.length} characters to clipboard.`,
+                                    variant: "default",
+                                });
+                            }
+                        }
+                    }).catch(() => {
+                        toast({
+                            title: "Copy Failed",
+                            description: "An error occurred while copying text.",
+                            variant: "destructive",
+                        });
+                    });
+                }
+                return true;
+            }
+            
+            if (event.key === 'Enter') {
+                const { selection } = view.state;
+                if (selection.empty && selection.$head.pos === view.state.doc.content.size) {
+                event.preventDefault();
+                return true;
+                }
+            }
+            return false;
+            },
         },
     });
 
@@ -1973,7 +2027,8 @@ const Editor: React.FC<{
     }, [editor, onEditorReady]);
 
     return (
-        <main className="flex-grow w-full overflow-y-auto custom-scrollbar relative pb-12">
+        <>
+            <main className="flex-grow w-full overflow-y-auto custom-scrollbar relative pb-12">
                 <style>
                 {`
                     .ProseMirror {
@@ -2148,24 +2203,48 @@ const Editor: React.FC<{
                         -ms-user-select: text;
                     }
                 `}
-            </style>
-            
-            <EditorBubbleMenu editor={editor} />
-            <EditorFloatingMenu editor={editor} />
-            <TypographySettingsPopup 
-                isOpen={showTypographySettings}
-                onClose={() => onCloseTypographySettings && onCloseTypographySettings()}
-                onApply={(settings) => {
-                    console.log('Applied typography settings:', settings);
-                    // Settings are already applied in the popup's handleApply function
-                }}
-                editor={editor}
-            />
+                </style>
+                
+                <EditorBubbleMenu editor={editor} />
+                <EditorFloatingMenu editor={editor} />
+                <TypographySettingsPopup 
+                    isOpen={showTypographySettings}
+                    onClose={() => onCloseTypographySettings && onCloseTypographySettings()}
+                    onApply={(settings) => {
+                        console.log('Applied typography settings:', settings);
+                        // Settings are already applied in the popup's handleApply function
+                    }}
+                    editor={editor}
+                />
 
-            <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-16">
-                <EditorContent editor={editor} />
-            </div>
-        </main>
+                <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-16">
+                    <EditorContent editor={editor} />
+                </div>
+
+                {/* Enhanced clipboard status indicator */}
+                {window.__TAURI__ && (
+                    <div className="fixed bottom-4 right-4 z-50">
+                        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-lg border transition-all duration-200 ${
+                            canCopy 
+                                ? 'bg-green-50 text-green-800 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' 
+                                : 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'
+                        }`}>
+                            <div className={`w-2 h-2 rounded-full ${
+                                canCopy ? 'bg-green-500' : 'bg-red-500'
+                            }`} />
+                            <span className="text-sm font-medium">
+                                {canCopy ? 'Copy Enabled' : 'Copy Restricted'}
+                            </span>
+                        </div>
+                    </div>
+                )}
+
+               
+            </main>
+
+            {/* Toast notifications - moved outside main for better visibility */}
+            <Toaster />
+        </>
     );
 };
 
