@@ -11,6 +11,7 @@ import CreateBookModal from './components/CreateBookModal';
 import BookDetailsPage from './pages/BookDetails/BookDetailsPage';
 import BookForgePage from './pages/BookForge/BookForgePage';
 import CustomNodeTest from './components/CustomNodeTest';
+import NameGeneratorPage from './pages/Tools/NameGeneratorPage';
 
 const MainLayout: React.FC<{
     theme: Theme;
@@ -131,7 +132,13 @@ const App: React.FC = () => {
                     <Route path="/editing" element={<div className="flex items-center justify-center h-96 text-gray-500">Editing Content Area</div>} />
                     <Route path="/reviewing" element={<div className="flex items-center justify-center h-96 text-gray-500">Reviewing Content Area</div>} />
                     <Route path="/test-nodes" element={<CustomNodeTest />} />
+                    {/*<Route path="/tools/name-generator" element={<NameGeneratorPage books={books} />} />
+                    <Route 
+                        path="/tools/:toolName" 
+                        element={<NameGeneratorPage books={books} />} 
+                    />*/}
                 </Route>
+                <Route path="/tools/name-generator" element={<NameGeneratorPage books={books} theme={theme} setTheme={handleThemeChange}/>} />
                 <Route path="/book/:bookId/version/:versionId" element={<BookForgePage books={books} theme={theme} setTheme={handleThemeChange} />} />
             </Routes>
             <AnimatePresence>

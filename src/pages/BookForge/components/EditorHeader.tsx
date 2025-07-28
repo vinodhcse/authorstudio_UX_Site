@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Book, Version, Theme } from '../../../types';
-import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon } from '../../../constants';
+import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon, Wand2Icon } from '../../../constants';
 import ChapterSettingsModal from './ChapterSettingsModal';
 
 const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNode; className?: string }> = ({ trigger, children, className }) => {
@@ -203,6 +203,22 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTh
 
                     <div className="flex justify-end">
                         <div className="flex items-center gap-4 flex-shrink-0">
+                            {/* Tools Menu */}
+                            <DropdownMenu trigger={
+                                <button className="flex items-center gap-2 p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">
+                                    <Wand2Icon className="h-5 w-5" />
+                                    <span className="text-sm font-medium">Tools</span>
+                                </button>
+                            }>
+                                <Link 
+                                    to={`/tools/name-generator?bookId=${book.id}&versionId=${version.id}`}
+                                    className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                                >
+                                    <Wand2Icon className="h-4 w-4" />
+                                    Name Generator
+                                </Link>
+                            </DropdownMenu>
+
                              <DropdownMenu trigger={<button className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">{theme === 'dark' ? <MoonIcon className="h-5 w-5" /> : <SunIcon className="h-5 w-5" />}</button>}>
                                 <button onClick={() => setTheme('light')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <SunIcon className="h-4 w-4"/> Light</button>
                                 <button onClick={() => setTheme('dark')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <MoonIcon className="h-4 w-4"/> Dark</button>
