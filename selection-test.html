@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Node Selection Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Node Selection Styles */
+        .ProseMirror-selectednode {
+            outline: none !important;
+        }
+
+        /* Scene Beat Node Selection */
+        .scene-beat-node.ProseMirror-selectednode {
+            border: 2px solid rgb(147 197 253 / 0.8);
+            box-shadow: 0 0 0 2px rgb(59 130 246 / 0.5), 0 10px 15px -3px rgb(0 0 0 / 0.1);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 197, 253, 0.05) 100%);
+            transition: all 0.2s ease-in-out;
+        }
+
+        /* Note Section Node Selection */
+        .note-section-node.ProseMirror-selectednode {
+            border: 2px solid rgb(252 211 77 / 0.8);
+            box-shadow: 0 0 0 2px rgb(245 158 11 / 0.5), 0 10px 15px -3px rgb(0 0 0 / 0.1);
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, rgba(252, 211, 77, 0.05) 100%);
+            transition: all 0.2s ease-in-out;
+        }
+
+        /* Character Impersonation Node Selection */
+        .character-impersonation-node.ProseMirror-selectednode {
+            border: 2px solid rgb(196 181 253 / 0.8);
+            box-shadow: 0 0 0 2px rgb(147 51 234 / 0.5), 0 10px 15px -3px rgb(0 0 0 / 0.1);
+            background: linear-gradient(135deg, rgba(147, 51, 234, 0.05) 0%, rgba(196, 181, 253, 0.05) 100%);
+            transition: all 0.2s ease-in-out;
+        }
+
+        /* Selection indicator for the node header */
+        .ProseMirror-selectednode .node-header {
+            position: relative;
+        }
+
+        .ProseMirror-selectednode .node-header::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 20px;
+            border-radius: 2px;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .scene-beat-node.ProseMirror-selectednode .node-header::before {
+            background-color: rgb(59 130 246);
+        }
+
+        .note-section-node.ProseMirror-selectednode .node-header::before {
+            background-color: rgb(245 158 11);
+        }
+
+        .character-impersonation-node.ProseMirror-selectednode .node-header::before {
+            background-color: rgb(147 51 234);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto space-y-6">
+        <h1 class="text-2xl font-bold text-gray-800 mb-6">Custom Node Selection Test</h1>
+        
+        <p class="text-gray-600 mb-4">Click on any node to see the selection styling:</p>
+        
+        <!-- Scene Beat Node -->
+        <div class="scene-beat-node bg-white rounded-2xl border border-gray-200 shadow-md p-4 cursor-pointer"
+             onclick="this.classList.toggle('ProseMirror-selectednode')">
+            <div class="node-header flex items-center gap-3">
+                <div class="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <span class="text-white text-sm">🔗</span>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-800">Scene Beat #1</h3>
+                    <p class="text-sm text-gray-600">Opening scene description</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Note Section Node -->
+        <div class="note-section-node bg-white rounded-2xl border border-gray-200 shadow-md p-4 cursor-pointer"
+             onclick="this.classList.toggle('ProseMirror-selectednode')">
+            <div class="node-header flex items-center gap-3">
+                <div class="w-8 h-8 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg flex items-center justify-center">
+                    <span class="text-white text-sm">🗒️</span>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-800">Note Section</h3>
+                    <p class="text-sm text-gray-600">Remember to check character motivations</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Character Impersonation Node -->
+        <div class="character-impersonation-node bg-white rounded-2xl border border-gray-200 shadow-md p-4 cursor-pointer"
+             onclick="this.classList.toggle('ProseMirror-selectednode')">
+            <div class="node-header flex items-center gap-3">
+                <div class="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
+                    <span class="text-white text-sm">🎭</span>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-800">Character Impersonation</h3>
+                    <p class="text-sm text-gray-600">As Nemar - Ready to chat!</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8 p-4 bg-blue-50 rounded-lg">
+            <h3 class="font-semibold text-blue-800 mb-2">Selection Features:</h3>
+            <ul class="text-blue-700 space-y-1 text-sm">
+                <li>• Colored borders matching node type (Blue, Yellow, Purple)</li>
+                <li>• Subtle background gradients when selected</li>
+                <li>• Colored indicator bar on the left side of the header</li>
+                <li>• Enhanced shadow effects</li>
+                <li>• Smooth transitions between states</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

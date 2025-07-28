@@ -1,8 +1,8 @@
 
-
 import React, { useState } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { Editor as TipTapEditor } from '@tiptap/react';
 import { Book, Theme } from '../../types';
 import EditorHeader from './components/EditorHeader';
 import Editor from './components/Editor';
@@ -19,6 +19,7 @@ interface BookForgePageProps {
 const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme }) => {
     const { bookId, versionId } = useParams<{ bookId: string, versionId: string }>();
     const [showTypographySettings, setShowTypographySettings] = useState(false);
+    const [editorInstance, setEditorInstance] = useState<TipTapEditor | null>(null);
     
     const book = books.find(b => b.id === bookId);
     const version = book?.versions?.find(v => v.id === versionId);
@@ -49,8 +50,9 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
                 <Editor 
                     showTypographySettings={showTypographySettings}
                     onCloseTypographySettings={() => setShowTypographySettings(false)}
+                    onEditorReady={setEditorInstance}
                 />
-                <ScrollMinimap />
+                <ScrollMinimap editor={editorInstance} />
             </div>
             <EditorFooter book={book} />
             <FloatingActionButton />
