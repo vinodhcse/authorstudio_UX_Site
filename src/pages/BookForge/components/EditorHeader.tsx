@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Book, Version, Theme } from '../../../types';
-import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon, Wand2Icon } from '../../../constants';
+import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon, Wand2Icon, UserIcon } from '../../../constants';
 import ChapterSettingsModal from './ChapterSettingsModal';
 
 const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNode; className?: string }> = ({ trigger, children, className }) => {
@@ -216,6 +216,13 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTh
                                 >
                                     <Wand2Icon className="h-4 w-4" />
                                     Name Generator
+                                </Link>
+                                <Link 
+                                    to={`/tools/character-profile-builder?bookId=${book.id}&versionId=${version.id}`}
+                                    className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                                >
+                                    <UserIcon className="h-4 w-4" />
+                                    Character Profile Builder
                                 </Link>
                             </DropdownMenu>
 
