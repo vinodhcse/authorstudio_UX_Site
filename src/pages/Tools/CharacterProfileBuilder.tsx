@@ -2281,45 +2281,129 @@ const FeatsTab: React.FC = () => {
       </div>
 
       {/* Favorite Activities */}
-      <div className="space-y-2">
+      <div className="space-y-4">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
           Favorite Activities
         </label>
-        <input
-          type="text"
-          value={profile.favoriteActivities?.join(', ') || ''}
-          onChange={(e) => updateProfile({ favoriteActivities: e.target.value.split(',').map(a => a.trim()).filter(a => a) })}
-          className="w-full px-4 py-3 rounded-xl border border-gray-300/50 dark:border-gray-600/50 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-          placeholder="What they love to do in their free time (comma separated)"
-        />
+        <div className="space-y-3">
+          {profile.favoriteActivities?.map((activity, index) => (
+            <div key={index} className="flex gap-3 items-center">
+              <input
+                type="text"
+                value={activity}
+                onChange={(e) => {
+                  const newActivities = [...(profile.favoriteActivities || [])];
+                  newActivities[index] = e.target.value;
+                  updateProfile({ favoriteActivities: newActivities });
+                }}
+                className="flex-1 px-4 py-3 rounded-xl border border-gray-300/50 dark:border-gray-600/50 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                placeholder="Enter a favorite activity..."
+              />
+              <button
+                onClick={() => {
+                  const newActivities = profile.favoriteActivities?.filter((_, i) => i !== index) || [];
+                  updateProfile({ favoriteActivities: newActivities });
+                }}
+                className="p-2 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              >
+                <TrashIcon className="w-4 h-4" />
+              </button>
+            </div>
+          )) || []}
+          <button
+            onClick={() => {
+              updateProfile({ favoriteActivities: [...(profile.favoriteActivities || []), ''] });
+            }}
+            className="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-gray-600 dark:text-gray-400 hover:border-purple-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors flex items-center justify-center gap-2"
+          >
+            <PlusIcon className="w-4 h-4" />
+            Add Favorite Activity
+          </button>
+        </div>
       </div>
 
       {/* Most Valued & Most Hated */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-2">
+        <div className="space-y-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             Most Valued Things
           </label>
-          <textarea
-            value={profile.mostValued?.join('\n') || ''}
-            onChange={(e) => updateProfile({ mostValued: e.target.value.split('\n').filter(v => v.trim()) })}
-            rows={5}
-            className="w-full px-4 py-3 rounded-xl border border-gray-300/50 dark:border-gray-600/50 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
-            placeholder="What they treasure most (one per line)"
-          />
+          <div className="space-y-3">
+            {profile.mostValued?.map((valued, index) => (
+              <div key={index} className="flex gap-3 items-center">
+                <input
+                  type="text"
+                  value={valued}
+                  onChange={(e) => {
+                    const newValued = [...(profile.mostValued || [])];
+                    newValued[index] = e.target.value;
+                    updateProfile({ mostValued: newValued });
+                  }}
+                  className="flex-1 px-4 py-3 rounded-xl border border-gray-300/50 dark:border-gray-600/50 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                  placeholder="Enter something they value..."
+                />
+                <button
+                  onClick={() => {
+                    const newValued = profile.mostValued?.filter((_, i) => i !== index) || [];
+                    updateProfile({ mostValued: newValued });
+                  }}
+                  className="p-2 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  <TrashIcon className="w-4 h-4" />
+                </button>
+              </div>
+            )) || []}
+            <button
+              onClick={() => {
+                updateProfile({ mostValued: [...(profile.mostValued || []), ''] });
+              }}
+              className="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-gray-600 dark:text-gray-400 hover:border-purple-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors flex items-center justify-center gap-2"
+            >
+              <PlusIcon className="w-4 h-4" />
+              Add Valued Thing
+            </button>
+          </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             Most Hated Things
           </label>
-          <textarea
-            value={profile.mostHated?.join('\n') || ''}
-            onChange={(e) => updateProfile({ mostHated: e.target.value.split('\n').filter(h => h.trim()) })}
-            rows={5}
-            className="w-full px-4 py-3 rounded-xl border border-gray-300/50 dark:border-gray-600/50 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
-            placeholder="What they despise or avoid (one per line)"
-          />
+          <div className="space-y-3">
+            {profile.mostHated?.map((hated, index) => (
+              <div key={index} className="flex gap-3 items-center">
+                <input
+                  type="text"
+                  value={hated}
+                  onChange={(e) => {
+                    const newHated = [...(profile.mostHated || [])];
+                    newHated[index] = e.target.value;
+                    updateProfile({ mostHated: newHated });
+                  }}
+                  className="flex-1 px-4 py-3 rounded-xl border border-gray-300/50 dark:border-gray-600/50 bg-white/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                  placeholder="Enter something they hate..."
+                />
+                <button
+                  onClick={() => {
+                    const newHated = profile.mostHated?.filter((_, i) => i !== index) || [];
+                    updateProfile({ mostHated: newHated });
+                  }}
+                  className="p-2 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  <TrashIcon className="w-4 h-4" />
+                </button>
+              </div>
+            )) || []}
+            <button
+              onClick={() => {
+                updateProfile({ mostHated: [...(profile.mostHated || []), ''] });
+              }}
+              className="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-gray-600 dark:text-gray-400 hover:border-purple-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors flex items-center justify-center gap-2"
+            >
+              <PlusIcon className="w-4 h-4" />
+              Add Hated Thing
+            </button>
+          </div>
         </div>
       </div>
     </div>
