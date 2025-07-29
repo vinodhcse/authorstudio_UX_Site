@@ -8,7 +8,8 @@ mod tool_windows;
 use tool_windows::{
     WindowRegistry,
     open_tool_window, minimize_tool_window, restore_tool_window,
-    close_tool_window, close_all_tools, list_tool_windows, get_tool_windows_state
+    close_tool_window, close_all_tools, list_tool_windows, get_tool_windows_state,
+    broadcast_theme_change
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,7 +133,8 @@ pub fn run() {
             close_tool_window,
             close_all_tools,
             list_tool_windows,
-            get_tool_windows_state
+            get_tool_windows_state,
+            broadcast_theme_change
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

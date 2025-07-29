@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { listen } from '@tauri-apps/api/event';
 import ToolWindowControls from '../../components/ToolWindowControls';
 
 interface BookContext {
@@ -26,6 +27,7 @@ const CharacterTrackerTool: React.FC = () => {
     description: '',
     traits: '',
   });
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
     // Get context from window object (injected by Tauri)
@@ -49,6 +51,28 @@ const CharacterTrackerTool: React.FC = () => {
         }
       }, 100);
     }
+
+    // Listen for theme changes
+    const setupThemeListener = async () => {
+      try {
+        await listen('theme-changed', (event: any) => {
+          console.log('Tool received theme change:', event.payload);
+          const newTheme = event.payload;
+          setTheme(newTheme);
+          
+          // Apply theme to document
+          if (newTheme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        });
+      } catch (error) {
+        console.error('Failed to setup theme listener:', error);
+      }
+    };
+
+    setupThemeListener();
 
     // Load sample characters
     setCharacters([

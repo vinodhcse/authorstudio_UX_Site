@@ -139,11 +139,11 @@ const App: React.FC = () => {
                     <Route path="/test-nodes" element={<CustomNodeTest />} />
                 </Route>
                 <Route path="/tools/name-generator" element={<NameGeneratorPage books={books} theme={theme} setTheme={handleThemeChange}/>} />
-                <Route path="/tools/character-profile-builder" element={<CharacterProfileBuilder books={books} />} />
+                <Route path="/tools/character-profile-builder" element={<CharacterProfileBuilder books={books} theme={theme} setTheme={handleThemeChange} />} />
                 
                 {/* Tool Window Routes - These will be loaded in child windows */}
                 <Route path="/tool/name-generator" element={<NameGeneratorPage books={books} theme={theme} setTheme={handleThemeChange}/>} />
-                <Route path="/tool/character-tracker" element={<CharacterProfileBuilder books={books}/>} />
+                <Route path="/tool/character-tracker" element={<CharacterProfileBuilder books={books} theme={theme} setTheme={handleThemeChange} />} />
                 <Route path="/tool/plot-assistant" element={<div className="p-8 text-center">Plot Assistant Tool - Coming Soon!</div>} />
                 <Route path="/tool/world-builder" element={<div className="p-8 text-center">World Builder Tool - Coming Soon!</div>} />
                 <Route path="/tool/timeline" element={<div className="p-8 text-center">Timeline Tool - Coming Soon!</div>} />

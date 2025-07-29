@@ -28,6 +28,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { chapterContent } from '../../../data/chapterContent';
+import { Theme } from '../../../types';
 
 // Tool Window System Imports
 import DockSidebar from '../../../components/DockSidebar';
@@ -1813,13 +1814,15 @@ const Editor: React.FC<{
     onCloseTypographySettings?: () => void;
     onOpenTypographySettings?: () => void;
     onEditorReady?: (editor: TipTapEditor) => void;
+    theme?: Theme;
 }> = ({ 
     bookId = 'default-book', 
     versionId = 'v1', 
     showTypographySettings = false, 
     onCloseTypographySettings, 
     onOpenTypographySettings, 
-    onEditorReady 
+    onEditorReady,
+    theme = 'dark'
 }) => {
     
     // Remove the internal state since it's now managed by parent
@@ -2271,7 +2274,7 @@ const Editor: React.FC<{
             </main>
 
             {/* Tool Window Dock Sidebar */}
-            <DockSidebar bookId={bookId} versionId={versionId} />
+            <DockSidebar bookId={bookId} versionId={versionId} theme={theme === 'system' ? 'dark' : theme} />
 
             {/* Toast notifications - moved outside main for better visibility */}
             <Toaster />

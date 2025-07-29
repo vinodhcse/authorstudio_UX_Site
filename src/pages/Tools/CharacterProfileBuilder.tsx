@@ -1,7 +1,7 @@
-import React, { useState, useContext, createContext } from 'react';
+import React, { useState, useContext, createContext, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams } from 'react-router-dom';
-import { Book } from '../../types';
+import { Book, Theme } from '../../types';
 import { 
   PersonIcon, 
   MirrorIcon, 
@@ -23,9 +23,12 @@ import {
   TrashIcon,
   PlusIcon
 } from '../../constants';
+import { listen } from '@tauri-apps/api/event';
 
 interface CharacterProfileBuilderProps {
   books: Book[];
+   theme: Theme;
+   setTheme: (theme: Theme) => void;
 }
 
 // Character Profile Data Structure
@@ -224,6 +227,8 @@ const AIHelperBar: React.FC<{
     }
   };
 
+   
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }}
@@ -266,7 +271,7 @@ const AIHelperBar: React.FC<{
   );
 };
 
-const CharacterProfileBuilder: React.FC<CharacterProfileBuilderProps> = ({ books }) => {
+const CharacterProfileBuilder: React.FC<CharacterProfileBuilderProps> = ({ books, theme, setTheme }) => {
   const { bookId } = useParams();
   
   const [activeTab, setActiveTab] = useState('identity');
@@ -505,6 +510,36 @@ const CharacterProfileBuilder: React.FC<CharacterProfileBuilderProps> = ({ books
       setVisibleTabsStart(prev => Math.min(tabs.length - maxVisibleTabs, prev + 1));
     }
   };
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+  
+    const setupThemeListener = async () => {
+      try {
+        console.log('Setting up theme listener in CharacterProfileBuilder...');
+  
+        const isDark = document.documentElement.classList.contains('dark');
+        setTheme(isDark ? 'dark' : 'light');
+  
+        unlisten = await listen('theme-changed', (event: any) => {
+          console.log('Theme changed in child window (CharacterProfileBuilder):', event.payload);
+          const newTheme = event.payload;
+          setTheme(newTheme);
+  
+          document.documentElement.classList.toggle('dark', newTheme === 'dark');
+        });
+  
+      } catch (error) {
+        console.error('Theme listener error:', error);
+      }
+    };
+  
+    setupThemeListener();
+  
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   const visibleTabs = tabs.slice(visibleTabsStart, visibleTabsStart + maxVisibleTabs);
 

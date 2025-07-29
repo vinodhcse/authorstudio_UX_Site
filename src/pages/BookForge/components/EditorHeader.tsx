@@ -166,14 +166,20 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTh
     const editorModes = ['Writing', 'Planning', 'Formatting', 'Brainstorming'];
     const [activeMode, setActiveMode] = useState('Writing');
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
-    const { openTool } = useToolWindowStore();
+    const { openTool, broadcastThemeChange } = useToolWindowStore();
 
     const handleOpenTool = async (toolName: string) => {
         try {
-            await openTool(toolName, book.id, version.id);
+            console.log(`Opening tool: ${toolName} for book ${book.id}, version ${version.id} with theme ${theme}`);
+            await openTool(toolName, book.id, version.id, theme);
         } catch (error) {
             console.error(`Failed to open ${toolName}:`, error);
         }
+    };
+
+    const handleThemeChange = async (newTheme: Theme) => {
+        setTheme(newTheme);
+        await broadcastThemeChange(newTheme);
     };
 
     return (
@@ -237,9 +243,9 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTh
                             </DropdownMenu>
 
                              <DropdownMenu trigger={<button className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">{theme === 'dark' ? <MoonIcon className="h-5 w-5" /> : <SunIcon className="h-5 w-5" />}</button>}>
-                                <button onClick={() => setTheme('light')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <SunIcon className="h-4 w-4"/> Light</button>
-                                <button onClick={() => setTheme('dark')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <MoonIcon className="h-4 w-4"/> Dark</button>
-                                <button onClick={() => setTheme('system')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <SystemIcon className="h-4 w-4"/> System</button>
+                                <button onClick={() => handleThemeChange('light')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <SunIcon className="h-4 w-4"/> Light</button>
+                                <button onClick={() => handleThemeChange('dark')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <MoonIcon className="h-4 w-4"/> Dark</button>
+                                <button onClick={() => handleThemeChange('system')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <SystemIcon className="h-4 w-4"/> System</button>
                             </DropdownMenu>
 
                             <DropdownMenu trigger={<img src="https://picsum.photos/seed/user/40/40" alt="User Avatar" className="w-9 h-9 rounded-full cursor-pointer ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-gray-900 ring-transparent hover:ring-purple-500 transition-all"/>}>

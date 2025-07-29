@@ -53,6 +53,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
                     onEditorReady={setEditorInstance}
                     bookId={bookId!}
                     versionId={versionId!}
+                    theme={theme}
                 />
                 <ScrollMinimap editor={editorInstance} />
             </div>

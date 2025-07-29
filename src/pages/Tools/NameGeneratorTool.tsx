@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { listen } from '@tauri-apps/api/event';
 import ToolWindowControls from '../../components/ToolWindowControls';
 
 interface BookContext {
@@ -13,6 +14,7 @@ const NameGeneratorTool: React.FC = () => {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [generatedNames, setGeneratedNames] = useState<string[]>([]);
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
   useEffect(() => {
     // Get context from window object (injected by Tauri)
@@ -37,6 +39,42 @@ const NameGeneratorTool: React.FC = () => {
         }
       }, 100);
     }
+
+    // Listen for theme changes
+    const setupThemeListener = async () => {
+      try {
+        console.log('NameGeneratorTool: Setting up theme listener...');
+        
+        // Set initial theme based on document class
+        const isDark = document.documentElement.classList.contains('dark');
+        const initialTheme = isDark ? 'dark' : 'light';
+        console.log('NameGeneratorTool: Initial theme detected:', initialTheme);
+        setTheme(initialTheme);
+        
+        await listen('theme-changed', (event: any) => {
+          console.log('NameGeneratorTool: Tool received theme change:', event.payload);
+          const newTheme = event.payload;
+          setTheme(newTheme);
+          
+          // Apply theme to document
+          if (newTheme === 'dark') {
+            document.documentElement.classList.add('dark');
+            console.log('NameGeneratorTool: Applied dark theme to document');
+          } else {
+            document.documentElement.classList.remove('dark');
+            console.log('NameGeneratorTool: Applied light theme to document');
+          }
+        });
+        
+        console.log('NameGeneratorTool: Theme listener setup complete');
+      } catch (error) {
+        console.error('NameGeneratorTool: Failed to setup theme listener:', error);
+      }
+    };
+
+    console.log('NameGeneratorTool: About to call setupThemeListener');
+    setupThemeListener();
+    console.log('NameGeneratorTool: setupThemeListener called');
   }, []);
 
   const firstNames = [
@@ -73,7 +111,7 @@ const NameGeneratorTool: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 dark:from-gray-900 dark:to-gray-800 transition-colors duration-300">
       {/* Window Controls */}
       <ToolWindowControls 
         bookId={context?.bookId}

@@ -45,10 +45,11 @@ interface ToolWindowState {
   toggleDockVisibility: () => void;
   syncWithTauri: () => Promise<void>;
   setupEventListeners: () => Promise<void>;
-  openTool: (toolName: string, bookId: string, versionId: string) => Promise<void>;
+  openTool: (toolName: string, bookId: string, versionId: string, theme?: string) => Promise<void>;
   closeTool: (windowId: string) => Promise<void>;
   closeAllTools: () => Promise<void>;
   getToolWindows: (bookId?: string, versionId?: string) => ToolWindow[];
+  broadcastThemeChange: (theme: string) => Promise<void>;
 }
 
 const DEFAULT_WINDOW_SIZE: WindowSize = { width: 800, height: 600 };
@@ -225,7 +226,7 @@ export const useToolWindowStore = create<ToolWindowState>()(
       }
     },
 
-    openTool: async (toolName: string, bookId: string, versionId: string) => {
+    openTool: async (toolName: string, bookId: string, versionId: string, theme?: string) => {
       try {
         const windowId = `${bookId}-${versionId}-${toolName}`;
         
@@ -244,6 +245,7 @@ export const useToolWindowStore = create<ToolWindowState>()(
           toolName,
           position: DEFAULT_WINDOW_POSITION,
           size: DEFAULT_WINDOW_SIZE,
+          theme: theme || 'dark', // Pass theme to Rust backend
         });
 
         get().addToolWindow(result);
@@ -293,6 +295,15 @@ export const useToolWindowStore = create<ToolWindowState>()(
       return toolWindows.filter(w => 
         w.book_id === targetBookId && w.version_id === targetVersionId
       );
+    },
+
+    broadcastThemeChange: async (theme: string) => {
+      try {
+        await invoke('broadcast_theme_change', { theme });
+        console.log('Theme change broadcasted to all tool windows:', theme);
+      } catch (error) {
+        console.error('Failed to broadcast theme change:', error);
+      }
     },
   }))
 );

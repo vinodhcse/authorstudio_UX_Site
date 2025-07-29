@@ -74,6 +74,7 @@ pub async fn open_tool_window(
     tool_name: String,
     position: WindowPosition,
     size: WindowSize,
+    theme: Option<String>,
 ) -> Result<ToolWindow, String> {
     let window_label = get_window_label(&book_id, &version_id, &tool_name);
     let book_version_key = get_book_version_key(&book_id, &version_id);
@@ -121,7 +122,7 @@ pub async fn open_tool_window(
     .closable(true)
     .decorations(true)
     .always_on_top(false)
-    .content_protected(false);
+    .content_protected(true);
     
     // Set parent if main window exists
     if let Some(parent_window) = main_window {
@@ -131,13 +132,39 @@ pub async fn open_tool_window(
     let webview_window = window_builder.build().map_err(|e| e.to_string())?;
 
     // Set context data for the child window
+    let theme_value = theme.unwrap_or_else(|| "dark".to_string());
     let context_script = format!(
         r#"
         // Set context data
         window.__BOOK_CONTEXT__ = {{ bookId: '{}', versionId: '{}', toolName: '{}' }};
+        window.__THEME__ = '{}';
         console.log('Tool window context set:', window.__BOOK_CONTEXT__);
+        console.log('Tool window theme set:', window.__THEME__);
+        
+        // Apply theme immediately to document
+        function applyTheme() {{
+            if ('{}' === 'dark') {{
+                document.documentElement.classList.add('dark');
+                document.body.classList.add('dark');
+            }} else {{
+                document.documentElement.classList.remove('dark');
+                document.body.classList.remove('dark');
+            }}
+            console.log('Tool window theme applied:', '{}');
+        }}
+        
+        // Apply theme immediately
+        applyTheme();
+        
+        // Also apply when DOM is ready
+        if (document.readyState === 'loading') {{
+            document.addEventListener('DOMContentLoaded', applyTheme);
+        }}
+        
+        // And when window loads
+        window.addEventListener('load', applyTheme);
         "#,
-        book_id, version_id, tool_name
+        book_id, version_id, tool_name, theme_value, theme_value, theme_value
     );
     
     webview_window.eval(&context_script).map_err(|e| e.to_string())?;
@@ -175,9 +202,25 @@ pub async fn open_tool_window(
                     let book_version_key = get_book_version_key(&book_id_clone, &version_id_clone);
                     let mut registry_guard = registry.lock().unwrap();
                     if let Some(book_windows) = registry_guard.get_mut(&book_version_key) {
-                        book_windows.remove(&tool_name_clone);
-                        if book_windows.is_empty() {
-                            registry_guard.remove(&book_version_key);
+                        // Get the window data before removing it
+                        if let Some(tool_window) = book_windows.get(&tool_name_clone) {
+                            let tool_window_clone = tool_window.clone();
+                            
+                            // Remove from registry
+                            book_windows.remove(&tool_name_clone);
+                            if book_windows.is_empty() {
+                                registry_guard.remove(&book_version_key);
+                            }
+                            
+                            // Drop the lock before emitting event
+                            drop(registry_guard);
+                            
+                            // Emit close event to frontend
+                            if let Err(e) = app_handle.emit("tool-window-closed", &tool_window_clone) {
+                                eprintln!("Failed to emit tool-window-closed event: {}", e);
+                            } else {
+                                println!("Emitted tool-window-closed event for: {}", tool_window_clone.id);
+                            }
                         }
                     }
                 }
@@ -453,4 +496,17 @@ pub async fn list_tool_windows(
         .unwrap_or_default();
 
     Ok(windows)
+}
+
+#[command]
+pub async fn broadcast_theme_change(
+    app: AppHandle,
+    theme: String,
+) -> Result<(), String> {
+    // Broadcast theme change to all tool windows
+    println!("Broadcasting theme change: {}", theme);
+    if let Err(e) = app.emit("theme-changed", &theme) {
+        eprintln!("Failed to emit theme-changed event: {}", e);
+    }
+    Ok(())
 }

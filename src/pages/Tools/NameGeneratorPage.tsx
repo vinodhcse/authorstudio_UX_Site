@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { Book, Theme } from '../../types';
 import { PenIcon, SettingsIcon, StarIcon, ThumbsDownIcon, RefreshIcon, EditIcon, TrashIcon, XMarkIcon } from '../../constants';
+import ToolWindowControls from '../../components/ToolWindowControls';
+import { listen } from '@tauri-apps/api/event';
 
 interface NameGeneratorPageProps {
   books: Book[];
@@ -125,6 +127,58 @@ const NameGeneratorPage: React.FC<NameGeneratorPageProps> = ({ books, theme, set
       traits: prev.traits.filter(t => t !== trait)
     }));
   };
+
+  useEffect(() => {
+  let unlisten: (() => void) | null = null;
+
+  const setupThemeListener = async () => {
+    try {
+      console.log('Setting up theme listener...');
+
+      // First check if theme was set by Tauri when window was created
+      const tauriTheme = (window as any).__THEME__;
+      console.log('Tauri theme from window context:', tauriTheme);
+      
+      let initialTheme: 'dark' | 'light';
+      if (tauriTheme) {
+        initialTheme = tauriTheme;
+        // Apply the theme from Tauri context
+        if (tauriTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+        console.log('Applied Tauri theme:', tauriTheme);
+      } else {
+        // Fallback to checking document class
+        const isDark = document.documentElement.classList.contains('dark');
+        initialTheme = isDark ? 'dark' : 'light';
+        console.log('Fallback theme detection:', initialTheme);
+      }
+      
+      setTheme(initialTheme);
+
+      unlisten = await listen('theme-changed', (event: any) => {
+        console.log('Theme changed in child window:', event.payload);
+        const newTheme = event.payload;
+        setTheme(newTheme);
+
+        document.documentElement.classList.toggle('dark', newTheme === 'dark');
+      });
+
+    } catch (error) {
+      console.error('Theme listener error:', error);
+    }
+  };
+
+  setupThemeListener();
+
+  return () => {
+    if (unlisten) unlisten();
+  };
+}, []);
+
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-gray-50 to-slate-200 dark:from-gray-950 dark:via-black dark:to-black relative overflow-hidden">
