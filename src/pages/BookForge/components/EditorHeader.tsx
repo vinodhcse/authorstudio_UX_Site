@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { Book, Version, Theme } from '../../../types';
 import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon, Wand2Icon, UserIcon } from '../../../constants';
 import ChapterSettingsModal from './ChapterSettingsModal';
+import { useToolWindowStore } from '../../../stores/toolWindowStore';
 
 const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNode; className?: string }> = ({ trigger, children, className }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -165,6 +166,15 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTh
     const editorModes = ['Writing', 'Planning', 'Formatting', 'Brainstorming'];
     const [activeMode, setActiveMode] = useState('Writing');
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
+    const { openTool } = useToolWindowStore();
+
+    const handleOpenTool = async (toolName: string) => {
+        try {
+            await openTool(toolName, book.id, version.id);
+        } catch (error) {
+            console.error(`Failed to open ${toolName}:`, error);
+        }
+    };
 
     return (
         <header className="sticky top-0 z-40 flex-shrink-0">
@@ -210,20 +220,20 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTh
                                     <span className="text-sm font-medium">Tools</span>
                                 </button>
                             }>
-                                <Link 
-                                    to={`/tools/name-generator?bookId=${book.id}&versionId=${version.id}`}
+                                <button 
+                                    onClick={() => handleOpenTool('name-generator')}
                                     className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
                                 >
                                     <Wand2Icon className="h-4 w-4" />
                                     Name Generator
-                                </Link>
-                                <Link 
-                                    to={`/tools/character-profile-builder?bookId=${book.id}&versionId=${version.id}`}
+                                </button>
+                                <button 
+                                    onClick={() => handleOpenTool('character-tracker')}
                                     className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
                                 >
                                     <UserIcon className="h-4 w-4" />
                                     Character Profile Builder
-                                </Link>
+                                </button>
                             </DropdownMenu>
 
                              <DropdownMenu trigger={<button className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">{theme === 'dark' ? <MoonIcon className="h-5 w-5" /> : <SunIcon className="h-5 w-5" />}</button>}>

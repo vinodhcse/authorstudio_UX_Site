@@ -179,7 +179,7 @@ export const useScrollMap = ({
       editor.off('transaction', handleTransaction);
       throttledUpdateScrollMap.cancel();
     };
-  }, [editor, throttledUpdateScrollMap]); // Removed updateScrollMap dependency
+  }, [editor, updateScrollMap]); // Keep updateScrollMap since it's memoized with useCallback
 
   return {
     scrollMapItems,

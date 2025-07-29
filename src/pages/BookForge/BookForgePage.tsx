@@ -51,6 +51,8 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
                     showTypographySettings={showTypographySettings}
                     onCloseTypographySettings={() => setShowTypographySettings(false)}
                     onEditorReady={setEditorInstance}
+                    bookId={bookId!}
+                    versionId={versionId!}
                 />
                 <ScrollMinimap editor={editorInstance} />
             </div>

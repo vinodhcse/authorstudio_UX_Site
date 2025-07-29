@@ -14,6 +14,10 @@ import CustomNodeTest from './components/CustomNodeTest';
 import NameGeneratorPage from './pages/Tools/NameGeneratorPage';
 import CharacterProfileBuilder from './pages/Tools/CharacterProfileBuilder';
 
+// Tool Window Components
+import NameGeneratorTool from './pages/Tools/NameGeneratorTool';
+import CharacterTrackerTool from './pages/Tools/CharacterTrackerTool';
+
 const MainLayout: React.FC<{
     theme: Theme;
     setTheme: (theme: Theme) => void;
@@ -136,6 +140,14 @@ const App: React.FC = () => {
                 </Route>
                 <Route path="/tools/name-generator" element={<NameGeneratorPage books={books} theme={theme} setTheme={handleThemeChange}/>} />
                 <Route path="/tools/character-profile-builder" element={<CharacterProfileBuilder books={books} />} />
+                
+                {/* Tool Window Routes - These will be loaded in child windows */}
+                <Route path="/tool/name-generator" element={<NameGeneratorPage books={books} theme={theme} setTheme={handleThemeChange}/>} />
+                <Route path="/tool/character-tracker" element={<CharacterProfileBuilder books={books}/>} />
+                <Route path="/tool/plot-assistant" element={<div className="p-8 text-center">Plot Assistant Tool - Coming Soon!</div>} />
+                <Route path="/tool/world-builder" element={<div className="p-8 text-center">World Builder Tool - Coming Soon!</div>} />
+                <Route path="/tool/timeline" element={<div className="p-8 text-center">Timeline Tool - Coming Soon!</div>} />
+                
                 <Route path="/book/:bookId/version/:versionId" element={<BookForgePage books={books} theme={theme} setTheme={handleThemeChange} />} />
             </Routes>
             <AnimatePresence>

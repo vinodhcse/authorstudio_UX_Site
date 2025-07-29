@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use sysinfo::{System};
 
+mod tool_windows;
+use tool_windows::{
+    WindowRegistry,
+    open_tool_window, minimize_tool_window, restore_tool_window,
+    close_tool_window, close_all_tools, list_tool_windows, get_tool_windows_state
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRole {
     user_id: String,
@@ -112,12 +119,20 @@ fn get_cpu_gpu_specs() -> SystemSpecs {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
+        .manage(WindowRegistry::default())
         .invoke_handler(tauri::generate_handler![
             set_user_role,
             can_access_clipboard,
             controlled_copy_to_clipboard,
             get_current_user_role,
-            get_cpu_gpu_specs 
+            get_cpu_gpu_specs,
+            open_tool_window,
+            minimize_tool_window,
+            restore_tool_window,
+            close_tool_window,
+            close_all_tools,
+            list_tool_windows,
+            get_tool_windows_state
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

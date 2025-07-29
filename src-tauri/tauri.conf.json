@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "AuthorStudio",
         "width": 800,
         "height": 600,
@@ -19,7 +20,7 @@
         "fullscreen": false,
         "maximized": true,
         "decorations": true,
-        "contentProtected": true
+        "contentProtected": false
       }
     ],
     "security": {
