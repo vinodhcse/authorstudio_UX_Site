@@ -2,9 +2,28 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PlusIcon, SparklesIcon, GitCommitIcon, ListIcon, FilePlusIcon, Wand2Icon, TextQuoteIcon } from '../../../constants';
+import { Theme } from '../../../types';
 
-const FloatingActionButton: React.FC = () => {
+interface FloatingActionButtonProps {
+    theme?: Theme;
+}
+
+const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'dark' }) => {
     const [isOpen, setIsOpen] = useState(false);
+    
+    // Theme-aware contrasting colors (similar to DockSidebar approach)
+    const isDarkTheme = theme === 'dark';
+    const buttonTheme = {
+        // Use contrasting colors - opposite of current theme
+        background: isDarkTheme 
+            ? 'bg-white/90 hover:bg-gray-50/90' 
+            : 'bg-gray-800/90 hover:bg-gray-700/90',
+        text: isDarkTheme ? 'text-gray-900' : 'text-white',
+        tooltip: isDarkTheme 
+            ? 'bg-gray-800/90 text-white' 
+            : 'bg-white/90 text-gray-900',
+        shadow: isDarkTheme ? 'shadow-lg shadow-black/20' : 'shadow-lg shadow-gray-500/20'
+    };
     
     const menuItems = [
         { icon: SparklesIcon, label: 'AI Assistant', angle: -90 },
@@ -38,7 +57,7 @@ const FloatingActionButton: React.FC = () => {
                 rotate: { stiffness: 1000 }
             }
         }),
-        closed: (angle: number) => ({
+        closed: () => ({
             y: -0,
             rotate: 0,
             opacity: 0,
@@ -71,10 +90,10 @@ const FloatingActionButton: React.FC = () => {
                                 whileHover={{ scale: 1.1 }}
                             >
                                 <div className="group relative">
-                                    <button className="w-12 h-12 bg-gray-700 text-white rounded-full flex items-center justify-center shadow-lg">
+                                    <button className={`w-12 h-12 ${buttonTheme.background} ${buttonTheme.text} rounded-full flex items-center justify-center ${buttonTheme.shadow} transition-all duration-200`}>
                                         <item.icon className="w-6 h-6" />
                                     </button>
-                                     <span className="absolute bottom-1/2 translate-y-1/2 right-14 whitespace-nowrap bg-black/70 text-white text-xs px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity">
+                                     <span className={`absolute bottom-1/2 translate-y-1/2 right-14 whitespace-nowrap ${buttonTheme.tooltip} text-xs px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg`}>
                                         {item.label}
                                     </span>
                                 </div>

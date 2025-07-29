@@ -511,18 +511,38 @@ const CharacterProfileBuilder: React.FC<CharacterProfileBuilderProps> = ({ books
     }
   };
 
-  useEffect(() => {
+   useEffect(() => {
     let unlisten: (() => void) | null = null;
   
     const setupThemeListener = async () => {
       try {
-        console.log('Setting up theme listener in CharacterProfileBuilder...');
+        console.log('Setting up theme listener...');
   
-        const isDark = document.documentElement.classList.contains('dark');
-        setTheme(isDark ? 'dark' : 'light');
+        // First check if theme was set by Tauri when window was created
+        const tauriTheme = (window as any).__THEME__;
+        console.log('Tauri theme from window context:', tauriTheme);
+        
+        let initialTheme: 'dark' | 'light';
+        if (tauriTheme) {
+          initialTheme = tauriTheme;
+          // Apply the theme from Tauri context
+          if (tauriTheme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+          console.log('Applied Tauri theme:', tauriTheme);
+        } else {
+          // Fallback to checking document class
+          const isDark = document.documentElement.classList.contains('dark');
+          initialTheme = isDark ? 'dark' : 'light';
+          console.log('Fallback theme detection:', initialTheme);
+        }
+        
+        setTheme(initialTheme);
   
         unlisten = await listen('theme-changed', (event: any) => {
-          console.log('Theme changed in child window (CharacterProfileBuilder):', event.payload);
+          console.log('Theme changed in child window:', event.payload);
           const newTheme = event.payload;
           setTheme(newTheme);
   

@@ -122,7 +122,7 @@ pub async fn open_tool_window(
     .closable(true)
     .decorations(true)
     .always_on_top(false)
-    .content_protected(true);
+    .content_protected(false);
     
     // Set parent if main window exists
     if let Some(parent_window) = main_window {

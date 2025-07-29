@@ -58,7 +58,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
                 <ScrollMinimap editor={editorInstance} />
             </div>
             <EditorFooter book={book} />
-            <FloatingActionButton />
+            <FloatingActionButton theme={theme} />
         </motion.div>
     );
 };
