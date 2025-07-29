@@ -786,9 +786,9 @@ const TypographySettingsPopup: React.FC<{
             
             // Apply page width
             const widthMap = {
-                'narrow': '400px',
-                'medium': '600px', 
-                'wide': '800px',
+                'narrow': '50%',
+                'medium': '60%', 
+                'wide': '75%',
                 'full': '100%'
             };
             const editorContainer = container.parentElement?.parentElement;
