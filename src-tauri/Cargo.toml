@@ -33,6 +33,11 @@ whisper-rs = "0.14.4"
 cpal = "0.15"
 hound = "3.5"
 
+# macOS-specific optimizations (optional)
+[target.'cfg(target_os = "macos")'.dependencies]
+# Use system frameworks for better performance on macOS
+objc = "0.2"
+
 # Optional Windows-specific dependencies for simple dictation fallback (not used when whisper-rs is enabled)
 # [target.'cfg(windows)'.dependencies]
 # windows = { version = "0.54", features = [
