@@ -1,12 +1,14 @@
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, SupportedStreamConfig};
+use hound::{WavSpec, WavWriter};
 use once_cell::sync::Lazy;
 use serde_json;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -19,7 +21,73 @@ static WHISPER_CONTEXT: Lazy<Arc<Mutex<Option<WhisperContext>>>> =
 const SAMPLE_RATE: u32 = 16000; // Whisper requires 16kHz
 const BUFFER_SIZE: usize = SAMPLE_RATE as usize * 2; // 2 seconds of audio
 const SILENCE_THRESHOLD: f32 = 0.01; // Threshold for detecting silence
-const SILENCE_DURATION: Duration = Duration::from_secs(2); // Silence duration for paragraph end
+const SILENCE_DURATION: Duration = Duration::from_secs(4); // 4 seconds silence for better accuracy
+const SESSION_SILENCE_DURATION: Duration = Duration::from_secs(4); // 4 seconds for chunk processing
+
+// Session recording for final transcription
+pub struct SessionRecorder {
+    wav_writer: Option<WavWriter<std::io::BufWriter<std::fs::File>>>,
+    session_id: String,
+    session_path: PathBuf,
+    total_samples: usize,
+}
+
+impl SessionRecorder {
+    fn new() -> Result<Self> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let session_id = format!("dictation_{}", timestamp);
+        
+        // Create sessions directory
+        let sessions_dir = PathBuf::from("dictation_sessions");
+        fs::create_dir_all(&sessions_dir)?;
+        
+        let session_path = sessions_dir.join(format!("{}.wav", session_id));
+        
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: SAMPLE_RATE,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        
+        let wav_file = std::fs::File::create(&session_path)?;
+        let wav_writer = WavWriter::new(std::io::BufWriter::new(wav_file), spec)?;
+        
+        println!("📁 Session recording started: {}", session_path.display());
+        
+        Ok(Self {
+            wav_writer: Some(wav_writer),
+            session_id,
+            session_path,
+            total_samples: 0,
+        })
+    }
+    
+    fn write_samples(&mut self, samples: &[f32]) -> Result<()> {
+        if let Some(ref mut writer) = self.wav_writer {
+            for &sample in samples {
+                writer.write_sample(sample)?;
+            }
+            self.total_samples += samples.len();
+        }
+        Ok(())
+    }
+    
+    fn finalize(mut self) -> Result<PathBuf> {
+        if let Some(writer) = self.wav_writer.take() {
+            writer.finalize()?;
+        }
+        
+        let duration = self.total_samples as f32 / SAMPLE_RATE as f32;
+        println!("📁 Session recording completed: {} ({:.1}s, {} samples)", 
+            self.session_path.display(), duration, self.total_samples);
+        
+        Ok(self.session_path)
+    }
+}
 
 pub struct AudioBuffer {
     data: Vec<f32>,
@@ -30,12 +98,14 @@ pub struct AudioBuffer {
     downsample_ratio: f32,
     downsample_accumulator: f32,
     downsample_count: f32,
-    // Silence-based chunking
+    // Silence-based chunking with longer detection
     speech_buffer: Vec<f32>,
     is_speaking: bool,
     silence_start: Option<Instant>,
     last_transcribed_pos: usize,
     transcription_history: Vec<String>,
+    // Session recording
+    session_recorder: Option<SessionRecorder>,
 }
 
 impl AudioBuffer {
@@ -49,12 +119,30 @@ impl AudioBuffer {
             downsample_ratio: 1.0,
             downsample_accumulator: 0.0,
             downsample_count: 0.0,
-            // Silence-based chunking
+            // Silence-based chunking with longer detection
             speech_buffer: Vec::new(),
             is_speaking: false,
             silence_start: None,
             last_transcribed_pos: 0,
             transcription_history: Vec::new(),
+            // Session recording
+            session_recorder: None,
+        }
+    }
+    
+    fn start_session_recording(&mut self) -> Result<()> {
+        self.session_recorder = Some(SessionRecorder::new()?);
+        println!("📁 Started session recording for complete transcription");
+        Ok(())
+    }
+    
+    fn stop_session_recording(&mut self) -> Result<Option<PathBuf>> {
+        if let Some(recorder) = self.session_recorder.take() {
+            let path = recorder.finalize()?;
+            println!("📁 Session recording saved to: {}", path.display());
+            Ok(Some(path))
+        } else {
+            Ok(None)
         }
     }
     
@@ -132,6 +220,13 @@ impl AudioBuffer {
 
         // Add processed samples to speech buffer for silence-based chunking
         self.add_to_speech_buffer(&processed_samples);
+        
+        // Record all processed samples to session file
+        if let Some(ref mut recorder) = self.session_recorder {
+            if let Err(e) = recorder.write_samples(&processed_samples) {
+                println!("⚠️ Session recording error: {}", e);
+            }
+        }
     }
 
     fn add_to_speech_buffer(&mut self, samples: &[f32]) {
@@ -181,9 +276,9 @@ impl AudioBuffer {
             Duration::from_secs(0)
         };
 
-        // If we've been silent for 2+ seconds, or speech buffer is very long, process it
-        let should_process = silence_duration >= Duration::from_secs(2) || 
-                           self.speech_buffer.len() >= SAMPLE_RATE as usize * 15; // 15 seconds max
+        // Use 4 seconds of silence for better speech boundary detection
+        let should_process = silence_duration >= SESSION_SILENCE_DURATION || 
+                           self.speech_buffer.len() >= SAMPLE_RATE as usize * 20; // 20 seconds max
 
         if should_process && self.speech_buffer.len() >= SAMPLE_RATE as usize / 2 {
             // Minimum 0.5 seconds of audio
@@ -192,7 +287,7 @@ impl AudioBuffer {
             self.is_speaking = false;
             self.silence_start = None;
             
-            println!("🎤 Completed speech chunk: {:.1}s ({} samples)", 
+            println!("🎤 Completed speech chunk (4s silence): {:.1}s ({} samples)", 
                 chunk.len() as f32 / SAMPLE_RATE as f32, chunk.len());
             
             Some(chunk)
@@ -255,6 +350,80 @@ fn count_word_overlap(words1: &[&str], words2: &[&str]) -> usize {
         }
     }
     overlap
+}
+
+// Process complete session file for final accurate transcription
+async fn process_complete_session_transcription(
+    app_handle: &AppHandle,
+    session_file_path: &PathBuf
+) -> Result<String> {
+    println!("📝 Starting complete session transcription from: {}", session_file_path.display());
+    
+    // Load the complete audio file using hound
+    let mut reader = hound::WavReader::open(session_file_path)?;
+    let samples: Result<Vec<f32>, _> = reader.samples::<f32>().collect();
+    let audio_data = samples.map_err(|e| anyhow!("Failed to read WAV samples: {}", e))?;
+    
+    println!("📝 Processing complete session: {:.1}s ({} samples)", 
+        audio_data.len() as f32 / SAMPLE_RATE as f32, audio_data.len());
+
+    // Get Whisper context
+    let ctx_guard = WHISPER_CONTEXT.lock().unwrap();
+    let ctx = ctx_guard
+        .as_ref()
+        .ok_or_else(|| anyhow!("Whisper context not initialized"))?;
+    
+    // Set up Whisper parameters for high-accuracy file transcription
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_language(Some("en"));
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_print_timestamps(true); // Enable timestamps for complete transcription
+    params.set_suppress_blank(true);
+    params.set_suppress_nst(true);
+    
+    // Higher accuracy settings for file processing
+    params.set_temperature(0.0);
+    params.set_no_speech_thold(0.4); // Lower threshold for better detection
+    params.set_logprob_thold(-1.0);
+    
+    // Process with Whisper
+    let mut state = ctx.create_state()
+        .map_err(|e| anyhow!("Failed to create Whisper state: {:?}", e))?;
+    
+    state.full(params, &audio_data)
+        .map_err(|e| anyhow!("Failed to process complete session: {:?}", e))?;
+    
+    let num_segments = state.full_n_segments()
+        .map_err(|e| anyhow!("Failed to get segment count: {:?}", e))?;
+    
+    println!("📝 Complete transcription found {} segments", num_segments);
+    
+    let mut complete_text = String::new();
+    for i in 0..num_segments {
+        let text = state.full_get_segment_text(i)
+            .map_err(|e| anyhow!("Failed to get segment text: {:?}", e))?;
+        let text = text.trim();
+        
+        if !text.is_empty() {
+            if !complete_text.is_empty() {
+                complete_text.push(' ');
+            }
+            complete_text.push_str(text);
+        }
+    }
+    
+    // Emit the final complete transcription
+    println!("\n📝 FINAL COMPLETE TRANSCRIPTION:\n\"{}\"", complete_text);
+    let _ = app_handle.emit("dictation-final-result", serde_json::json!({
+        "text": complete_text,
+        "session_file": session_file_path.to_string_lossy(),
+        "duration": audio_data.len() as f32 / SAMPLE_RATE as f32,
+        "is_complete": true
+    }));
+    
+    Ok(complete_text)
 }
 
 pub async fn initialize_whisper() -> Result<()> {
@@ -355,7 +524,7 @@ fn get_audio_device_and_config() -> Result<(Device, SupportedStreamConfig)> {
 
 #[tauri::command]
 pub async fn start_dictation(app_handle: AppHandle) -> Result<String, String> {
-    println!("🎤 Starting dictation...");
+    println!("🎤 Starting dictation with session recording...");
     
     // Check if already running
     if DICTATION_RUNNING.load(Ordering::Relaxed) {
@@ -384,7 +553,7 @@ pub async fn start_dictation(app_handle: AppHandle) -> Result<String, String> {
             // Emit status event
             let _ = app_handle_clone.emit("dictation-status", serde_json::json!({
                 "status": "started",
-                "message": "Voice dictation started successfully"
+                "message": "Voice dictation started - real-time preview with session recording"
             }));
             
             if let Err(e) = run_dictation_loop(app_handle_clone.clone()).await {
@@ -403,13 +572,13 @@ pub async fn start_dictation(app_handle: AppHandle) -> Result<String, String> {
         });
     });
     
-    println!("✅ Dictation started successfully!");
-    Ok("Dictation started".to_string())
+    println!("✅ Dictation started with session recording!");
+    Ok("Dictation started with session recording for final transcription".to_string())
 }
 
 #[tauri::command]
-pub async fn stop_dictation() -> Result<String, String> {
-    println!("🎤 Stopping dictation...");
+pub async fn stop_dictation(_app_handle: AppHandle) -> Result<String, String> {
+    println!("🎤 Stopping dictation and processing complete session...");
     
     if !DICTATION_RUNNING.load(Ordering::Relaxed) {
         return Err("Dictation is not running".to_string());
@@ -417,8 +586,11 @@ pub async fn stop_dictation() -> Result<String, String> {
     
     DICTATION_RUNNING.store(false, Ordering::Relaxed);
     
-    println!("✅ Dictation stopped");
-    Ok("Dictation stopped".to_string())
+    // Give time for the session to be finalized
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    
+    println!("✅ Dictation stopped - session saved for complete transcription");
+    Ok("Dictation stopped - complete transcription will be processed".to_string())
 }
 
 async fn run_dictation_loop(app_handle: AppHandle) -> Result<()> {
@@ -433,12 +605,16 @@ async fn run_dictation_loop(app_handle: AppHandle) -> Result<()> {
     println!("   Channels: {}", config.channels());
     println!("   Sample format: {:?}", config.sample_format());
     
-    // Create audio buffer with the actual sample rate and channels
+    // Create audio buffer with the actual sample rate and channels + session recording
     let audio_buffer = Arc::new(Mutex::new(AudioBuffer::new()));
     {
         let mut buffer = audio_buffer.lock().unwrap();
         buffer.set_source_sample_rate(config.sample_rate().0);
         buffer.set_channels(config.channels());
+        // Start session recording
+        if let Err(e) = buffer.start_session_recording() {
+            println!("⚠️ Failed to start session recording: {}", e);
+        }
     }
     let audio_buffer_clone = audio_buffer.clone();
     
@@ -493,10 +669,10 @@ async fn run_dictation_loop(app_handle: AppHandle) -> Result<()> {
         };
         
         if let Some(audio_data) = audio_chunk {
-            println!("🎯 Processing completed speech chunk of {} samples", audio_data.len());
+            println!("🎯 Processing preview chunk (4s silence): {} samples", audio_data.len());
             if let Err(e) = process_audio_chunk_streaming(&app_handle, &audio_data, &audio_buffer).await {
-                println!("❌ Error processing audio: {}", e);
-                let _ = app_handle.emit("speech-warning", format!("Processing error: {}", e));
+                println!("❌ Error processing preview audio: {}", e);
+                let _ = app_handle.emit("speech-warning", format!("Preview processing error: {}", e));
             }
         }
         
@@ -506,6 +682,27 @@ async fn run_dictation_loop(app_handle: AppHandle) -> Result<()> {
     
     // Drop the stream to stop recording
     drop(stream);
+    println!("🎤 Audio stream stopped");
+    
+    // Finalize session recording and process complete transcription
+    let session_file_path = {
+        let mut buffer = audio_buffer.lock().unwrap();
+        buffer.stop_session_recording()
+    };
+    
+    if let Ok(Some(path)) = session_file_path {
+        println!("📝 Processing complete session transcription...");
+        let _ = app_handle.emit("dictation-status", serde_json::json!({
+            "status": "processing",
+            "message": "Processing complete session for final transcription..."
+        }));
+        
+        if let Err(e) = process_complete_session_transcription(&app_handle, &path).await {
+            println!("❌ Failed to process complete session: {}", e);
+            let _ = app_handle.emit("dictation-error", format!("Complete transcription error: {}", e));
+        }
+    }
+    
     println!("🎤 Dictation loop ended");
     Ok(())
 }
@@ -532,7 +729,7 @@ async fn process_audio_chunk_streaming(
     unsafe {
         PROCESS_COUNT += 1;
         if PROCESS_COUNT % 3 == 0 {
-            println!("🎤 Processing chunk #{} (amplitude: {:.4}, energy: {:.6}, samples: {}, duration: {:.1}ms)", 
+            println!("🎤 Processing PREVIEW chunk #{} (amplitude: {:.4}, energy: {:.6}, samples: {}, duration: {:.1}ms)", 
                 PROCESS_COUNT, max_amplitude, rms_energy, audio_data.len(),
                 (audio_data.len() as f32 / SAMPLE_RATE as f32) * 1000.0);
         }
@@ -602,10 +799,11 @@ async fn process_audio_chunk_streaming(
                     buffer.add_transcription(text.to_string());
                 }
                 
-                println!("\n🗣️  NEW TRANSCRIPTION: \"{}\"", text);
+                println!("\n� PREVIEW TRANSCRIPTION: \"{}\"", text);
                 let _ = app_handle.emit("dictation-result", serde_json::json!({
                     "text": text,
-                    "is_final": true
+                    "is_final": false,
+                    "is_preview": true
                 }));
             } else {
                 println!("🔄 Skipped duplicate: \"{}\"", text);
@@ -775,4 +973,45 @@ pub async fn test_dictation_system() -> Result<String, String> {
 #[tauri::command]
 pub async fn is_dictation_running() -> Result<bool, String> {
     Ok(DICTATION_RUNNING.load(Ordering::Relaxed))
+}
+
+#[tauri::command]
+pub async fn list_dictation_sessions() -> Result<Vec<serde_json::Value>, String> {
+    let sessions_dir = PathBuf::from("dictation_sessions");
+    
+    if !sessions_dir.exists() {
+        return Ok(vec![]);
+    }
+    
+    let mut sessions = Vec::new();
+    
+    if let Ok(entries) = fs::read_dir(&sessions_dir) {
+        for entry in entries.flatten() {
+            if let Some(extension) = entry.path().extension() {
+                if extension == "wav" {
+                    if let Ok(metadata) = entry.metadata() {
+                        if let Ok(created) = metadata.created() {
+                            let duration = created.duration_since(UNIX_EPOCH)
+                                .unwrap_or_default().as_secs();
+                            
+                            sessions.push(serde_json::json!({
+                                "filename": entry.file_name().to_string_lossy(),
+                                "path": entry.path().to_string_lossy(),
+                                "size": metadata.len(),
+                                "created": duration
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Sort by creation time (newest first)
+    sessions.sort_by(|a, b| {
+        b["created"].as_u64().unwrap_or(0)
+            .cmp(&a["created"].as_u64().unwrap_or(0))
+    });
+    
+    Ok(sessions)
 }
