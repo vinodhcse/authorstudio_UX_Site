@@ -1,21 +1,73 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { PlusIcon, SparklesIcon, GitCommitIcon, ListIcon, FilePlusIcon } from '../../../constants';
 import { Theme } from '../../../types';
-import { MicrophoneIcon, BookOpenIcon, PencilIcon, EyeIcon, ChartBarIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { MicrophoneIcon, BookOpenIcon, PencilIcon, EyeIcon, ChartBarIcon, ClockIcon, CogIcon } from '@heroicons/react/24/outline';
 
 interface FloatingActionButtonProps {
     theme?: Theme;
+    onInsertText?: (text: string) => void; // Callback for inserting dictated text
 }
 
-const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'dark' }) => {
+const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'dark', onInsertText }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [selectedTool, setSelectedTool] = useState<string | null>(null);
     const [animationPhase, setAnimationPhase] = useState<'closed' | 'throwing' | 'floating'>('closed');
     const [hoveredTool, setHoveredTool] = useState<string | null>(null);
     const [showItems, setShowItems] = useState(false);
     const [itemPositions, setItemPositions] = useState<Array<{x: number, y: number}>>([]);
+    
+    const [isListening, setIsListening] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
+    
+    // Periodically check and adjust positions to maintain spacing
+    useEffect(() => {
+        if (!showItems || itemPositions.length === 0) return;
+        
+        const checkPositionSpacing = () => {
+            let needsRepositioning = false;
+            
+            for (let i = 0; i < itemPositions.length; i++) {
+                for (let j = i + 1; j < itemPositions.length; j++) {
+                    if (isPositionTooClose(itemPositions[i], itemPositions[j], 100)) {
+                        needsRepositioning = true;
+                        break;
+                    }
+                }
+                if (needsRepositioning) break;
+            }
+            
+            if (needsRepositioning && animationPhase === 'floating') {
+                console.log('Repositioning icons to maintain spacing...');
+                const newPositions = generatePositionsWithSpacing();
+                setItemPositions(newPositions);
+            }
+        };
+        
+        const interval = setInterval(checkPositionSpacing, 10000); // Check every 10 seconds
+        return () => clearInterval(interval);
+    }, [showItems, itemPositions, animationPhase]);
+    
+    useEffect(() => {
+        const unlistenPromise = listen<string>('speech-result', (event) => {
+            const text = event.payload.trim();
+            if (onInsertText) {
+                if (text === '<PARAGRAPH_END>') {
+                    onInsertText('\n');
+                } else {
+                    onInsertText(text + ' ');
+                }
+            }
+            setIsTranscribing(true);
+            setTimeout(() => setIsTranscribing(false), 1000);
+        });
+
+        return () => {
+            unlistenPromise.then(unlisten => unlisten());
+        };
+    }, [onInsertText]);
     
     // Theme-aware contrasting colors with better visibility
     const isDarkTheme = theme === 'dark';
@@ -46,7 +98,35 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         { 
             icon: MicrophoneIcon, 
             label: 'Voice Dictation', 
-            action: () => console.log('Voice Dictation clicked')
+            action: async () => {
+                if (isListening) {
+                    console.log('🎤 Stopping voice dictation...');
+                    await invoke('stop_dictation');
+                    setIsListening(false);
+                    setSelectedTool(null);
+                    setHoveredTool(null);
+                } else {
+                    console.log('🎤 Starting voice dictation...');
+                    try {
+                        await invoke('request_microphone_permission');
+                        console.log('🎤 Microphone permission granted, starting dictation...');
+                        try {
+                            await invoke('start_dictation');
+                            setIsListening(true);
+                            setSelectedTool('Voice Dictation');
+                            setHoveredTool(null);
+                        } catch (err) {
+                            console.error('❌ Failed to start dictation:', err);
+                            alert('❌ Could not start dictation. Check microphone permissions.');
+                        }
+                    } catch (err) {
+                        console.error('❌ Microphone permission request failed:', err);
+                        alert('❌ Microphone permission request failed. Please check your settings.');
+                        return;
+                    }
+                    
+                }
+            }
         },
         { 
             icon: ListIcon, 
@@ -88,6 +168,20 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
             label: 'Track Revisions', 
             action: () => console.log('Track Revisions clicked')
         },
+        { 
+            icon: CogIcon, 
+            label: 'Test Microphone', 
+            action: async () => {
+                console.log('🎤 Testing microphone permissions...');
+                try {
+                    await invoke('test_microphone_permissions');
+                    alert('✅ Microphone test completed! Check console for details.');
+                } catch (error) {
+                    console.error('🎤 Microphone test failed:', error);
+                    alert(`❌ Microphone test failed: ${error}`);
+                }
+            }
+        },
     ];
 
     const containerVariants = {
@@ -105,16 +199,16 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         }
     };
 
-    // Generate random positions in the lower right quadrant
+    // Generate random positions spread across more of the screen with collision detection
     const generateRandomPosition = () => {
         const viewportWidth = window.innerWidth || 1920;
         const viewportHeight = window.innerHeight || 1080;
         
-        // Lower right quadrant boundaries - more conservative to ensure visibility
-        const minX = Math.max(viewportWidth * 0.6, viewportWidth - 500); // More space from right
-        const maxX = viewportWidth - 150; // More margin from edge
-        const minY = Math.max(viewportHeight * 0.4, viewportHeight - 500); // More space from bottom
-        const maxY = viewportHeight - 150; // More margin from bottom
+        // Expanded boundaries to use more screen space
+        const minX = Math.max(viewportWidth * 0.15, 100); // Start from left side
+        const maxX = viewportWidth - 150; // Margin from right edge
+        const minY = Math.max(viewportHeight * 0.15, 100); // Start from top
+        const maxY = viewportHeight - 150; // Margin from bottom
         
         return {
             x: Math.random() * (maxX - minX) + minX - (viewportWidth - 120), // Adjust for fixed positioning
@@ -122,9 +216,40 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         };
     };
 
+    // Check if two positions are too close to each other
+    const isPositionTooClose = (pos1: {x: number, y: number}, pos2: {x: number, y: number}, minDistance: number = 120) => {
+        const dx = pos1.x - pos2.x;
+        const dy = pos1.y - pos2.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        return distance < minDistance;
+    };
+
+    // Generate positions with collision detection
+    const generatePositionsWithSpacing = () => {
+        const positions: Array<{x: number, y: number}> = [];
+        const maxAttempts = 50; // Prevent infinite loops
+        
+        for (let i = 0; i < menuItems.length; i++) {
+            let newPosition: {x: number, y: number};
+            let attempts = 0;
+            
+            do {
+                newPosition = generateRandomPosition();
+                attempts++;
+            } while (
+                attempts < maxAttempts && 
+                positions.some(existingPos => isPositionTooClose(newPosition, existingPos))
+            );
+            
+            positions.push(newPosition);
+        }
+        
+        return positions;
+    };
+
     // Initialize positions when throwing starts
     const initializePositions = () => {
-        const positions = menuItems.map(() => generateRandomPosition());
+        const positions = generatePositionsWithSpacing();
         setItemPositions(positions);
         return positions;
     };
@@ -145,18 +270,18 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         thrown: (index: number) => {
             // Use stored position or generate new one if not available
             const targetPos = itemPositions[index] || generateRandomPosition();
-            const throwForce = 200 + Math.random() * 100; // Random throw force
-            const throwAngle = 180 + Math.random() * 90; // Throw towards upper left from bottom right
+            const throwForce = 300 + Math.random() * 150; // Increased throw force for wider spread
+            const throwAngle = Math.random() * 360; // Full 360-degree throw angle for better distribution
             const throwRadian = (throwAngle * Math.PI) / 180;
             
             return {
-                x: [0, Math.cos(throwRadian) * throwForce * 0.3, targetPos.x],
-                y: [0, Math.sin(throwRadian) * throwForce * 0.3, targetPos.y],
+                x: [0, Math.cos(throwRadian) * throwForce * 0.4, targetPos.x],
+                y: [0, Math.sin(throwRadian) * throwForce * 0.4, targetPos.y],
                 opacity: [0, 1, 1],
-                scale: [0, 1.2, 1],
+                scale: [0, 1.3, 1], // Slightly larger peak scale
                 rotate: [0, Math.random() * 360, Math.random() * 720],
                 transition: {
-                    duration: 0.8 + Math.random() * 0.4,
+                    duration: 1.0 + Math.random() * 0.6, // Slightly longer duration
                     ease: [0.25, 0.46, 0.45, 0.94],
                     times: [0, 0.3, 1]
                 }
@@ -165,7 +290,7 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         floating: (index: number) => {
             // Use stored position for consistent floating
             const basePos = itemPositions[index] || generateRandomPosition();
-            const floatRadius = 25; // Fixed radius for predictable movement
+            const floatRadius = 15; // Reduced radius to prevent icons from getting too close
             const baseDelay = index * 0.2; // Stagger the animations
             
             return {
@@ -197,7 +322,7 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         },
         hover: () => {
             return {
-                scale: 1.4,
+                scale: 1.5, // Increased hover scale for better visibility
                 rotate: 0,
                 transition: {
                     type: "spring",
@@ -236,16 +361,17 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
             };
         },
         dictationActive: (index: number) => {
-            // Pulse at the current floating position
+            // Pulse at the current floating position with different colors based on speech state
             const basePos = itemPositions[index] || generateRandomPosition();
+            
             return {
-                scale: [1.8, 2.2, 1.8],
+                scale: isTranscribing ? [1.8, 2.4, 1.8] : [1.8, 2.2, 1.8],
                 opacity: [1, 0.9, 1],
                 x: basePos.x,
                 y: basePos.y,
                 rotate: 0,
                 transition: {
-                    duration: 1.5,
+                    duration: isTranscribing ? 1.0 : 1.5, // Faster pulse when actively transcribing
                     repeat: Infinity,
                     ease: "easeInOut"
                 }
@@ -319,14 +445,25 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                                         
                                         {/* Gradient blob for selected state - synchronized with icon pulsing */}
                                         <motion.div
-                                            className="absolute inset-0 rounded-full bg-gradient-to-br from-emerald-400/40 via-cyan-400/40 to-blue-500/40 blur-lg"
+                                            className={`absolute inset-0 rounded-full blur-lg ${
+                                                isDictation 
+                                                    ? isTranscribing 
+                                                        ? 'bg-gradient-to-br from-green-400/50 via-emerald-400/50 to-cyan-400/50' // Green when transcribing
+                                                        : 'bg-gradient-to-br from-orange-400/40 via-red-400/40 to-pink-400/40' // Red/orange when listening
+                                                    : 'bg-gradient-to-br from-emerald-400/40 via-cyan-400/40 to-blue-500/40' // Default selected color
+                                            }`}
                                             initial={{ scale: 0, opacity: 0 }}
                                             animate={isSelected ? {
-                                                scale: isDictation ? [2.2, 2.8, 2.2] : [2, 2.4, 2],
-                                                opacity: isDictation ? [0.6, 0.8, 0.6] : [0.5, 0.7, 0.5],
+                                                scale: isDictation ? 
+                                                    (isTranscribing ? [2.4, 3.0, 2.4] : [2.2, 2.8, 2.2]) : 
+                                                    [2, 2.4, 2],
+                                                opacity: isDictation ? 
+                                                    (isTranscribing ? [0.7, 0.9, 0.7] : [0.6, 0.8, 0.6]) : 
+                                                    [0.5, 0.7, 0.5],
                                                 rotate: [0, 180, 360],
                                                 transition: {
-                                                    duration: isDictation ? 1.5 : 1.5,
+                                                    duration: isDictation ? 
+                                                        (isTranscribing ? 1.0 : 1.5) : 1.5,
                                                     repeat: Infinity,
                                                     ease: "easeInOut"
                                                 }
@@ -336,11 +473,19 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                                         
                                         {/* Additional inner glow for selected state */}
                                         <motion.div
-                                            className="absolute inset-0 rounded-full bg-gradient-to-br from-white/20 via-emerald-300/30 to-cyan-300/20 blur-sm"
+                                            className={`absolute inset-0 rounded-full blur-sm ${
+                                                isDictation 
+                                                    ? isTranscribing 
+                                                        ? 'bg-gradient-to-br from-white/30 via-green-300/40 to-emerald-300/30' // Bright green when transcribing
+                                                        : 'bg-gradient-to-br from-white/25 via-orange-300/35 to-red-300/25' // Orange/red when listening
+                                                    : 'bg-gradient-to-br from-white/20 via-emerald-300/30 to-cyan-300/20' // Default selected glow
+                                            }`}
                                             initial={{ scale: 0, opacity: 0 }}
                                             animate={isSelected ? {
                                                 scale: [1.5, 1.8, 1.5],
-                                                opacity: [0.3, 0.5, 0.3],
+                                                opacity: isDictation ? 
+                                                    (isTranscribing ? [0.4, 0.6, 0.4] : [0.3, 0.5, 0.3]) : 
+                                                    [0.3, 0.5, 0.3],
                                                 transition: {
                                                     duration: 1.5,
                                                     repeat: Infinity,
@@ -353,32 +498,47 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                                         
                                         <motion.button 
                                             className={`w-16 h-16 ${buttonTheme.background} ${buttonTheme.text} ${buttonTheme.border} rounded-full flex items-center justify-center ${buttonTheme.shadow} transition-all duration-300 ${buttonTheme.hover} transform-gpu relative z-10 ${buttonTheme.outerGlow}`}
-                                            onClick={() => {
-                                                if (isSelected) {
-                                                    // If this tool is selected, stop it and return to center
-                                                    console.log(`🔥 Stopping ${item.label}...`);
-                                                    setSelectedTool(null);
-                                                    setHoveredTool(null);
-                                                    // Don't close the floating menu, just deselect
-                                                } else if (selectedTool) {
-                                                    // If another tool is already selected, stop that one and select this one
-                                                    item.action();
-                                                    setSelectedTool(item.label);
-                                                    setHoveredTool(null);
-                                                    
-                                                    // For dictation, start the pulsing effect
-                                                    if (item.label === 'Voice Dictation') {
-                                                        console.log('🎤 Starting voice dictation...');
+                                            onClick={async () => {
+                                                if (item.label === 'Voice Dictation') {
+                                                    if (isSelected) {
+                                                        // Stop dictation
+                                                        console.log(`🔥 Stopping ${item.label}...`);
+                                                        await item.action();
+                                                        setSelectedTool(null);
+                                                        setHoveredTool(null);
+                                                    } else {
+                                                        // Start dictation
+                                                        if (selectedTool && selectedTool !== item.label) {
+                                                            // Stop other tool first if needed
+                                                            if (selectedTool === 'Voice Dictation') {
+                                                                await invoke('stop_dictation');
+                                                                setIsListening(false);
+                                                            }
+                                                        }
+                                                        
+                                                        await item.action();
+                                                        setSelectedTool(item.label);
+                                                        setHoveredTool(null);
                                                     }
                                                 } else {
-                                                    // Select this tool and return others to center
-                                                    item.action();
-                                                    setSelectedTool(item.label);
-                                                    setHoveredTool(null);
-                                                    
-                                                    // For dictation, start the pulsing effect
-                                                    if (item.label === 'Voice Dictation') {
-                                                        console.log('🎤 Starting voice dictation...');
+                                                    // Handle other tools normally
+                                                    if (isSelected) {
+                                                        console.log(`🔥 Stopping ${item.label}...`);
+                                                        setSelectedTool(null);
+                                                        setHoveredTool(null);
+                                                    } else if (selectedTool) {
+                                                        // Stop dictation if it's running
+                                                        if (selectedTool === 'Voice Dictation') {
+                                                            await invoke('stop_dictation');
+                                                            setIsListening(false);
+                                                        }
+                                                        await item.action();
+                                                        setSelectedTool(item.label);
+                                                        setHoveredTool(null);
+                                                    } else {
+                                                        await item.action();
+                                                        setSelectedTool(item.label);
+                                                        setHoveredTool(null);
                                                     }
                                                 }
                                             }}
@@ -430,11 +590,13 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                                             <div className="absolute inset-0 rounded-full bg-black/15 transform translate-x-2 translate-y-2 -z-20 blur-md" />
                                         </motion.button>
                                         <motion.span 
-                                            className={`absolute bottom-1/2 translate-y-1/2 right-20 whitespace-nowrap ${buttonTheme.tooltip} text-sm px-4 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity shadow-2xl pointer-events-none z-30 transform-gpu`}
-                                            initial={{ scale: 0.8, x: 10 }}
-                                            whileHover={{ scale: 1, x: 0 }}
+                                            className={`absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap ${buttonTheme.tooltip} text-sm px-4 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity shadow-2xl pointer-events-none z-50 transform-gpu`}
+                                            initial={{ scale: 0.8, y: 10 }}
+                                            whileHover={{ scale: 1, y: 0 }}
                                         >
                                             {isSelected ? `Stop ${item.label}` : item.label}
+                                            {/* Tooltip arrow */}
+                                            <div className={`absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent ${isDarkTheme ? 'border-t-gray-900/95' : 'border-t-white/95'}`} />
                                         </motion.span>
                                     </div>
                                 </motion.li>
@@ -446,10 +608,17 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                 
                 <motion.button
                     className="w-20 h-20 rounded-full bg-gradient-to-br from-purple-600 via-pink-500 to-red-500 text-white flex items-center justify-center shadow-2xl hover:shadow-purple-500/25 transition-all duration-300 relative z-30 transform-gpu"
-                    onClick={() => {
+                    onClick={async () => {
                         if (selectedTool) {
                             // If a tool is selected, stop it but keep menu open
                             console.log(`🔥 Stopping ${selectedTool} from main button...`);
+                            
+                            // Stop dictation if it's running
+                            if (selectedTool === 'Voice Dictation') {
+                                await invoke('stop_dictation');
+                                setIsListening(false);
+                            }
+                            
                             setSelectedTool(null);
                             setHoveredTool(null);
                         } else if (!isOpen) {
@@ -458,8 +627,8 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                             setShowItems(true);
                             initializePositions(); // Initialize positions
                             setAnimationPhase('throwing');
-                            // Switch to floating after throw animation
-                            setTimeout(() => setAnimationPhase('floating'), 1000);
+                            // Switch to floating after throw animation completes
+                            setTimeout(() => setAnimationPhase('floating'), 1200);
                         } else {
                             // Close if already open
                             setIsOpen(false);

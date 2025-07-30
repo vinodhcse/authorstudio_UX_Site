@@ -28,6 +28,26 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
         return <Navigate to="/" replace />;
     }
 
+    const handleInsertText = (text: string) => {
+        if (editorInstance) {
+            // Insert text at current cursor position
+            const { selection } = editorInstance.state;
+            const pos = selection.to;
+            
+            // Add a space before the text if needed (cursor is not at start or after whitespace)
+            const needsSpaceBefore = pos > 0 && 
+                !editorInstance.state.doc.textBetween(pos - 1, pos).match(/\s/);
+            
+            const textToInsert = needsSpaceBefore ? ` ${text}` : text;
+            
+            editorInstance
+                .chain()
+                .focus()
+                .insertContentAt(pos, textToInsert)
+                .run();
+        }
+    };
+
     const handleOpenTypographySettings = () => {
         setShowTypographySettings(true);
     };
@@ -55,10 +75,13 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
                     versionId={versionId!}
                     theme={theme}
                 />
-                <ScrollMinimap editor={editorInstance} />
+                {/* <ScrollMinimap editor={editorInstance} /> */}
             </div>
             <EditorFooter book={book} />
-            <FloatingActionButton theme={theme} />
+                        <FloatingActionButton 
+                theme={theme} 
+                onInsertText={handleInsertText}
+            />
         </motion.div>
     );
 };
