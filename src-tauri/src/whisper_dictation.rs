@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::mpsc;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 // Global state for dictation
@@ -31,6 +30,10 @@ pub struct AudioBuffer {
     downsample_ratio: f32,
     downsample_accumulator: f32,
     downsample_count: f32,
+    // Silence-based chunking
+    speech_buffer: Vec<f32>,
+    is_speaking: bool,
+    silence_start: Option<Instant>,
     last_transcribed_pos: usize,
     transcription_history: Vec<String>,
 }
@@ -46,6 +49,10 @@ impl AudioBuffer {
             downsample_ratio: 1.0,
             downsample_accumulator: 0.0,
             downsample_count: 0.0,
+            // Silence-based chunking
+            speech_buffer: Vec::new(),
+            is_speaking: false,
+            silence_start: None,
             last_transcribed_pos: 0,
             transcription_history: Vec::new(),
         }
@@ -78,12 +85,6 @@ impl AudioBuffer {
             }
         }
         
-        let has_audio = samples.iter().any(|&sample| sample.abs() > SILENCE_THRESHOLD);
-        
-        if has_audio {
-            self.last_audio_time = Instant::now();
-        }
-
         // Use whisper-rs built-in stereo to mono conversion only if actually stereo
         let mono_samples = if self.channels == 2 {
             // Actually stereo, use official whisper-rs conversion
@@ -104,9 +105,11 @@ impl AudioBuffer {
         };
 
         // Downsample if necessary
+        let mut processed_samples = Vec::new();
         for &sample in &mono_samples {
             if self.downsample_ratio <= 1.0 {
-                // No downsampling needed or upsampling (just write directly)
+                // No downsampling needed or upsampling (just add directly)
+                processed_samples.push(sample);
                 self.data[self.write_pos] = sample;
                 self.write_pos = (self.write_pos + 1) % self.data.len();
             } else {
@@ -116,6 +119,7 @@ impl AudioBuffer {
                 
                 if self.downsample_count >= self.downsample_ratio {
                     let downsampled = self.downsample_accumulator / self.downsample_count;
+                    processed_samples.push(downsampled);
                     self.data[self.write_pos] = downsampled;
                     self.write_pos = (self.write_pos + 1) % self.data.len();
                     
@@ -124,6 +128,76 @@ impl AudioBuffer {
                     self.downsample_count = 0.0;
                 }
             }
+        }
+
+        // Add processed samples to speech buffer for silence-based chunking
+        self.add_to_speech_buffer(&processed_samples);
+    }
+
+    fn add_to_speech_buffer(&mut self, samples: &[f32]) {
+        // Calculate audio energy
+        let rms_energy = (samples.iter().map(|x| x * x).sum::<f32>() / samples.len() as f32).sqrt();
+        let has_speech = rms_energy > 0.008; // Speech detection threshold
+        
+        if has_speech {
+            if !self.is_speaking {
+                println!("🎤 Speech detected - starting to record");
+                self.is_speaking = true;
+                self.silence_start = None;
+            }
+            self.last_audio_time = Instant::now();
+            
+            // Add samples to speech buffer
+            self.speech_buffer.extend(samples);
+            
+            // Limit buffer size to prevent excessive memory usage (max 30 seconds)
+            let max_samples = SAMPLE_RATE as usize * 30;
+            if self.speech_buffer.len() > max_samples {
+                let excess = self.speech_buffer.len() - max_samples;
+                self.speech_buffer.drain(0..excess);
+                println!("🔄 Trimmed speech buffer to {} samples", self.speech_buffer.len());
+            }
+        } else if self.is_speaking {
+            // We're in speech mode but current chunk is silent
+            if self.silence_start.is_none() {
+                self.silence_start = Some(Instant::now());
+                println!("🔇 Silence started during speech");
+            }
+            
+            // Continue adding samples during silence (for natural pauses)
+            self.speech_buffer.extend(samples);
+        }
+    }
+
+    fn get_completed_speech_chunk(&mut self) -> Option<Vec<f32>> {
+        // Check if we have a completed speech chunk (silence detected after speech)
+        if !self.is_speaking || self.speech_buffer.is_empty() {
+            return None;
+        }
+
+        let silence_duration = if let Some(silence_start) = self.silence_start {
+            silence_start.elapsed()
+        } else {
+            Duration::from_secs(0)
+        };
+
+        // If we've been silent for 2+ seconds, or speech buffer is very long, process it
+        let should_process = silence_duration >= Duration::from_secs(2) || 
+                           self.speech_buffer.len() >= SAMPLE_RATE as usize * 15; // 15 seconds max
+
+        if should_process && self.speech_buffer.len() >= SAMPLE_RATE as usize / 2 {
+            // Minimum 0.5 seconds of audio
+            let chunk = self.speech_buffer.clone();
+            self.speech_buffer.clear();
+            self.is_speaking = false;
+            self.silence_start = None;
+            
+            println!("🎤 Completed speech chunk: {:.1}s ({} samples)", 
+                chunk.len() as f32 / SAMPLE_RATE as f32, chunk.len());
+            
+            Some(chunk)
+        } else {
+            None
         }
     }
 
@@ -135,9 +209,52 @@ impl AudioBuffer {
         result
     }
 
+
+
+    fn add_transcription(&mut self, text: String) {
+        // Keep only the last 5 transcriptions for comparison  
+        self.transcription_history.push(text);
+        if self.transcription_history.len() > 5 {
+            self.transcription_history.remove(0);
+        }
+    }
+
+    fn is_duplicate_transcription(&self, new_text: &str) -> bool {
+        // Check if this transcription is too similar to recent ones
+        let new_words: Vec<&str> = new_text.split_whitespace().collect();
+        if new_words.len() < 2 {
+            return true; // Too short, likely noise
+        }
+
+        for previous in &self.transcription_history {
+            let prev_words: Vec<&str> = previous.split_whitespace().collect();
+            
+            // Check for significant overlap
+            let overlap = count_word_overlap(&new_words, &prev_words);
+            let similarity = overlap as f32 / new_words.len().max(prev_words.len()) as f32;
+            
+            if similarity > 0.7 {
+                return true; // Too similar to previous transcription
+            }
+        }
+        
+        false
+    }
+
     fn is_silent(&self) -> bool {
         self.last_audio_time.elapsed() > SILENCE_DURATION
     }
+}
+
+// Helper function to count word overlap between two texts
+fn count_word_overlap(words1: &[&str], words2: &[&str]) -> usize {
+    let mut overlap = 0;
+    for word1 in words1 {
+        if words2.contains(word1) {
+            overlap += 1;
+        }
+    }
+    overlap
 }
 
 pub async fn initialize_whisper() -> Result<()> {
@@ -325,57 +442,36 @@ async fn run_dictation_loop(app_handle: AppHandle) -> Result<()> {
     }
     let audio_buffer_clone = audio_buffer.clone();
     
-    // Create channel for communication between audio thread and processing thread
-    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<f32>>();
-    
-    // Calculate processing frequency based on actual sample rate
-    let processing_interval = config.sample_rate().0 as usize / 2; // 2 times per second for better accuracy
-    
-    // Build audio stream
+    // Build audio stream - simplified without channels
     let stream = match config.sample_format() {
         SampleFormat::F32 => device.build_input_stream(
             &config.into(),
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 let mut buffer = audio_buffer_clone.lock().unwrap();
                 buffer.write_samples(data);
-                
-                // Send a copy of current buffer for processing periodically
-                if buffer.write_pos % processing_interval == 0 {
-                    let _ = tx.send(buffer.get_buffer_copy());
-                }
             },
             |err| println!("❌ Audio stream error: {}", err),
             None,
         )?,
         SampleFormat::I16 => {
-            let tx_clone = tx.clone();
             device.build_input_stream(
                 &config.into(),
                 move |data: &[i16], _: &cpal::InputCallbackInfo| {
                     let f32_data: Vec<f32> = data.iter().map(|&x| x as f32 / i16::MAX as f32).collect();
                     let mut buffer = audio_buffer_clone.lock().unwrap();
                     buffer.write_samples(&f32_data);
-                    
-                    if buffer.write_pos % processing_interval == 0 {
-                        let _ = tx_clone.send(buffer.get_buffer_copy());
-                    }
                 },
                 |err| println!("❌ Audio stream error: {}", err),
                 None,
             )?
         },
         SampleFormat::U16 => {
-            let tx_clone = tx.clone();
             device.build_input_stream(
                 &config.into(),
                 move |data: &[u16], _: &cpal::InputCallbackInfo| {
                     let f32_data: Vec<f32> = data.iter().map(|&x| (x as f32 - u16::MAX as f32 / 2.0) / (u16::MAX as f32 / 2.0)).collect();
                     let mut buffer = audio_buffer_clone.lock().unwrap();
                     buffer.write_samples(&f32_data);
-                    
-                    if buffer.write_pos % processing_interval == 0 {
-                        let _ = tx_clone.send(buffer.get_buffer_copy());
-                    }
                 },
                 |err| println!("❌ Audio stream error: {}", err),
                 None,
@@ -388,45 +484,135 @@ async fn run_dictation_loop(app_handle: AppHandle) -> Result<()> {
     stream.play()?;
     println!("🎤 Audio stream started");
     
-    let mut last_silence_check = Instant::now();
-    
-    // Processing loop - keep stream alive by not moving it into async tasks
+    // Processing loop - use silence-based chunking for better accuracy
     while DICTATION_RUNNING.load(Ordering::Relaxed) {
-        // Try to receive audio data
-        match rx.try_recv() {
-            Ok(audio_data) => {
-                if let Err(e) = process_audio_chunk(&app_handle, &audio_data).await {
-                    println!("❌ Error processing audio: {}", e);
-                    let _ = app_handle.emit("speech-warning", format!("Processing error: {}", e));
-                }
-            }
-            Err(mpsc::error::TryRecvError::Empty) => {
-                // No data available, sleep briefly
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-            Err(mpsc::error::TryRecvError::Disconnected) => {
-                println!("❌ Audio channel disconnected");
-                break;
+        // Check for completed speech chunks after silence
+        let audio_chunk = {
+            let mut buffer = audio_buffer.lock().unwrap();
+            buffer.get_completed_speech_chunk()
+        };
+        
+        if let Some(audio_data) = audio_chunk {
+            println!("🎯 Processing completed speech chunk of {} samples", audio_data.len());
+            if let Err(e) = process_audio_chunk_streaming(&app_handle, &audio_data, &audio_buffer).await {
+                println!("❌ Error processing audio: {}", e);
+                let _ = app_handle.emit("speech-warning", format!("Processing error: {}", e));
             }
         }
         
-        // Check for silence periodically
-        if last_silence_check.elapsed() > Duration::from_secs(1) {
-            let buffer = audio_buffer.lock().unwrap();
-            if buffer.is_silent() {
-                println!("🔇 Silence detected - emitting paragraph end");
-                let _ = app_handle.emit("dictation-result", serde_json::json!({
-                    "text": "new paragraph",
-                    "is_final": true
-                }));
-            }
-            last_silence_check = Instant::now();
-        }
+        // Check more frequently for speech boundaries
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
     
     // Drop the stream to stop recording
     drop(stream);
     println!("🎤 Dictation loop ended");
+    Ok(())
+}
+
+async fn process_audio_chunk_streaming(
+    app_handle: &AppHandle, 
+    audio_data: &[f32], 
+    audio_buffer: &Arc<Mutex<AudioBuffer>>
+) -> Result<()> {
+    // Check if audio has sufficient energy to avoid processing silence/noise
+    let rms_energy = (audio_data.iter().map(|x| x * x).sum::<f32>() / audio_data.len() as f32).sqrt();
+    if rms_energy < 0.008 { // Lower threshold for better sensitivity
+        return Ok(());
+    }
+    
+    // Skip processing if the audio is too quiet
+    let max_amplitude = audio_data.iter().map(|x| x.abs()).fold(0.0, f32::max);
+    if max_amplitude < 0.005 { // Lower threshold
+        return Ok(());
+    }
+    
+    // Only log occasionally to reduce noise
+    static mut PROCESS_COUNT: u32 = 0;
+    unsafe {
+        PROCESS_COUNT += 1;
+        if PROCESS_COUNT % 3 == 0 {
+            println!("🎤 Processing chunk #{} (amplitude: {:.4}, energy: {:.6}, samples: {}, duration: {:.1}ms)", 
+                PROCESS_COUNT, max_amplitude, rms_energy, audio_data.len(),
+                (audio_data.len() as f32 / SAMPLE_RATE as f32) * 1000.0);
+        }
+    }
+    
+    // Ensure we have enough audio samples - pad if necessary
+    let mut padded_audio = audio_data.to_vec();
+    let min_samples = SAMPLE_RATE as usize; // Minimum 1 second
+    
+    if padded_audio.len() < min_samples {
+        // Pad with silence to reach minimum length
+        let padding_needed = min_samples - padded_audio.len();
+        padded_audio.extend(vec![0.0; padding_needed]);
+        println!("🔧 Padded audio from {} to {} samples", audio_data.len(), padded_audio.len());
+    }
+    
+    // Get Whisper context
+    let ctx_guard = WHISPER_CONTEXT.lock().unwrap();
+    let ctx = ctx_guard
+        .as_ref()
+        .ok_or_else(|| anyhow!("Whisper context not initialized"))?;
+    
+    // Set up Whisper parameters for streaming
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_language(Some("en"));
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_print_timestamps(false);
+    params.set_suppress_blank(true);
+    params.set_suppress_nst(true);
+    
+    // More aggressive settings to get better results
+    params.set_temperature(0.0);
+    params.set_no_speech_thold(0.6);
+    
+    // Process with Whisper
+    let mut state = ctx.create_state()
+        .map_err(|e| anyhow!("Failed to create Whisper state: {:?}", e))?;
+    
+    state.full(params, &padded_audio)
+        .map_err(|e| anyhow!("Failed to process audio: {:?}", e))?;
+    
+    let num_segments = state.full_n_segments()
+        .map_err(|e| anyhow!("Failed to get segment count: {:?}", e))?;
+    
+    println!("🔍 Whisper found {} segments", num_segments);
+    
+    for i in 0..num_segments {
+        let text = state.full_get_segment_text(i)
+            .map_err(|e| anyhow!("Failed to get segment text: {:?}", e))?;
+        let text = text.trim();
+        
+        println!("🔍 Raw segment {}: '{}'", i, text);
+        
+        if !text.is_empty() && text.len() > 1 {
+            // Check for duplicates
+            let is_duplicate = {
+                let mut buffer = audio_buffer.lock().unwrap();
+                buffer.is_duplicate_transcription(text)
+            };
+            
+            if !is_duplicate {
+                // Add to history and emit
+                {
+                    let mut buffer = audio_buffer.lock().unwrap();
+                    buffer.add_transcription(text.to_string());
+                }
+                
+                println!("\n🗣️  NEW TRANSCRIPTION: \"{}\"", text);
+                let _ = app_handle.emit("dictation-result", serde_json::json!({
+                    "text": text,
+                    "is_final": true
+                }));
+            } else {
+                println!("🔄 Skipped duplicate: \"{}\"", text);
+            }
+        }
+    }
+    
     Ok(())
 }
 
