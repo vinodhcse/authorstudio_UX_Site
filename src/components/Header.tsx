@@ -6,6 +6,7 @@ import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { Theme, ActiveTab, Book } from '../types';
 import { SunIcon, MoonIcon, SystemIcon, SearchIcon, BookOpenIcon, ChevronDownIcon, PenIcon, PlusIcon } from '../constants';
 
+
 const logoContainerVariants: Variants = {
   rest: {},
   hover: {
@@ -171,6 +172,7 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
     { name: 'My Books', path: '/' },
     { name: 'Editing', path: '/editing' },
     { name: 'Reviewing', path: '/reviewing' },
+    { name: 'WhisperTest', path: '/test-whisper' },
   ];
 
   const mainNavTabsForMobile = mainTabs.map(t => t.name);
@@ -204,6 +206,7 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
                     <Tab className="order-1" name="My Books" path="/" isActive={location.pathname === '/'} />
                     <Tab className="order-2" name="Editing" path="/editing" isActive={location.pathname === '/editing'} />
                     <Tab className="order-4" name="Reviewing" path="/reviewing" isActive={location.pathname === '/reviewing'} />
+                    <Tab className="order-5" name="WhisperTest" path="/test-whisper" isActive={location.pathname === '/test-whisper'} />
                     
                     <div className="order-3 flex items-center gap-2 bg-gradient-to-br from-gray-800 to-black dark:from-slate-200 dark:to-gray-50 rounded-full px-4 py-1 border border-gray-700 dark:border-gray-300 shadow-inner min-w-[32rem]">
                         <SearchBar />

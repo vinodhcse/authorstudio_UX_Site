@@ -12,6 +12,36 @@ use tool_windows::{
     broadcast_theme_change
 };
 
+// Use real Whisper dictation for full AI functionality
+mod whisper_dictation;
+use whisper_dictation::{
+    start_dictation, stop_dictation, test_dictation_system, is_dictation_running
+};
+
+// Whisper file testing module for debugging
+mod whisper_file_test;
+use whisper_file_test::{
+    test_whisper_with_file, test_whisper_with_sine_wave, test_whisper_with_speech_pattern
+};
+
+// Audio test generator for creating sample files
+mod audio_test_generator;
+use audio_test_generator::{
+    create_test_audio_file, list_test_audio_files
+};
+
+// Whisper diagnostics for debugging hallucination issues
+mod whisper_diagnostics;
+use whisper_diagnostics::{
+    test_whisper_silence, test_whisper_noise, test_whisper_microphone_noise
+};
+
+// Uncomment this and comment out simple_dictation if you have whisper-rs working:
+// mod whisper_dictation;
+// use whisper_dictation::{
+//     start_dictation, stop_dictation, test_microphone_permissions, is_dictation_running
+// };
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserRole {
     user_id: String,
@@ -134,7 +164,19 @@ pub fn run() {
             close_all_tools,
             list_tool_windows,
             get_tool_windows_state,
-            broadcast_theme_change
+            broadcast_theme_change,
+            start_dictation,
+            stop_dictation,
+            test_dictation_system,
+            is_dictation_running,
+            test_whisper_with_file,
+            test_whisper_with_sine_wave,
+            test_whisper_with_speech_pattern,
+            create_test_audio_file,
+            list_test_audio_files,
+            test_whisper_silence,
+            test_whisper_noise,
+            test_whisper_microphone_noise
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

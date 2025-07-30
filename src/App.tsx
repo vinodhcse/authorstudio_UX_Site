@@ -13,6 +13,7 @@ import BookForgePage from './pages/BookForge/BookForgePage';
 import CustomNodeTest from './components/CustomNodeTest';
 import NameGeneratorPage from './pages/Tools/NameGeneratorPage';
 import CharacterProfileBuilder from './pages/Tools/CharacterProfileBuilder';
+import WhisperTestPage from './pages/WhisperTestPage';
 
 // Tool Window Components
 import NameGeneratorTool from './pages/Tools/NameGeneratorTool';
@@ -137,6 +138,7 @@ const App: React.FC = () => {
                     <Route path="/editing" element={<div className="flex items-center justify-center h-96 text-gray-500">Editing Content Area</div>} />
                     <Route path="/reviewing" element={<div className="flex items-center justify-center h-96 text-gray-500">Reviewing Content Area</div>} />
                     <Route path="/test-nodes" element={<CustomNodeTest />} />
+                    <Route path="/test-whisper" element={<WhisperTestPage />} />
                 </Route>
                 <Route path="/tools/name-generator" element={<NameGeneratorPage books={books} theme={theme} setTheme={handleThemeChange}/>} />
                 <Route path="/tools/character-profile-builder" element={<CharacterProfileBuilder books={books} theme={theme} setTheme={handleThemeChange} />} />

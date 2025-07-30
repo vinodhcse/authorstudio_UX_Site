@@ -22,129 +22,22 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
     const [isListening, setIsListening] = useState(false);
     const [isTranscribing, setIsTranscribing] = useState(false);
     
-    // Periodically check and adjust positions to maintain spacing
     useEffect(() => {
-        if (!showItems || itemPositions.length === 0) return;
-        
-        const checkPositionSpacing = () => {
-            let needsRepositioning = false;
-            
-            for (let i = 0; i < itemPositions.length; i++) {
-                for (let j = i + 1; j < itemPositions.length; j++) {
-                    if (isPositionTooClose(itemPositions[i], itemPositions[j], 100)) {
-                        needsRepositioning = true;
-                        break;
-                    }
+        const unlistenPromise = listen<string>('speech-result', (event) => {
+            const text = event.payload.trim();
+            if (onInsertText) {
+                if (text === '<PARAGRAPH_END>') {
+                    onInsertText('\n');
+                } else {
+                    onInsertText(text + ' ');
                 }
-                if (needsRepositioning) break;
             }
-            
-            if (needsRepositioning && animationPhase === 'floating') {
-                console.log('Repositioning icons to maintain spacing...');
-                const newPositions = generatePositionsWithSpacing();
-                setItemPositions(newPositions);
-            }
-        };
-        
-        const interval = setInterval(checkPositionSpacing, 10000); // Check every 10 seconds
-        return () => clearInterval(interval);
-    }, [showItems, itemPositions, animationPhase]);
-    
-    useEffect(() => {
-        const setupEventListeners = async () => {
-            try {
-                // Listen for speech results
-                const unlistenSpeech = await listen<{ text: string; is_final: boolean }>('dictation-result', (event) => {
-                    const { text, is_final } = event.payload;
-                    console.log('🎤 Speech result:', { text, is_final });
-                    
-                    if (onInsertText && text.trim()) {
-                        // Handle special commands
-                        if (text.trim().toLowerCase() === 'new paragraph' || text === '<PARAGRAPH_END>') {
-                            onInsertText('\n\n');
-                        } else if (text.trim().toLowerCase() === 'new line') {
-                            onInsertText('\n');
-                        } else {
-                            // Insert the text with a space if it's a final result
-                            onInsertText(text + (is_final ? ' ' : ''));
-                        }
-                    }
-                    
-                    // Visual feedback for transcription
-                    if (is_final) {
-                        setIsTranscribing(true);
-                        setTimeout(() => setIsTranscribing(false), 1000);
-                    }
-                });
+            setIsTranscribing(true);
+            setTimeout(() => setIsTranscribing(false), 1000);
+        });
 
-                // Listen for dictation status changes
-                const unlistenStatus = await listen<{ status: string; message?: string }>('dictation-status', (event) => {
-                    const { status, message } = event.payload;
-                    console.log('🎤 Dictation status:', { status, message });
-                    
-                    switch (status) {
-                        case 'started':
-                            setIsListening(true);
-                            console.log('✅ Dictation started successfully');
-                            break;
-                        case 'stopped':
-                            setIsListening(false);
-                            setSelectedTool(null);
-                            console.log('✅ Dictation stopped successfully');
-                            break;
-                        case 'error':
-                            setIsListening(false);
-                            setSelectedTool(null);
-                            console.error('❌ Dictation error:', message);
-                            if (message) {
-                                alert(`❌ Dictation Error: ${message}`);
-                            }
-                            break;
-                        case 'listening':
-                            // Visual feedback for when actually listening
-                            setIsTranscribing(false);
-                            break;
-                        case 'processing':
-                            // Visual feedback for when processing speech
-                            setIsTranscribing(true);
-                            break;
-                    }
-                });
-
-                // Listen for error events
-                const unlistenError = await listen<string>('dictation-error', (event) => {
-                    const errorMessage = event.payload;
-                    console.error('❌ Dictation error event:', errorMessage);
-                    setIsListening(false);
-                    setSelectedTool(null);
-                    setIsTranscribing(false);
-                    
-                    // Show user-friendly error message
-                    if (errorMessage.includes('Whisper model not found')) {
-                        alert('🔧 AI Model Missing\n\nThe app is running in simulation mode. Download the Whisper model for full AI functionality.\n\nSee WHISPER_SETUP.md for instructions.');
-                    } else if (errorMessage.includes('microphone') || errorMessage.includes('audio')) {
-                        alert('🎤 Microphone Issue\n\nPlease check your microphone connection and permissions, then try again.');
-                    } else {
-                        alert(`❌ Voice dictation error: ${errorMessage}`);
-                    }
-                });
-
-                // Cleanup function
-                return () => {
-                    unlistenSpeech();
-                    unlistenStatus();
-                    unlistenError();
-                };
-            } catch (error) {
-                console.error('Failed to setup event listeners:', error);
-                return () => {}; // Return empty cleanup function
-            }
-        };
-
-        const cleanupPromise = setupEventListeners();
-        
         return () => {
-            cleanupPromise.then(cleanup => cleanup());
+            unlistenPromise.then(unlisten => unlisten());
         };
     }, [onInsertText]);
     
@@ -185,13 +78,9 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                         setIsListening(false);
                         setSelectedTool(null);
                         setHoveredTool(null);
-                        console.log('✅ Voice dictation stopped successfully');
                     } catch (err) {
                         console.error('❌ Failed to stop dictation:', err);
-                        setIsListening(false); // Force stop UI state
-                        setSelectedTool(null);
-                        setHoveredTool(null);
-                        alert('❌ Could not stop dictation properly. The dictation has been stopped.');
+                        alert('❌ Could not stop dictation. Please try again.');
                     }
                 } else {
                     console.log('🎤 Starting voice dictation...');
@@ -200,38 +89,19 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                         setIsListening(true);
                         setSelectedTool('Voice Dictation');
                         setHoveredTool(null);
-                        console.log('✅ Voice dictation started successfully');
                     } catch (err) {
                         console.error('❌ Failed to start dictation:', err);
                         const errorMessage = String(err);
                         
-                        // Provide specific error messages based on the error type
                         if (errorMessage.includes('Whisper model not found')) {
-                            alert('❌ Whisper AI model not found!\n\n🔧 Setup required:\n\n1. Download the model: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin\n2. Place it in: src-tauri/models/ggml-base.en.bin\n3. Restart the application\n\n💡 Note: Currently using simulation mode for testing.');
-                        } else if (errorMessage.includes('No input device available') || errorMessage.includes('microphone')) {
-                            alert('❌ Microphone not available!\n\n🔧 Please check:\n• Microphone is connected and working\n• Microphone permissions are granted\n• No other app is using the microphone\n• Try the "Test Microphone" button first');
+                            alert('❌ Whisper AI model not found!\n\n🔧 Please download the required model:\n\n1. Go to: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin\n2. Download the file (about 140MB)\n3. Place it in: src-tauri/models/ggml-base.en.bin\n4. Restart the application');
+                        } else if (errorMessage.includes('No input device available')) {
+                            alert('❌ No microphone found!\n\n🔧 Please check:\n• Microphone is connected\n• Microphone permissions are granted\n• No other app is using the microphone');
                         } else if (errorMessage.includes('already running')) {
-                            alert('ℹ️ Voice dictation is already running!\n\nPlease stop the current session before starting a new one.');
-                            // Try to get the actual state
-                            try {
-                                const isRunning = await invoke('is_dictation_running');
-                                if (isRunning) {
-                                    setIsListening(true);
-                                    setSelectedTool('Voice Dictation');
-                                }
-                            } catch (checkErr) {
-                                console.warn('Could not check dictation status:', checkErr);
-                            }
-                        } else if (errorMessage.includes('libclang') || errorMessage.includes('build')) {
-                            alert('🔧 Build system issue detected!\n\nThis appears to be a development setup issue. The app should be using the simple dictation system as a fallback.\n\n💡 For developers: Check WHISPER_SETUP.md for build instructions.');
+                            alert('ℹ️ Dictation is already running. Please stop it first before starting again.');
                         } else {
-                            alert(`❌ Could not start voice dictation: ${errorMessage}\n\n🔧 Troubleshooting:\n• Try the "Test Microphone" button\n• Check microphone permissions in system settings\n• Restart the application\n• Contact support if the issue persists`);
+                            alert(`❌ Could not start dictation: ${errorMessage}\n\n🔧 Try:\n• Check microphone permissions\n• Restart the application\n• Use the "Test Microphone" button first`);
                         }
-                        
-                        // Reset UI state on error
-                        setIsListening(false);
-                        setSelectedTool(null);
-                        setHoveredTool(null);
                     }
                 }
             }
@@ -280,25 +150,13 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
             icon: CogIcon, 
             label: 'Test Microphone', 
             action: async () => {
-                console.log('🎤 Testing microphone and dictation system...');
+                console.log('🎤 Testing microphone permissions...');
                 try {
-                    // Test if dictation system is available
-                    const testResult = await invoke('test_dictation_system');
-                    console.log('✅ Dictation system test result:', testResult);
-                    
-                    // If successful, show detailed info
-                    alert(`✅ Dictation System Test Results:\n\n${testResult}\n\n🎤 The voice dictation system is ready to use!\n\n💡 Click "Voice Dictation" to start recording.`);
+                    await invoke('test_microphone_permissions');
+                    alert('✅ Microphone test completed! Check console for details.');
                 } catch (error) {
-                    console.error('🎤 Dictation system test failed:', error);
-                    const errorMessage = String(error);
-                    
-                    if (errorMessage.includes('Whisper model not found')) {
-                        alert(`🔧 System Status: Using Simulation Mode\n\n⚠️ Whisper AI model not found, but the system will work in simulation mode for testing.\n\nTo enable full AI functionality:\n1. Download: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin\n2. Place in: src-tauri/models/ggml-base.en.bin\n3. Restart the app\n\n✅ You can still use Voice Dictation - it will simulate speech recognition for testing purposes.`);
-                    } else if (errorMessage.includes('No input device')) {
-                        alert(`❌ Microphone Test Failed\n\nIssue: ${errorMessage}\n\n🔧 Troubleshooting:\n• Check microphone connection\n• Grant microphone permissions\n• Close other apps using the microphone\n• Try a different microphone\n• Restart the application`);
-                    } else {
-                        alert(`🔧 Dictation System Status\n\n⚠️ ${errorMessage}\n\nThe system may still work in fallback mode. Try using Voice Dictation to see if it works.\n\n💡 If issues persist, check the console for detailed error information.`);
-                    }
+                    console.error('🎤 Microphone test failed:', error);
+                    alert(`❌ Microphone test failed: ${error}`);
                 }
             }
         },
@@ -319,16 +177,18 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         }
     };
 
-    // Generate random positions spread across the RIGHT side of the screen with collision detection
+    // Generate random positions on the right side of the screen only
     const generateRandomPosition = () => {
         const viewportWidth = window.innerWidth || 1920;
         const viewportHeight = window.innerHeight || 1080;
         
-        // Constrain to RIGHT 40% of screen only (as requested by user)
+        // Right side only - approximately right 40% of the screen
         const minX = Math.max(viewportWidth * 0.6, viewportWidth - 600); // Start from 60% of screen width
-        const maxX = viewportWidth - 150; // Margin from right edge
-        const minY = Math.max(viewportHeight * 0.15, 100); // Start from top 15%
-        const maxY = viewportHeight - 150; // Margin from bottom
+        const maxX = viewportWidth - 100; // Margin from right edge
+        
+        // Use full height but with margins
+        const minY = 100; // Top margin
+        const maxY = viewportHeight - 150; // Bottom margin
         
         return {
             x: Math.random() * (maxX - minX) + minX - (viewportWidth - 120), // Adjust for fixed positioning
@@ -344,7 +204,7 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         return distance < minDistance;
     };
 
-    // Generate positions with collision detection
+    // Generate positions with collision detection on the right side only
     const generatePositionsWithSpacing = () => {
         const positions: Array<{x: number, y: number}> = [];
         const maxAttempts = 50; // Prevent infinite loops
@@ -390,18 +250,19 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         thrown: (index: number) => {
             // Use stored position or generate new one if not available
             const targetPos = itemPositions[index] || generateRandomPosition();
-            const throwForce = 300 + Math.random() * 150; // Increased throw force for wider spread
-            const throwAngle = Math.random() * 360; // Full 360-degree throw angle for better distribution
+            const throwForce = 250 + Math.random() * 100; // Increased throw force
+            // Constrain throw angles to keep icons on the right side (270° to 90° range)
+            const throwAngle = 270 + Math.random() * 180; // From straight up, around to straight down
             const throwRadian = (throwAngle * Math.PI) / 180;
             
             return {
-                x: [0, Math.cos(throwRadian) * throwForce * 0.4, targetPos.x],
-                y: [0, Math.sin(throwRadian) * throwForce * 0.4, targetPos.y],
+                x: [0, Math.cos(throwRadian) * throwForce * 0.3, targetPos.x],
+                y: [0, Math.sin(throwRadian) * throwForce * 0.3, targetPos.y],
                 opacity: [0, 1, 1],
-                scale: [0, 1.3, 1], // Slightly larger peak scale
+                scale: [0, 1.2, 1],
                 rotate: [0, Math.random() * 360, Math.random() * 720],
                 transition: {
-                    duration: 1.0 + Math.random() * 0.6, // Slightly longer duration
+                    duration: 0.9 + Math.random() * 0.4,
                     ease: [0.25, 0.46, 0.45, 0.94],
                     times: [0, 0.3, 1]
                 }
@@ -410,7 +271,7 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         floating: (index: number) => {
             // Use stored position for consistent floating
             const basePos = itemPositions[index] || generateRandomPosition();
-            const floatRadius = 15; // Reduced radius to prevent icons from getting too close
+            const floatRadius = 25; // Fixed radius for predictable movement
             const baseDelay = index * 0.2; // Stagger the animations
             
             return {
@@ -442,7 +303,7 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         },
         hover: () => {
             return {
-                scale: 1.5, // Increased hover scale for better visibility
+                scale: 1.4,
                 rotate: 0,
                 transition: {
                     type: "spring",
@@ -710,13 +571,11 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                                             <div className="absolute inset-0 rounded-full bg-black/15 transform translate-x-2 translate-y-2 -z-20 blur-md" />
                                         </motion.button>
                                         <motion.span 
-                                            className={`absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap ${buttonTheme.tooltip} text-sm px-4 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity shadow-2xl pointer-events-none z-50 transform-gpu`}
-                                            initial={{ scale: 0.8, y: 10 }}
-                                            whileHover={{ scale: 1, y: 0 }}
+                                            className={`absolute bottom-1/2 translate-y-1/2 right-20 whitespace-nowrap ${buttonTheme.tooltip} text-sm px-4 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity shadow-2xl pointer-events-none z-30 transform-gpu`}
+                                            initial={{ scale: 0.8, x: 10 }}
+                                            whileHover={{ scale: 1, x: 0 }}
                                         >
                                             {isSelected ? `Stop ${item.label}` : item.label}
-                                            {/* Tooltip arrow */}
-                                            <div className={`absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent ${isDarkTheme ? 'border-t-gray-900/95' : 'border-t-white/95'}`} />
                                         </motion.span>
                                     </div>
                                 </motion.li>
@@ -747,8 +606,8 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                             setShowItems(true);
                             initializePositions(); // Initialize positions
                             setAnimationPhase('throwing');
-                            // Switch to floating after throw animation completes
-                            setTimeout(() => setAnimationPhase('floating'), 1200);
+                            // Switch to floating after throw animation
+                            setTimeout(() => setAnimationPhase('floating'), 1000);
                         } else {
                             // Close if already open
                             setIsOpen(false);

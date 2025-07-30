@@ -79,5 +79,5 @@ export interface Book {
 
 export type Theme = 'light' | 'dark' | 'system';
 
-export type ActiveTab = 'My Books' | 'Editing' | 'Reviewing';
+export type ActiveTab = 'My Books' | 'Editing' | 'Reviewing' | 'WhisperTest';
 export type BookDetailsTab = 'Versions' | 'Collaborators' | 'Recent Activity';
