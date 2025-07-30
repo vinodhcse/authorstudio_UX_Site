@@ -81,6 +81,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
                         <FloatingActionButton 
                 theme={theme} 
                 onInsertText={handleInsertText}
+                editorInstance={editorInstance}
             />
         </motion.div>
     );
