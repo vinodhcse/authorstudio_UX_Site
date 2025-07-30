@@ -256,7 +256,7 @@ impl AudioBuffer {
             // We're in speech mode but current chunk is silent
             if self.silence_start.is_none() {
                 self.silence_start = Some(Instant::now());
-                println!("🔇 Silence started during speech");
+                println!("🔇 Silence started during speech - waiting for 4s...");
             }
             
             // Continue adding samples during silence (for natural pauses)
@@ -276,9 +276,9 @@ impl AudioBuffer {
             Duration::from_secs(0)
         };
 
-        // Use 4 seconds of silence for better speech boundary detection
+        // STRICT: Only process after EXACTLY 4+ seconds of silence
         let should_process = silence_duration >= SESSION_SILENCE_DURATION || 
-                           self.speech_buffer.len() >= SAMPLE_RATE as usize * 20; // 20 seconds max
+                           self.speech_buffer.len() >= SAMPLE_RATE as usize * 25; // 25 seconds absolute max
 
         if should_process && self.speech_buffer.len() >= SAMPLE_RATE as usize / 2 {
             // Minimum 0.5 seconds of audio
@@ -287,12 +287,21 @@ impl AudioBuffer {
             self.is_speaking = false;
             self.silence_start = None;
             
-            println!("🎤 Completed speech chunk (4s silence): {:.1}s ({} samples)", 
+            println!("🎤 Completed speech chunk (STRICT 4s+ silence): {:.1}s ({} samples)", 
                 chunk.len() as f32 / SAMPLE_RATE as f32, chunk.len());
             
             Some(chunk)
         } else {
             None
+        }
+    }
+
+    // Check if we should emit a paragraph break (4+ seconds of silence)
+    fn should_emit_paragraph_break(&self) -> bool {
+        if let Some(silence_start) = self.silence_start {
+            silence_start.elapsed() >= SESSION_SILENCE_DURATION
+        } else {
+            false
         }
     }
 
@@ -420,7 +429,15 @@ async fn process_complete_session_transcription(
         "text": complete_text,
         "session_file": session_file_path.to_string_lossy(),
         "duration": audio_data.len() as f32 / SAMPLE_RATE as f32,
-        "is_complete": true
+        "is_complete": true,
+        "type": "final_transcription"
+    }));
+    
+    // Also emit processing completion
+    let _ = app_handle.emit("dictation-processing-complete", serde_json::json!({
+        "status": "complete",
+        "message": "Final transcription ready",
+        "text": complete_text
     }));
     
     Ok(complete_text)
@@ -669,10 +686,30 @@ async fn run_dictation_loop(app_handle: AppHandle) -> Result<()> {
         };
         
         if let Some(audio_data) = audio_chunk {
-            println!("🎯 Processing preview chunk (4s silence): {} samples", audio_data.len());
+            println!("🎯 Processing preview chunk (STRICT 4s+ silence): {} samples", audio_data.len());
             if let Err(e) = process_audio_chunk_streaming(&app_handle, &audio_data, &audio_buffer).await {
                 println!("❌ Error processing preview audio: {}", e);
                 let _ = app_handle.emit("speech-warning", format!("Preview processing error: {}", e));
+            }
+        }
+        
+        // Check for paragraph breaks (4+ second silence without processing chunk)
+        let should_emit_paragraph = {
+            let buffer = audio_buffer.lock().unwrap();
+            buffer.should_emit_paragraph_break()
+        };
+        
+        if should_emit_paragraph {
+            println!("📄 Paragraph break detected (4+ seconds silence)");
+            let _ = app_handle.emit("dictation-paragraph-break", serde_json::json!({
+                "type": "paragraph_break",
+                "silence_duration": 4
+            }));
+            
+            // Reset the silence tracking to avoid repeated emissions
+            {
+                let mut buffer = audio_buffer.lock().unwrap();
+                buffer.silence_start = None;
             }
         }
         

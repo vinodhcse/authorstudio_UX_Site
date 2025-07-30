@@ -2,16 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { Editor } from '@tiptap/react';
 import { PlusIcon, SparklesIcon, GitCommitIcon, ListIcon, FilePlusIcon } from '../../../constants';
 import { Theme } from '../../../types';
 import { MicrophoneIcon, BookOpenIcon, PencilIcon, EyeIcon, ChartBarIcon, ClockIcon, CogIcon } from '@heroicons/react/24/outline';
+import { insertDictationSection, updateDictationSection } from '../../../lib/dictationHelpers';
 
 interface FloatingActionButtonProps {
     theme?: Theme;
     onInsertText?: (text: string) => void; // Callback for inserting dictated text
+    editorInstance?: Editor | null; // TipTap editor instance for DictationSection
 }
 
-const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'dark', onInsertText }) => {
+const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'dark', onInsertText, editorInstance }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [selectedTool, setSelectedTool] = useState<string | null>(null);
     const [animationPhase, setAnimationPhase] = useState<'closed' | 'throwing' | 'floating'>('closed');
@@ -21,6 +24,8 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
     
     const [isListening, setIsListening] = useState(false);
     const [isTranscribing, setIsTranscribing] = useState(false);
+    const [currentDictationId, setCurrentDictationId] = useState<string | null>(null);
+    const [accumulatedPreviewText, setAccumulatedPreviewText] = useState<string>('');
     
     // Periodically check and adjust positions to maintain spacing
     useEffect(() => {
@@ -58,14 +63,34 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                     const { text, is_final } = event.payload;
                     console.log('🎤 Speech result:', { text, is_final });
                     
-                    if (onInsertText && text.trim()) {
-                        // Handle special commands
+                    // If we have an editor instance and a current dictation session, update the DictationSection
+                    if (editorInstance && currentDictationId && text.trim()) {
+                        // Handle special commands for paragraph breaks
+                        if (text.trim().toLowerCase() === 'new paragraph' || text === '<PARAGRAPH_END>') {
+                            // Add paragraph break to accumulated text
+                            const newAccumulatedText = accumulatedPreviewText + '\n\n[New Paragraph]\n\n';
+                            setAccumulatedPreviewText(newAccumulatedText);
+                            updateDictationSection(editorInstance, currentDictationId, {
+                                status: 'preview',
+                                previewText: newAccumulatedText
+                            });
+                        } else {
+                            // Append to accumulated preview text
+                            const newAccumulatedText = accumulatedPreviewText + (accumulatedPreviewText ? ' ' : '') + text;
+                            setAccumulatedPreviewText(newAccumulatedText);
+                            updateDictationSection(editorInstance, currentDictationId, {
+                                status: is_final ? 'complete' : 'preview',
+                                previewText: newAccumulatedText,
+                                finalText: is_final ? newAccumulatedText : undefined
+                            });
+                        }
+                    } else if (onInsertText && text.trim()) {
+                        // Fallback to direct text insertion if no editor or dictation session
                         if (text.trim().toLowerCase() === 'new paragraph' || text === '<PARAGRAPH_END>') {
                             onInsertText('\n\n');
                         } else if (text.trim().toLowerCase() === 'new line') {
                             onInsertText('\n');
                         } else {
-                            // Insert the text with a space if it's a final result
                             onInsertText(text + (is_final ? ' ' : ''));
                         }
                     }
@@ -85,16 +110,39 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                     switch (status) {
                         case 'started':
                             setIsListening(true);
-                            console.log('✅ Dictation started successfully');
+                            setAccumulatedPreviewText(''); // Reset accumulated text for new session
+                            // Create a new DictationSection when dictation starts
+                            if (editorInstance) {
+                                const dictationId = insertDictationSection(editorInstance);
+                                setCurrentDictationId(dictationId);
+                                console.log('✅ Dictation started - created DictationSection:', dictationId);
+                            } else {
+                                console.log('✅ Dictation started successfully (no editor instance)');
+                            }
                             break;
                         case 'stopped':
                             setIsListening(false);
                             setSelectedTool(null);
-                            console.log('✅ Dictation stopped successfully');
+                            setAccumulatedPreviewText(''); // Reset accumulated text when stopped
+                            // Finalize the DictationSection when dictation stops
+                            if (editorInstance && currentDictationId) {
+                                updateDictationSection(editorInstance, currentDictationId, {
+                                    status: 'complete'
+                                });
+                                console.log('✅ Dictation stopped - finalized DictationSection:', currentDictationId);
+                            } else {
+                                console.log('✅ Dictation stopped successfully');
+                            }
+                            setCurrentDictationId(null);
                             break;
                         case 'error':
                             setIsListening(false);
                             setSelectedTool(null);
+                            setAccumulatedPreviewText(''); // Reset accumulated text on error
+                            // Clear the DictationSection on error
+                            if (currentDictationId) {
+                                setCurrentDictationId(null);
+                            }
                             console.error('❌ Dictation error:', message);
                             if (message) {
                                 alert(`❌ Dictation Error: ${message}`);
@@ -107,7 +155,28 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                         case 'processing':
                             // Visual feedback for when processing speech
                             setIsTranscribing(true);
+                            // Update DictationSection to processing state
+                            if (editorInstance && currentDictationId) {
+                                updateDictationSection(editorInstance, currentDictationId, {
+                                    status: 'processing'
+                                });
+                            }
                             break;
+                    }
+                });
+
+                // Listen for dictation processing complete (final transcription)
+                const unlistenProcessingComplete = await listen<{ status: string; message?: string; text?: string }>('dictation-processing-complete', (event) => {
+                    const { status, message, text } = event.payload;
+                    console.log('🎤 Processing complete:', { status, message, text });
+                    
+                    // Update the DictationSection with the final transcription
+                    if (editorInstance && currentDictationId && text) {
+                        updateDictationSection(editorInstance, currentDictationId, {
+                            status: 'complete',
+                            finalText: text
+                        });
+                        console.log('✅ Updated DictationSection with final transcription:', text.substring(0, 50) + '...');
                     }
                 });
 
@@ -118,6 +187,12 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                     setIsListening(false);
                     setSelectedTool(null);
                     setIsTranscribing(false);
+                    
+                    // Clear the DictationSection on error
+                    if (currentDictationId) {
+                        setCurrentDictationId(null);
+                        setAccumulatedPreviewText(''); // Reset accumulated text on error
+                    }
                     
                     // Show user-friendly error message
                     if (errorMessage.includes('Whisper model not found')) {
@@ -133,6 +208,7 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                 return () => {
                     unlistenSpeech();
                     unlistenStatus();
+                    unlistenProcessingComplete();
                     unlistenError();
                 };
             } catch (error) {
@@ -146,7 +222,7 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
         return () => {
             cleanupPromise.then(cleanup => cleanup());
         };
-    }, [onInsertText]);
+    }, [onInsertText, editorInstance, currentDictationId, accumulatedPreviewText]);
     
     // Theme-aware contrasting colors with better visibility
     const isDarkTheme = theme === 'dark';
@@ -191,6 +267,8 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                         setIsListening(false); // Force stop UI state
                         setSelectedTool(null);
                         setHoveredTool(null);
+                        setCurrentDictationId(null); // Clear dictation session
+                        setAccumulatedPreviewText(''); // Reset accumulated text on error
                         alert('❌ Could not stop dictation properly. The dictation has been stopped.');
                     }
                 } else {
@@ -232,6 +310,8 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                         setIsListening(false);
                         setSelectedTool(null);
                         setHoveredTool(null);
+                        setCurrentDictationId(null); // Clear dictation session on error
+                        setAccumulatedPreviewText(''); // Reset accumulated text on error
                     }
                 }
             }

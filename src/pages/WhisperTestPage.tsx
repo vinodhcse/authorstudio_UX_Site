@@ -1,13 +1,66 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 const WhisperTestPage: React.FC = () => {
   const [testFiles, setTestFiles] = useState<string[]>([]);
   const [testResults, setTestResults] = useState<{[key: string]: string}>({});
   const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Real-time dictation state
+  const [isDictationRunning, setIsDictationRunning] = useState(false);
+  const [dictationResults, setDictationResults] = useState<string[]>([]);
+  const [finalTranscription, setFinalTranscription] = useState<string>('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     loadTestFiles();
+    
+    // Set up dictation event listeners
+    const setupDictationListeners = async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      
+      // Listen for preview results
+      const unlistenResult = await listen('dictation-result', (event: any) => {
+        const data = event.payload;
+        if (data.is_preview) {
+          setDictationResults(prev => [...prev, `Preview: ${data.text}`]);
+        }
+      });
+      
+      // Listen for final transcription
+      const unlistenFinal = await listen('dictation-final-result', (event: any) => {
+        const data = event.payload;
+        if (data.type === 'final_transcription') {
+          setFinalTranscription(data.text);
+          setIsProcessing(false);
+        }
+      });
+      
+      // Listen for paragraph breaks
+      const unlistenParagraph = await listen('dictation-paragraph-break', (_event: any) => {
+        setDictationResults(prev => [...prev, '--- New Paragraph (4s+ silence) ---']);
+      });
+      
+      // Listen for processing status
+      const unlistenStatus = await listen('dictation-status', (event: any) => {
+        const data = event.payload;
+        if (data.status === 'processing') {
+          setIsProcessing(true);
+        } else if (data.status === 'stopped') {
+          setIsDictationRunning(false);
+        }
+      });
+      
+      return () => {
+        unlistenResult();
+        unlistenFinal();
+        unlistenParagraph();
+        unlistenStatus();
+      };
+    };
+    
+    setupDictationListeners();
   }, []);
 
   const loadTestFiles = async () => {
@@ -133,6 +186,33 @@ const WhisperTestPage: React.FC = () => {
         ...prev,
         'microphone-noise': `❌ Test failed: ${error}`
       }));
+    }
+  };
+
+  // Real-time dictation functions
+  const startDictation = async () => {
+    try {
+      setDictationResults([]);
+      setFinalTranscription('');
+      setIsProcessing(false);
+      await invoke('start_dictation');
+      setIsDictationRunning(true);
+    } catch (error) {
+      console.error('Failed to start dictation:', error);
+      setTestResults(prev => ({
+        ...prev,
+        'dictation': `❌ Failed to start: ${error}`
+      }));
+    }
+  };
+
+  const stopDictation = async () => {
+    try {
+      await invoke('stop_dictation');
+      setIsProcessing(true);
+      setIsDictationRunning(false);
+    } catch (error) {
+      console.error('Failed to stop dictation:', error);
     }
   };
 
@@ -264,6 +344,86 @@ const WhisperTestPage: React.FC = () => {
             <li><strong>If noise produces "electronic music":</strong> Whisper correctly identifies non-speech</li>
             <li><strong>If microphone noise produces specific text:</strong> This reveals what your real microphone sounds like to Whisper!</li>
           </ul>
+        </div>
+      </div>
+
+      {/* Real-Time Dictation Test */}
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+          🎤 Real-Time Dictation Test (4-Second Silence Detection)
+        </h2>
+        
+        <div className="space-y-4">
+          <div className="flex gap-4">
+            <button
+              onClick={startDictation}
+              disabled={isDictationRunning}
+              className={`px-6 py-2 rounded font-medium ${
+                isDictationRunning 
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                  : 'bg-green-500 text-white hover:bg-green-600'
+              }`}
+            >
+              {isDictationRunning ? '🔴 Recording...' : '🎤 Start Dictation'}
+            </button>
+            
+            <button
+              onClick={stopDictation}
+              disabled={!isDictationRunning}
+              className={`px-6 py-2 rounded font-medium ${
+                !isDictationRunning 
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                  : 'bg-red-500 text-white hover:bg-red-600'
+              }`}
+            >
+              ⏹️ Stop & Process
+            </button>
+          </div>
+
+          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <h3 className="font-medium text-gray-900 dark:text-white mb-2">Instructions:</h3>
+            <ul className="text-sm text-gray-600 dark:text-gray-300 space-y-1">
+              <li>• Speak naturally into your microphone</li>
+              <li>• <strong>Wait 4+ seconds of silence</strong> to trigger transcription</li>
+              <li>• Paragraph breaks occur after 4+ seconds of silence</li>
+              <li>• Preview text shows during recording</li>
+              <li>• Final polished transcription appears after stopping</li>
+            </ul>
+          </div>
+
+          {/* Live Results */}
+          {dictationResults.length > 0 && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
+              <h3 className="font-medium text-blue-900 dark:text-blue-100 mb-2">📝 Live Preview Results:</h3>
+              <div className="space-y-1 text-sm text-blue-800 dark:text-blue-200 max-h-32 overflow-y-auto">
+                {dictationResults.map((result, index) => (
+                  <div key={index} className="font-mono">{result}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Processing Status */}
+          {isProcessing && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4">
+              <div className="flex items-center gap-2">
+                <div className="animate-spin text-yellow-600">⚙️</div>
+                <span className="text-yellow-800 dark:text-yellow-200">
+                  Processing complete session for final transcription...
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Final Transcription */}
+          {finalTranscription && (
+            <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+              <h3 className="font-medium text-green-900 dark:text-green-100 mb-2">✅ Final Polished Transcription:</h3>
+              <div className="text-green-800 dark:text-green-200 p-3 bg-white dark:bg-gray-700 rounded border">
+                "{finalTranscription}"
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

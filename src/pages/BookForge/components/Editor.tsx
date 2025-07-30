@@ -48,6 +48,7 @@ import { SceneBeatExtension } from '../../../extensions/SceneBeatExtension';
 import { NoteSectionExtension } from '../../../extensions/NoteSectionExtension';
 import { CharacterImpersonationExtension } from '../../../extensions/CharacterImpersonationExtension';
 import { TestExtension } from '../../../extensions/TestExtension';
+import { DictationSectionNode } from '../../../components/custom-nodes/DictationSectionNode';
 import { SimpleExtension } from '../../../extensions/SimpleExtension';
 
 //Tauri
@@ -1960,6 +1961,7 @@ const Editor: React.FC<{
             CharacterImpersonationExtension,
             TestExtension,
             SimpleExtension,
+            DictationSectionNode,
             
             // Placeholder
             Placeholder.configure({
