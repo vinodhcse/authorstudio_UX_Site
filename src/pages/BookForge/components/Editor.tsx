@@ -28,7 +28,8 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { chapterContent } from '../../../data/chapterContent';
-import { Theme } from '../../../types';
+import { Theme, Book, Version } from '../../../types';
+import PlanningPage from './PlanningPage';
 
 // Tool Window System Imports
 import DockSidebar from '../../../components/DockSidebar';
@@ -1816,6 +1817,8 @@ const Editor: React.FC<{
     onOpenTypographySettings?: () => void;
     onEditorReady?: (editor: TipTapEditor) => void;
     theme?: Theme;
+    activeMode?: string;
+    planningTab?: 'Plot Arcs' | 'World Building' | 'Characters';
 }> = ({ 
     bookId = 'default-book', 
     versionId = 'v1', 
@@ -1823,7 +1826,9 @@ const Editor: React.FC<{
     onCloseTypographySettings, 
     onOpenTypographySettings, 
     onEditorReady,
-    theme = 'dark'
+    theme = 'dark',
+    activeMode = 'Writing',
+    planningTab = 'Plot Arcs'
 }) => {
     
     // Remove the internal state since it's now managed by parent
@@ -2242,17 +2247,53 @@ const Editor: React.FC<{
                     editor={editor}
                 />
 
-                <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-16">
-                    <EditorContent editor={editor} />
-                    
-                    {/* Tool Manager - Show tools available for this book/version */}
-                    <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                            Available Tools
-                        </h3>
-                        <ToolManager bookId={bookId} versionId={versionId} />
+                {activeMode === 'Planning' ? (
+                    <PlanningPage 
+                        book={{
+                            id: bookId,
+                            title: 'Current Book',
+                            lastModified: new Date().toISOString(),
+                            progress: 0,
+                            wordCount: 0,
+                            genre: 'Fiction',
+                            collaboratorCount: 1,
+                            collaborators: [],
+                            characters: [],
+                            featured: false,
+                            bookType: 'Novel',
+                            prose: 'Standard',
+                            language: 'English',
+                            publisher: '',
+                            publishedStatus: 'Unpublished',
+                            synopsis: ''
+                        }}
+                        version={{
+                            id: versionId,
+                            name: 'Working Draft',
+                            status: 'DRAFT',
+                            wordCount: 0,
+                            createdAt: new Date().toISOString(),
+                            contributor: {
+                                name: 'Author',
+                                avatar: ''
+                            }
+                        }}
+                        theme={theme}
+                        activeTab={planningTab}
+                    />
+                ) : (
+                    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-16">
+                        <EditorContent editor={editor} />
+                        
+                        {/* Tool Manager - Show tools available for this book/version */}
+                        <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                                Available Tools
+                            </h3>
+                            <ToolManager bookId={bookId} versionId={versionId} />
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Enhanced clipboard status indicator */}
                 {window.__TAURI__ && (

@@ -20,6 +20,33 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
     const { bookId, versionId } = useParams<{ bookId: string, versionId: string }>();
     const [showTypographySettings, setShowTypographySettings] = useState(false);
     const [editorInstance, setEditorInstance] = useState<TipTapEditor | null>(null);
+    const [activeMode, setActiveMode] = useState('Writing');
+    const [activePlanningTab, setActivePlanningTab] = useState<'Plot Arcs' | 'World Building' | 'Characters'>('Plot Arcs');
+    const [planningLayout, setPlanningLayout] = useState('Plot');
+    const [planningSubview, setPlanningSubview] = useState('by character');
+    
+    const handlePlanningNavigation = (tab: 'Plot Arcs' | 'World Building' | 'Characters') => {
+        setActivePlanningTab(tab);
+        if (activeMode !== 'Planning') {
+            setActiveMode('Planning');
+        }
+        
+        // Reset layout and subview when switching tabs
+        switch (tab) {
+            case 'Plot Arcs':
+                setPlanningLayout('Plot');
+                setPlanningSubview('by character');
+                break;
+            case 'World Building':
+                setPlanningLayout('World Entity');
+                setPlanningSubview('Timeline Event');
+                break;
+            case 'Characters':
+                setPlanningLayout('Character');
+                setPlanningSubview('Timeline Event');
+                break;
+        }
+    };
     
     const book = books.find(b => b.id === bookId);
     const version = book?.versions?.find(v => v.id === versionId);
@@ -65,6 +92,13 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
                 theme={theme} 
                 setTheme={setTheme}
                 onOpenTypographySettings={handleOpenTypographySettings}
+                activeMode={activeMode}
+                setActiveMode={setActiveMode}
+                activePlanningTab={activePlanningTab}
+                planningLayout={planningLayout}
+                planningSubview={planningSubview}
+                onPlanningLayoutChange={setPlanningLayout}
+                onPlanningSubviewChange={setPlanningSubview}
             />
             <div className="flex-grow flex relative overflow-hidden">
                 <Editor 
@@ -74,10 +108,17 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
                     bookId={bookId!}
                     versionId={versionId!}
                     theme={theme}
+                    activeMode={activeMode}
+                    planningTab={activePlanningTab}
                 />
                 {/* <ScrollMinimap editor={editorInstance} /> */}
             </div>
-            <EditorFooter book={book} />
+            <EditorFooter 
+                book={book} 
+                mode={activeMode}
+                activePlanningTab={activePlanningTab}
+                onPlanningNavigation={handlePlanningNavigation}
+            />
                         <FloatingActionButton 
                 theme={theme} 
                 onInsertText={handleInsertText}

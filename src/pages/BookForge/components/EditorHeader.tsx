@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Book, Version, Theme } from '../../../types';
-import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon, Wand2Icon, UserIcon } from '../../../constants';
+import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon, Wand2Icon, UserIcon, SearchIcon, LayoutGridIcon, ClockIcon, MapIcon, ViewIcon } from '../../../constants';
 import ChapterSettingsModal from './ChapterSettingsModal';
 import { useToolWindowStore } from '../../../stores/toolWindowStore';
 
@@ -153,6 +153,230 @@ const EditorTab: React.FC<{ name: string; isActive: boolean; onClick: () => void
     );
 };
 
+const PlanningHeader: React.FC<{
+    activePlanningTab: string;
+    planningLayout: string;
+    planningSubview: string;
+    onPlanningLayoutChange: (layout: string) => void;
+    onPlanningSubviewChange: (subview: string) => void;
+}> = ({ activePlanningTab, planningLayout, planningSubview, onPlanningLayoutChange, onPlanningSubviewChange }) => {
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isLayoutOpen, setIsLayoutOpen] = useState(false);
+    const [isSubviewOpen, setIsSubviewOpen] = useState(false);
+
+    // Only show layout controls for Plot Arcs
+    if (activePlanningTab === 'Plot Arcs') {
+        // Layout-specific configurations for Plot Arcs page
+        const getLayoutConfig = () => {
+            switch (planningLayout) {
+                case 'Plot':
+                    return {
+                        searchPlaceholder: 'Search for Scenes, Characters, events...',
+                        subviews: ['by character', 'world Location', 'world Object', 'timeline event']
+                    };
+                case 'Character':
+                    return {
+                        searchPlaceholder: 'Search Characters, their attributes',
+                        subviews: ['Timeline Event', 'Relationship Web']
+                    };
+                case 'World Entity':
+                    return {
+                        searchPlaceholder: 'Search world objects, location and their attributes...',
+                        subviews: ['Timeline Event', 'Locations', 'Object/items', 'Lore']
+                    };
+                case 'Timeline':
+                    return {
+                        searchPlaceholder: 'Search timeline events, dates...',
+                        subviews: ['Plots', 'Characters', 'World Locations', 'World Object/Items', 'Lore']
+                    };
+                default:
+                    return {
+                        searchPlaceholder: 'Search for Scenes, Characters, events...',
+                        subviews: ['by character', 'world Location', 'world Object', 'timeline event']
+                    };
+            }
+        };
+
+        const config = getLayoutConfig();
+
+        return (
+            <div className="relative w-full h-10 bg-gradient-to-br from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 rounded-full overflow-visible border border-gray-700 dark:border-gray-300 shadow-inner">
+                <div className="absolute inset-0 flex items-center justify-between px-4 text-white dark:text-black">
+                    {/* Left: Search Bar */}
+                    <div className="flex items-center gap-3 flex-1 mr-4">
+                        <SearchIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder={config.searchPlaceholder}
+                            className="bg-transparent border-none outline-none text-sm placeholder-white/50 dark:placeholder-black/50 text-white dark:text-black flex-1 min-w-0"
+                        />
+                    </div>
+
+                    {/* Right: Layout and Subview Controls */}
+                    <div className="flex items-center gap-2">
+                        {/* Layout Selector */}
+                        <div className="relative">
+                            <motion.button
+                                onClick={() => setIsLayoutOpen(!isLayoutOpen)}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-white/10 dark:bg-black/10 rounded-lg hover:bg-white/20 dark:hover:bg-black/20 transition-colors"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                            >
+                                {planningLayout === 'Plot' && <LayoutGridIcon className="h-4 w-4" />}
+                                {planningLayout === 'Character' && <UserIcon className="h-4 w-4" />}
+                                {planningLayout === 'World Entity' && <MapIcon className="h-4 w-4" />}
+                                {planningLayout === 'Timeline' && <ClockIcon className="h-4 w-4" />}
+                                <ChevronDownIcon className="h-4 w-4" />
+                            </motion.button>
+
+                            <AnimatePresence>
+                                {isLayoutOpen && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        className="absolute top-full right-0 mt-2 w-48 bg-gradient-to-br from-gray-800 to-black dark:from-slate-100 dark:to-slate-200 rounded-lg shadow-xl border border-gray-600 dark:border-gray-300 z-50"
+                                    >
+                                        <div className="p-2">
+                                            {['Plot', 'Character', 'World Entity', 'Timeline'].map((layout) => (
+                                                <motion.button
+                                                    key={layout}
+                                                    onClick={() => {
+                                                        onPlanningLayoutChange(layout);
+                                                        // Auto-select first subview when layout changes
+                                                        const newConfig = (() => {
+                                                            switch (layout) {
+                                                                case 'Plot':
+                                                                    return { subviews: ['by character', 'world Location', 'world Object', 'timeline event'] };
+                                                                case 'Character':
+                                                                    return { subviews: ['Timeline Event', 'Relationship Web'] };
+                                                                case 'World Entity':
+                                                                    return { subviews: ['Timeline Event', 'Locations', 'Object/items', 'Lore'] };
+                                                                case 'Timeline':
+                                                                    return { subviews: ['Plots', 'Characters', 'World Locations', 'World Object/Items', 'Lore'] };
+                                                                default:
+                                                                    return { subviews: ['by character', 'world Location', 'world Object', 'timeline event'] };
+                                                            }
+                                                        })();
+                                                        onPlanningSubviewChange(newConfig.subviews[0]);
+                                                        setIsLayoutOpen(false);
+                                                    }}
+                                                    className={`w-full text-left flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors ${
+                                                        planningLayout === layout
+                                                            ? 'bg-blue-500 text-white'
+                                                            : 'text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10'
+                                                    }`}
+                                                    whileHover={{ scale: 1.02 }}
+                                                    whileTap={{ scale: 0.98 }}
+                                                >
+                                                    {layout === 'Plot' && <LayoutGridIcon className="h-4 w-4" />}
+                                                    {layout === 'Character' && <UserIcon className="h-4 w-4" />}
+                                                    {layout === 'World Entity' && <MapIcon className="h-4 w-4" />}
+                                                    {layout === 'Timeline' && <ClockIcon className="h-4 w-4" />}
+                                                    {layout}
+                                                </motion.button>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+
+                        {/* Subview Selector */}
+                        <div className="relative">
+                            <motion.button
+                                onClick={() => setIsSubviewOpen(!isSubviewOpen)}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-white/10 dark:bg-black/10 rounded-lg hover:bg-white/20 dark:hover:bg-black/20 transition-colors"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                            >
+                                <ViewIcon className="h-4 w-4" />
+                                <span className="text-xs">{planningSubview}</span>
+                                <ChevronDownIcon className="h-4 w-4" />
+                            </motion.button>
+
+                            <AnimatePresence>
+                                {isSubviewOpen && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        className="absolute top-full right-0 mt-2 w-56 bg-gradient-to-br from-gray-800 to-black dark:from-slate-100 dark:to-slate-200 rounded-lg shadow-xl border border-gray-600 dark:border-gray-300 z-50"
+                                    >
+                                        <div className="p-2">
+                                            {config.subviews.map((subview) => (
+                                                <motion.button
+                                                    key={subview}
+                                                    onClick={() => {
+                                                        onPlanningSubviewChange(subview);
+                                                        setIsSubviewOpen(false);
+                                                    }}
+                                                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
+                                                        planningSubview === subview
+                                                            ? 'bg-blue-500 text-white'
+                                                            : 'text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10'
+                                                    }`}
+                                                    whileHover={{ scale: 1.02 }}
+                                                    whileTap={{ scale: 0.98 }}
+                                                >
+                                                    {subview}
+                                                </motion.button>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // For World Building page - simple search
+    if (activePlanningTab === 'World Building') {
+        return (
+            <div className="relative w-full h-10 bg-gradient-to-br from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 rounded-full overflow-visible border border-gray-700 dark:border-gray-300 shadow-inner">
+                <div className="absolute inset-0 flex items-center justify-between px-4 text-white dark:text-black">
+                    <div className="flex items-center gap-3 flex-1">
+                        <SearchIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search world elements, locations, cultures..."
+                            className="bg-transparent border-none outline-none text-sm placeholder-white/50 dark:placeholder-black/50 text-white dark:text-black flex-1 min-w-0"
+                        />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // For Characters page - simple search
+    if (activePlanningTab === 'Characters') {
+        return (
+            <div className="relative w-full h-10 bg-gradient-to-br from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 rounded-full overflow-visible border border-gray-700 dark:border-gray-300 shadow-inner">
+                <div className="absolute inset-0 flex items-center justify-between px-4 text-white dark:text-black">
+                    <div className="flex items-center gap-3 flex-1">
+                        <SearchIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search characters, relationships, arcs..."
+                            className="bg-transparent border-none outline-none text-sm placeholder-white/50 dark:placeholder-black/50 text-white dark:text-black flex-1 min-w-0"
+                        />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return null;
+};
 
 interface EditorHeaderProps {
     book: Book;
@@ -160,11 +384,29 @@ interface EditorHeaderProps {
     theme: Theme;
     setTheme: (theme: Theme) => void;
     onOpenTypographySettings: () => void;
+    activeMode: string;
+    setActiveMode: (mode: string) => void;
+    activePlanningTab?: string;
+    planningLayout?: string;
+    planningSubview?: string;
+    onPlanningLayoutChange?: (layout: string) => void;
+    onPlanningSubviewChange?: (subview: string) => void;
 }
 
-const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTheme, onOpenTypographySettings }) => {
-    const editorModes = ['Writing', 'Planning', 'Formatting', 'Brainstorming'];
-    const [activeMode, setActiveMode] = useState('Writing');
+const EditorHeader: React.FC<EditorHeaderProps> = ({ 
+    book, 
+    version, 
+    theme, 
+    setTheme, 
+    onOpenTypographySettings, 
+    activeMode, 
+    setActiveMode,
+    activePlanningTab = 'Plot Arcs',
+    planningLayout = 'Plot Layout',
+    planningSubview = 'by character',
+    onPlanningLayoutChange,
+    onPlanningSubviewChange
+}) => {
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
     const { openTool, broadcastThemeChange } = useToolWindowStore();
 
@@ -203,11 +445,21 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({ book, version, theme, setTh
                             </div>
 
                             <div className="w-[32rem]">
-                                <ChapterProgressBar 
-                                    book={book} 
-                                    onOpenSettings={() => setChapterSettingsOpen(true)}
-                                    onOpenTypographySettings={onOpenTypographySettings}
-                                />
+                                {activeMode === 'Planning' ? (
+                                    <PlanningHeader
+                                        activePlanningTab={activePlanningTab}
+                                        planningLayout={planningLayout}
+                                        planningSubview={planningSubview}
+                                        onPlanningLayoutChange={onPlanningLayoutChange || (() => {})}
+                                        onPlanningSubviewChange={onPlanningSubviewChange || (() => {})}
+                                    />
+                                ) : (
+                                    <ChapterProgressBar 
+                                        book={book} 
+                                        onOpenSettings={() => setChapterSettingsOpen(true)}
+                                        onOpenTypographySettings={onOpenTypographySettings}
+                                    />
+                                )}
                             </div>
 
                             <div className="flex gap-2 justify-start">

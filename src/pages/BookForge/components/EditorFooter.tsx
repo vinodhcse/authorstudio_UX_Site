@@ -6,7 +6,14 @@ import { CloudIcon, HardDriveIcon } from '../../../constants';
 
 type SaveStatus = 'saved' | 'saving' | 'unsaved';
 
-const EditorFooter: React.FC<{ book: Book }> = ({ book }) => {
+interface EditorFooterProps {
+    book: Book;
+    mode?: string;
+    activePlanningTab?: string;
+    onPlanningNavigation?: (tab: 'Plot Arcs' | 'World Building' | 'Characters') => void;
+}
+
+const EditorFooter: React.FC<EditorFooterProps> = ({ book, mode, activePlanningTab, onPlanningNavigation }) => {
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
     const [jobProgress, setJobProgress] = useState<number | null>(null);
     const [isSaveMenuOpen, setSaveMenuOpen] = useState(false);
@@ -51,6 +58,117 @@ const EditorFooter: React.FC<{ book: Book }> = ({ book }) => {
     };
     const currentStatus = statusConfig[saveStatus];
 
+    const renderLeftContent = () => {
+        if (mode === 'Planning') {
+            return (
+                <div className="flex items-center gap-4 text-xs text-white/70 dark:text-black/70 font-medium w-1/4">
+                    <button 
+                        onClick={() => onPlanningNavigation?.('Plot Arcs')}
+                        className={`px-3 py-1 rounded-lg transition-colors ${
+                            activePlanningTab === 'Plot Arcs' 
+                                ? 'bg-gradient-to-r from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 text-white dark:text-black font-semibold shadow-lg border border-gray-600 dark:border-gray-300' 
+                                : 'hover:bg-white/10 dark:hover:bg-black/10'
+                        }`}
+                    >
+                        Plot Arcs
+                    </button>
+                    <button 
+                        onClick={() => onPlanningNavigation?.('World Building')}
+                        className={`px-3 py-1 rounded-lg transition-colors ${
+                            activePlanningTab === 'World Building' 
+                                ? 'bg-gradient-to-r from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 text-white dark:text-black font-semibold shadow-lg border border-gray-600 dark:border-gray-300' 
+                                : 'hover:bg-white/10 dark:hover:bg-black/10'
+                        }`}
+                    >
+                        World Building
+                    </button>
+                </div>
+            );
+        }
+        
+        // Default Writing mode
+        return (
+            <div className="flex items-center gap-6 text-xs text-white/70 dark:text-black/70 font-medium w-1/4">
+                <span>Words: 213</span>
+                <span>Characters: 1,189</span>
+            </div>
+        );
+    };
+
+    const renderRightContent = () => {
+        if (mode === 'Planning') {
+            return (
+                <div className="relative w-1/4 flex justify-end items-center gap-4">
+                    <button 
+                        onClick={() => onPlanningNavigation?.('Characters')}
+                        className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
+                            activePlanningTab === 'Characters' 
+                                ? 'bg-gradient-to-r from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 text-white dark:text-black font-semibold shadow-lg border border-gray-600 dark:border-gray-300' 
+                                : 'text-white/70 dark:text-black/70 hover:bg-white/10 dark:hover:bg-black/10'
+                        }`}
+                    >
+                        Characters
+                    </button>
+                    
+                    <button 
+                        onClick={() => setSaveMenuOpen(!isSaveMenuOpen)}
+                        className="flex items-center gap-2 text-xs text-white/70 dark:text-black/70 font-medium"
+                    >
+                        <span className="relative flex h-2 w-2">
+                          <span className={`animate-pulse-dot absolute inline-flex h-full w-full rounded-full ${currentStatus.pulseColor} opacity-75`}></span>
+                          <span className={`relative inline-flex rounded-full h-2 w-2 ${currentStatus.color}`}></span>
+                        </span>
+                        <span>{currentStatus.text}</span>
+                    </button>
+
+                    <AnimatePresence>
+                        {isSaveMenuOpen && (
+                             <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 10 }}
+                                className="absolute bottom-full right-0 mb-2 w-48 bg-gradient-to-br from-gray-700 to-gray-900 dark:from-slate-50 dark:to-slate-100 rounded-lg shadow-lg p-2 z-50 border border-gray-600/50 dark:border-gray-300/50"
+                              >
+                                <button className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <HardDriveIcon className="h-4 w-4"/> Save to Local</button>
+                                <button className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <CloudIcon className="h-4 w-4"/> Sync to Cloud</button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+            );
+        }
+
+        // Default Writing mode
+        return (
+            <div className="relative w-1/4 flex justify-end">
+                <button 
+                    onClick={() => setSaveMenuOpen(!isSaveMenuOpen)}
+                    className="flex items-center gap-2 text-xs text-white/70 dark:text-black/70 font-medium"
+                >
+                    <span className="relative flex h-2 w-2">
+                      <span className={`animate-pulse-dot absolute inline-flex h-full w-full rounded-full ${currentStatus.pulseColor} opacity-75`}></span>
+                      <span className={`relative inline-flex rounded-full h-2 w-2 ${currentStatus.color}`}></span>
+                    </span>
+                    <span>{currentStatus.text}</span>
+                </button>
+
+                <AnimatePresence>
+                    {isSaveMenuOpen && (
+                         <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className="absolute bottom-full right-0 mb-2 w-48 bg-gradient-to-br from-gray-700 to-gray-900 dark:from-slate-50 dark:to-slate-100 rounded-lg shadow-lg p-2 z-50 border border-gray-600/50 dark:border-gray-300/50"
+                          >
+                            <button className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <HardDriveIcon className="h-4 w-4"/> Save to Local</button>
+                            <button className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <CloudIcon className="h-4 w-4"/> Sync to Cloud</button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+        );
+    };
+
     return (
         <motion.footer 
             className="fixed bottom-0 left-0 right-10 z-30 flex justify-center"
@@ -59,11 +177,8 @@ const EditorFooter: React.FC<{ book: Book }> = ({ book }) => {
             transition={{ duration: 0.5, ease: 'easeOut', delay: 0.5 }}
         >
              <div className="h-8 w-[98%] max-w-5xl rounded-t-2xl bg-gradient-to-br from-gray-800 to-black dark:from-slate-200 dark:to-gray-50 border-t border-l border-r border-gray-700/50 dark:border-gray-300/50 shadow-2xl flex items-center justify-between px-8">
-                {/* Left: word counts */}
-                <div className="flex items-center gap-6 text-xs text-white/70 dark:text-black/70 font-medium w-1/4">
-                    <span>Words: 213</span>
-                    <span>Characters: 1,189</span>
-                </div>
+                {/* Left: planning navigation or word counts */}
+                {renderLeftContent()}
                 
                 {/* Middle: Job progress or Book Title */}
                 <div className="flex-grow flex justify-center items-center h-full">
@@ -103,33 +218,8 @@ const EditorFooter: React.FC<{ book: Book }> = ({ book }) => {
                     </div>
                 </div>
 
-                {/* Right: pulsing status icon & save menu */}
-                <div className="relative w-1/4 flex justify-end">
-                    <button 
-                        onClick={() => setSaveMenuOpen(!isSaveMenuOpen)}
-                        className="flex items-center gap-2 text-xs text-white/70 dark:text-black/70 font-medium"
-                    >
-                        <span className="relative flex h-2 w-2">
-                          <span className={`animate-pulse-dot absolute inline-flex h-full w-full rounded-full ${currentStatus.pulseColor} opacity-75`}></span>
-                          <span className={`relative inline-flex rounded-full h-2 w-2 ${currentStatus.color}`}></span>
-                        </span>
-                        <span>{currentStatus.text}</span>
-                    </button>
-
-                    <AnimatePresence>
-                        {isSaveMenuOpen && (
-                             <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 10 }}
-                                className="absolute bottom-full right-0 mb-2 w-48 bg-gradient-to-br from-gray-700 to-gray-900 dark:from-slate-50 dark:to-slate-100 rounded-lg shadow-lg p-2 z-50 border border-gray-600/50 dark:border-gray-300/50"
-                              >
-                                <button className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <HardDriveIcon className="h-4 w-4"/> Save to Local</button>
-                                <button className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <CloudIcon className="h-4 w-4"/> Sync to Cloud</button>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
+                {/* Right: planning navigation or save status */}
+                {renderRightContent()}
             </div>
         </motion.footer>
     );
