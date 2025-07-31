@@ -3,20 +3,20 @@ import React, { useState } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Editor as TipTapEditor } from '@tiptap/react';
-import { Book, Theme } from '../../types';
+import { Theme } from '../../types';
 import EditorHeader from './components/EditorHeader';
 import Editor from './components/Editor';
 import ScrollMinimap from './components/ScrollMinimap';
 import EditorFooter from './components/EditorFooter';
 import FloatingActionButton from './components/FloatingActionButton';
+import { useCurrentBookAndVersion } from '../../contexts/BookContext';
 
 interface BookForgePageProps {
-    books: Book[];
     theme: Theme;
     setTheme: (theme: Theme) => void;
 }
 
-const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme }) => {
+const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
     const { bookId, versionId } = useParams<{ bookId: string, versionId: string }>();
     const [showTypographySettings, setShowTypographySettings] = useState(false);
     const [editorInstance, setEditorInstance] = useState<TipTapEditor | null>(null);
@@ -24,6 +24,14 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
     const [activePlanningTab, setActivePlanningTab] = useState<'Plot Arcs' | 'World Building' | 'Characters'>('Plot Arcs');
     const [planningLayout, setPlanningLayout] = useState('Plot');
     const [planningSubview, setPlanningSubview] = useState('by character');
+    const [planningSearchQuery, setPlanningSearchQuery] = useState('');
+    
+    // Use BookContext to get current book and version data
+    const { currentBook, currentVersion, loading, error } = useCurrentBookAndVersion();
+
+    // Debug logging
+    console.log('BookForgePage - URL params:', { bookId, versionId });
+    console.log('BookForgePage - Context data:', { currentBook, currentVersion, loading, error });
     
     const handlePlanningNavigation = (tab: 'Plot Arcs' | 'World Building' | 'Characters') => {
         setActivePlanningTab(tab);
@@ -48,12 +56,38 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
         }
     };
     
-    const book = books.find(b => b.id === bookId);
-    const version = book?.versions?.find(v => v.id === versionId);
+    // Handle loading and error states
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <div className="text-gray-600 dark:text-gray-400">Loading...</div>
+            </div>
+        );
+    }
 
-    if (!book || !version) {
+    if (error) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <div className="text-red-600 dark:text-red-400">Error: {error}</div>
+            </div>
+        );
+    }
+
+    // Check if book and version exist
+    if (!currentBook || !currentVersion) {
         return <Navigate to="/" replace />;
     }
+
+    // Create compatibility objects for components that expect the old Book/Version structure
+    const compatibilityBook = {
+        ...currentBook,
+        characters: currentVersion.characters || [],
+        versions: currentBook.versions
+    };
+
+    const compatibilityVersion = {
+        ...currentVersion
+    };
 
     const handleInsertText = (text: string) => {
         if (editorInstance) {
@@ -87,8 +121,8 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
             transition={{ duration: 0.5 }}
         >
             <EditorHeader 
-                book={book} 
-                version={version} 
+                book={compatibilityBook} 
+                version={compatibilityVersion} 
                 theme={theme} 
                 setTheme={setTheme}
                 onOpenTypographySettings={handleOpenTypographySettings}
@@ -99,6 +133,8 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
                 planningSubview={planningSubview}
                 onPlanningLayoutChange={setPlanningLayout}
                 onPlanningSubviewChange={setPlanningSubview}
+                planningSearchQuery={planningSearchQuery}
+                onPlanningSearchChange={setPlanningSearchQuery}
             />
             <div className="flex-grow flex relative overflow-hidden">
                 <Editor 
@@ -110,11 +146,12 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ books, theme, setTheme })
                     theme={theme}
                     activeMode={activeMode}
                     planningTab={activePlanningTab}
+                    planningSearchQuery={planningSearchQuery}
                 />
                 {/* <ScrollMinimap editor={editorInstance} /> */}
             </div>
             <EditorFooter 
-                book={book} 
+                book={compatibilityBook} 
                 mode={activeMode}
                 activePlanningTab={activePlanningTab}
                 onPlanningNavigation={handlePlanningNavigation}

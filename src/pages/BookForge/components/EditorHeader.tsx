@@ -159,8 +159,9 @@ const PlanningHeader: React.FC<{
     planningSubview: string;
     onPlanningLayoutChange: (layout: string) => void;
     onPlanningSubviewChange: (subview: string) => void;
-}> = ({ activePlanningTab, planningLayout, planningSubview, onPlanningLayoutChange, onPlanningSubviewChange }) => {
-    const [searchQuery, setSearchQuery] = useState('');
+    searchQuery: string;
+    onSearchChange: (query: string) => void;
+}> = ({ activePlanningTab, planningLayout, planningSubview, onPlanningLayoutChange, onPlanningSubviewChange, searchQuery, onSearchChange }) => {
     const [isLayoutOpen, setIsLayoutOpen] = useState(false);
     const [isSubviewOpen, setIsSubviewOpen] = useState(false);
 
@@ -208,7 +209,7 @@ const PlanningHeader: React.FC<{
                         <input
                             type="text"
                             value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onChange={(e) => onSearchChange(e.target.value)}
                             placeholder={config.searchPlaceholder}
                             className="bg-transparent border-none outline-none text-sm placeholder-white/50 dark:placeholder-black/50 text-white dark:text-black flex-1 min-w-0"
                         />
@@ -345,7 +346,7 @@ const PlanningHeader: React.FC<{
                         <input
                             type="text"
                             value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onChange={(e) => onSearchChange(e.target.value)}
                             placeholder="Search world elements, locations, cultures..."
                             className="bg-transparent border-none outline-none text-sm placeholder-white/50 dark:placeholder-black/50 text-white dark:text-black flex-1 min-w-0"
                         />
@@ -365,7 +366,7 @@ const PlanningHeader: React.FC<{
                         <input
                             type="text"
                             value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onChange={(e) => onSearchChange(e.target.value)}
                             placeholder="Search characters, relationships, arcs..."
                             className="bg-transparent border-none outline-none text-sm placeholder-white/50 dark:placeholder-black/50 text-white dark:text-black flex-1 min-w-0"
                         />
@@ -391,6 +392,8 @@ interface EditorHeaderProps {
     planningSubview?: string;
     onPlanningLayoutChange?: (layout: string) => void;
     onPlanningSubviewChange?: (subview: string) => void;
+    planningSearchQuery?: string;
+    onPlanningSearchChange?: (query: string) => void;
 }
 
 const EditorHeader: React.FC<EditorHeaderProps> = ({ 
@@ -405,7 +408,9 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
     planningLayout = 'Plot Layout',
     planningSubview = 'by character',
     onPlanningLayoutChange,
-    onPlanningSubviewChange
+    onPlanningSubviewChange,
+    planningSearchQuery = '',
+    onPlanningSearchChange
 }) => {
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
     const { openTool, broadcastThemeChange } = useToolWindowStore();
@@ -452,6 +457,8 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                                         planningSubview={planningSubview}
                                         onPlanningLayoutChange={onPlanningLayoutChange || (() => {})}
                                         onPlanningSubviewChange={onPlanningSubviewChange || (() => {})}
+                                        searchQuery={planningSearchQuery}
+                                        onSearchChange={onPlanningSearchChange || (() => {})}
                                     />
                                 ) : (
                                     <ChapterProgressBar 

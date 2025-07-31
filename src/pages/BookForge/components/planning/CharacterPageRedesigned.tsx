@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, useMotionValue, useTransform, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { Theme } from '../../../../types';
 import CharacterDetailsView from '../../../../components/CharacterDetailsView';
-import CharacterProfileBuilderWrapper from './CharacterProfileBuilderWrapper';
 import { PlusIcon } from '../../../../constants';
 import { useBookContext, useCurrentBookAndVersion } from '../../../../contexts/BookContext';
 
@@ -35,7 +35,7 @@ const CharacterCard: React.FC<{
         show: { opacity: 1, y: 0, transition: { duration: 0.5 } },
     };
 
-    // Size configurations - Primary and Secondary get large size, Tertiary gets small
+    // Size configurations
     const sizeConfig = {
         small: {
             containerClass: 'h-48',
@@ -46,9 +46,9 @@ const CharacterCard: React.FC<{
             showDetails: false
         },
         medium: {
-            containerClass: 'h-80',
-            imageSize: isHovered ? 'w-full h-40' : 'w-24 h-32',
-            titleSize: 'text-lg',
+            containerClass: 'h-64',
+            imageSize: isHovered ? 'w-full h-32' : 'w-20 h-24',
+            titleSize: 'text-base',
             roleSize: 'text-sm',
             expandedHeight: 'h-auto',
             showDetails: true
@@ -94,7 +94,7 @@ const CharacterCard: React.FC<{
     return (
         <motion.div
             variants={cardVariants}
-            className="group cursor-pointer relative"
+            className="group cursor-pointer relative h-full"
             onHoverStart={() => setIsHovered(true)}
             onHoverEnd={() => {
                 setIsHovered(false);
@@ -109,13 +109,13 @@ const CharacterCard: React.FC<{
             <motion.div
                 layout
                 transition={{ duration: 0.5, type: 'spring', bounce: 0.2 }}
-                className={`relative rounded-2xl ${isHovered && config.showDetails ? 'h-auto' : config.containerClass} shadow-lg overflow-hidden`}
+                className={`relative rounded-2xl ${config.containerClass} shadow-lg`}
                 style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
             >
                 {/* Gradient blob background */}
                 <div className="absolute -inset-2 bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 opacity-0 group-hover:opacity-100 transition-opacity duration-500 group-hover:animate-border-blob-spin blur-xl z-0"></div>
                 
-                <div className="relative bg-gradient-to-br from-gray-200 to-gray-50 dark:from-gray-900 dark:to-black rounded-2xl p-4 h-full flex flex-col justify-between border border-transparent z-10 min-h-full">
+                <div className="relative bg-gradient-to-br from-gray-200 to-gray-50 dark:from-gray-900 dark:to-black rounded-2xl p-4 h-full flex flex-col justify-between border border-transparent z-10">
                     
                     <motion.div layout="position" className={`flex gap-4 ${isHovered ? 'flex-col' : size === 'small' ? 'flex-row items-center' : 'flex-row items-start'}`}>
                         {/* Character Image */}
@@ -233,20 +233,20 @@ const HeroSection: React.FC<{
 
     const currentHero = primaryCharacters[currentHeroIndex];
 
-    if (primaryCharacters.length === 0 || !currentHero) {
+    if (primaryCharacters.length === 0) {
         return (
             <div className="bg-gradient-to-br from-gray-200 to-gray-50 dark:from-gray-900 dark:to-black rounded-3xl shadow-2xl p-8 mb-8 relative overflow-hidden border border-gray-200 dark:border-gray-700">
                 <div className="text-center">
                     <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-3">Characters</h2>
                     <p className="text-gray-600 dark:text-gray-400 text-lg mb-6">
-                        {primaryCharacters.length === 0 ? "Meet the cast of your story" : "No characters match your search"}
+                        Meet the cast of your story
                     </p>
                     <button
                         onClick={onCreateCharacter}
                         className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-colors shadow-lg"
                     >
                         <PlusIcon className="w-4 h-4" />
-                        {primaryCharacters.length === 0 ? "Create First Character" : "Create New Character"}
+                        Create First Character
                     </button>
                 </div>
             </div>
@@ -265,8 +265,8 @@ const HeroSection: React.FC<{
                 {/* Character Image */}
                 <div className="lg:w-1/3 relative">
                     <img
-                        src={currentHero?.image || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&h=400&fit=crop&crop=face'}
-                        alt={currentHero?.name || 'Character'}
+                        src={currentHero.image}
+                        alt={currentHero.name}
                         className="w-full h-64 lg:h-80 object-cover"
                     />
                     <div className="absolute top-4 right-4 w-12 h-12 bg-yellow-500 rounded-full border-4 border-white flex items-center justify-center shadow-lg">
@@ -282,26 +282,26 @@ const HeroSection: React.FC<{
                         transition={{ delay: 0.2 }}
                     >
                         <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mb-2">
-                            {currentHero?.fullName || currentHero?.name || 'Character Name'}
+                            {currentHero.fullName || currentHero.name}
                         </h1>
                         <p className="text-xl text-gray-600 dark:text-gray-300 mb-4">
-                            {currentHero?.role || currentHero?.title || 'Main Character'}
+                            {currentHero.role || currentHero.title || 'Main Character'}
                         </p>
                         
                         <blockquote className="text-lg text-gray-700 dark:text-gray-300 italic mb-6 max-w-2xl">
-                            "{currentHero?.quote || 'A compelling character awaits their story...'}"
+                            "{currentHero.quote}"
                         </blockquote>
 
                         <div className="flex flex-wrap gap-4 mb-6">
-                            {currentHero?.age && (
+                            {currentHero.age && (
                                 <span className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-full text-sm">
                                     Age {currentHero.age}
                                 </span>
                             )}
                             <span className="px-4 py-2 bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
-                                {currentHero?.importance || 'Main Character'}
+                                {currentHero.importance}
                             </span>
-                            {currentHero?.species && (
+                            {currentHero.species && (
                                 <span className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-full text-sm">
                                     {currentHero.species}
                                 </span>
@@ -310,10 +310,17 @@ const HeroSection: React.FC<{
 
                         <div className="flex flex-wrap gap-3 mb-6">
                             <button
-                                onClick={() => onCharacterSelect(currentHero?.id)}
+                                onClick={() => onCharacterSelect(currentHero.id)}
                                 className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg font-semibold transition-colors shadow-lg"
                             >
                                 View Details
+                            </button>
+                            <button
+                                onClick={onCreateCharacter}
+                                className="flex items-center gap-2 px-6 py-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg transition-colors"
+                            >
+                                <PlusIcon className="w-4 h-4" />
+                                Add Character
                             </button>
                         </div>
 
@@ -344,12 +351,11 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
     theme, 
     searchQuery = ''
 }) => {
+    const navigate = useNavigate();
     const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
-    const [showCharacterBuilder, setShowCharacterBuilder] = useState(false);
-    const [editingCharacter, setEditingCharacter] = useState<any | null>(null);
     
     // Use BookContext to get current data
-    const { getCharacters, getCharacter, createCharacter, updateCharacter } = useBookContext();
+    const { getCharacters, getCharacter } = useBookContext();
     const { bookId, versionId } = useCurrentBookAndVersion();
 
     // Get characters from current version
@@ -374,78 +380,17 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
     
     // Handle character creation
     const handleCreateCharacter = () => {
-        setEditingCharacter(null);
-        setShowCharacterBuilder(true);
+        navigate('/tools/character-profile-builder');
     };
-    
-    // Handle character editing
-    const handleEditCharacter = (character: any) => {
-        setEditingCharacter(character);
-        setShowCharacterBuilder(true);
-    };
-    
-    // Handle character save from Profile Builder
-    const handleSaveCharacter = (characterData: any) => {
-        if (!bookId || !versionId) return;
-        
-        if (editingCharacter) {
-            // Update existing character
-            updateCharacter(bookId, versionId, editingCharacter.id, characterData);
-        } else {
-            // Create new character
-            createCharacter(bookId, versionId, characterData);
-        }
-        
-        setShowCharacterBuilder(false);
-        setEditingCharacter(null);
-    };
-    
-    // Handle cancel from Profile Builder
-    const handleCancelCharacterBuilder = () => {
-        setShowCharacterBuilder(false);
-        setEditingCharacter(null);
-    };
-    
-    // If showing character builder, render it
-    if (showCharacterBuilder) {
-        return (
-            <div className="w-full bg-gray-50 dark:bg-gray-900">
-                {/* Header with back button */}
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-                    <div className="flex items-center gap-4">
-                        <button
-                            onClick={() => setShowCharacterBuilder(false)}
-                            className="flex items-center gap-2 px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                            </svg>
-                            Back to Characters
-                        </button>
-                        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Character Profile Builder</h1>
-                    </div>
-                </div>
-                <div className="w-full">
-                    <CharacterProfileBuilderWrapper 
-                        theme={theme}
-                        initialCharacter={editingCharacter}
-                        onSave={handleSaveCharacter}
-                        onCancel={handleCancelCharacterBuilder}
-                    />
-                </div>
-            </div>
-        );
-    }
     
     // If a character is selected, show details view
     if (selectedCharacter) {
         return (
-            <div className="w-full bg-gray-50 dark:bg-gray-900">
+            <div className="h-full bg-gray-50 dark:bg-gray-900">
                 <CharacterDetailsView 
                     character={selectedCharacter}
                     theme={theme}
                     onClose={() => setSelectedCharacterId(null)}
-                    onEdit={handleEditCharacter}
                 />
             </div>
         );
@@ -462,20 +407,8 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
     };
 
     return (
-        <div className="w-full bg-gray-50 dark:bg-gray-900">
-            <div className="p-6 pb-20">
-                {/* Page Header with Add Button */}
-                <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Characters</h2>
-                    <button
-                        onClick={handleCreateCharacter}
-                        className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-colors shadow-lg"
-                    >
-                        <PlusIcon className="w-5 h-5" />
-                        Add Character
-                    </button>
-                </div>
-
+        <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
+            <div className="flex-1 overflow-auto p-6">
                 {/* Hero Section */}
                 <HeroSection 
                     primaryCharacters={primaryCharacters}
@@ -488,6 +421,13 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
                     <div className="mb-8">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Primary Characters</h3>
+                            <button
+                                onClick={handleCreateCharacter}
+                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white rounded-lg transition-colors"
+                            >
+                                <PlusIcon className="w-4 h-4" />
+                                Add Character
+                            </button>
                         </div>
                         <motion.div 
                             className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
@@ -523,7 +463,7 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
                                 <CharacterCard
                                     key={character.id}
                                     character={character}
-                                    size="large"
+                                    size="medium"
                                     onClick={() => setSelectedCharacterId(character.id)}
                                 />
                             ))}

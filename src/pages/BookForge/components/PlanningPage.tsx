@@ -14,9 +14,10 @@ interface PlanningPageProps {
     theme: Theme;
     activeTab?: PlanningTab;
     onTabChange?: (tab: PlanningTab) => void;
+    searchQuery?: string;
 }
 
-const PlanningPage: React.FC<PlanningPageProps> = ({ book, version, theme, activeTab = 'Plot Arcs' }) => {
+const PlanningPage: React.FC<PlanningPageProps> = ({ book, version, theme, activeTab = 'Plot Arcs', searchQuery = '' }) => {
     const [autoSaveStatus, setAutoSaveStatus] = useState<'saving' | 'saved' | 'error'>('saved');
 
     // Mock auto-save functionality
@@ -32,13 +33,13 @@ const PlanningPage: React.FC<PlanningPageProps> = ({ book, version, theme, activ
     const renderActiveTabContent = () => {
         switch (activeTab) {
             case 'Plot Arcs':
-                return <PlotArcsBoard book={book} version={version} theme={theme} />;
+                return <PlotArcsBoard book={book} version={version} theme={theme} searchQuery={searchQuery} />;
             case 'World Building':
                 return <WorldBuildingBoard book={book} version={version} theme={theme} />;
             case 'Characters':
-                return <CharacterPage book={book} version={version} theme={theme} />;
+                return <CharacterPage theme={theme} searchQuery={searchQuery} />;
             default:
-                return <PlotArcsBoard book={book} version={version} theme={theme} />;
+                return <PlotArcsBoard book={book} version={version} theme={theme} searchQuery={searchQuery} />;
         }
     };
 
@@ -68,7 +69,7 @@ const PlanningPage: React.FC<PlanningPageProps> = ({ book, version, theme, activ
     return (
         <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
             {/* Main Content Area */}
-            <main className="flex-1 overflow-hidden">
+            <main className="flex-1 min-h-0">
                 <AnimatePresence mode="wait">
                     <motion.div
                         key={activeTab}
@@ -76,7 +77,7 @@ const PlanningPage: React.FC<PlanningPageProps> = ({ book, version, theme, activ
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -20 }}
                         transition={{ duration: 0.3 }}
-                        className="h-full"
+                        className="w-full h-full"
                     >
                         {renderActiveTabContent()}
                     </motion.div>

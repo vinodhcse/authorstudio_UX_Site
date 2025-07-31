@@ -66,7 +66,7 @@ const EditorFooter: React.FC<EditorFooterProps> = ({ book, mode, activePlanningT
                         onClick={() => onPlanningNavigation?.('Plot Arcs')}
                         className={`px-3 py-1 rounded-lg transition-colors ${
                             activePlanningTab === 'Plot Arcs' 
-                                ? 'bg-gradient-to-r from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 text-white dark:text-black font-semibold shadow-lg border border-gray-600 dark:border-gray-300' 
+                                ? 'bg-gradient-to-r from-slate-300 to-gray-400 dark:from-slate-400 dark:to-gray-500 text-black dark:text-white font-semibold shadow-lg border border-slate-400 dark:border-slate-500' 
                                 : 'hover:bg-white/10 dark:hover:bg-black/10'
                         }`}
                     >
@@ -76,7 +76,7 @@ const EditorFooter: React.FC<EditorFooterProps> = ({ book, mode, activePlanningT
                         onClick={() => onPlanningNavigation?.('World Building')}
                         className={`px-3 py-1 rounded-lg transition-colors ${
                             activePlanningTab === 'World Building' 
-                                ? 'bg-gradient-to-r from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 text-white dark:text-black font-semibold shadow-lg border border-gray-600 dark:border-gray-300' 
+                                ? 'bg-gradient-to-r from-slate-300 to-gray-400 dark:from-slate-400 dark:to-gray-500 text-black dark:text-white font-semibold shadow-lg border border-slate-400 dark:border-slate-500' 
                                 : 'hover:bg-white/10 dark:hover:bg-black/10'
                         }`}
                     >
@@ -103,7 +103,7 @@ const EditorFooter: React.FC<EditorFooterProps> = ({ book, mode, activePlanningT
                         onClick={() => onPlanningNavigation?.('Characters')}
                         className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
                             activePlanningTab === 'Characters' 
-                                ? 'bg-gradient-to-r from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 text-white dark:text-black font-semibold shadow-lg border border-gray-600 dark:border-gray-300' 
+                                ? 'bg-gradient-to-r from-slate-300 to-gray-400 dark:from-slate-400 dark:to-gray-500 text-black dark:text-white font-semibold shadow-lg border border-slate-400 dark:border-slate-500' 
                                 : 'text-white/70 dark:text-black/70 hover:bg-white/10 dark:hover:bg-black/10'
                         }`}
                     >

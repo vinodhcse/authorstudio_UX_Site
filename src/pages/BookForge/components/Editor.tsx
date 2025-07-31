@@ -1819,6 +1819,7 @@ const Editor: React.FC<{
     theme?: Theme;
     activeMode?: string;
     planningTab?: 'Plot Arcs' | 'World Building' | 'Characters';
+    planningSearchQuery?: string;
 }> = ({ 
     bookId = 'default-book', 
     versionId = 'v1', 
@@ -1828,7 +1829,8 @@ const Editor: React.FC<{
     onEditorReady,
     theme = 'dark',
     activeMode = 'Writing',
-    planningTab = 'Plot Arcs'
+    planningTab = 'Plot Arcs',
+    planningSearchQuery = ''
 }) => {
     
     // Remove the internal state since it's now managed by parent
@@ -2280,6 +2282,7 @@ const Editor: React.FC<{
                         }}
                         theme={theme}
                         activeTab={planningTab}
+                        searchQuery={planningSearchQuery}
                     />
                 ) : (
                     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-16">

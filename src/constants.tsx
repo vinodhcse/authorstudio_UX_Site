@@ -480,9 +480,338 @@ export const MOCK_BOOKS: Book[] = [
         {id: 'c2', name: 'Bob Johnson', email: 'bob@example.com', avatar: 'https://picsum.photos/seed/collab2/40/40', role: 'REVIEWER'}
     ],
     characters: [
-      { id: 'char1', name: 'Kaelen', image: 'https://picsum.photos/seed/char1/800/1200', quote: 'The shadows whisper secrets the light cannot comprehend.' },
-      { id: 'char2', name: 'Seraphina', image: 'https://picsum.photos/seed/char2/800/1200', quote: 'Destiny is not a path given, but a road forged in fire.' },
-      { id: 'char3', name: 'Roric', image: 'https://picsum.photos/seed/char3/800/1200', quote: 'A crown weighs nothing, but the head that wears it bears the world.' },
+      { 
+        id: 'char1', 
+        name: 'Kaelen Shadowborn', 
+        image: 'https://picsum.photos/seed/char1/800/1200', 
+        quote: 'The shadows whisper secrets the light cannot comprehend.',
+        
+        // Core Identity
+        fullName: 'Kaelen Vex Shadowborn',
+        aliases: ['Shadow Walker', 'The Whisperer', 'Vex'],
+        title: 'Former Royal Inquisitor',
+        age: 32,
+        dateOfBirth: 'Autumn Solstice, Year 1291',
+        placeOfBirth: 'Shadowhaven, Northern Territories',
+        nationality: 'Valdorian',
+        species: 'Human (Shadow-touched)',
+        gender: 'Male',
+        sexuality: 'Heterosexual',
+        pronouns: 'he/him',
+        
+        // Physical Appearance
+        height: '6\'2"',
+        weight: '175 lbs',
+        build: 'Lean and athletic',
+        hairColor: 'Black with silver streaks',
+        hairStyle: 'Medium length, often tied back',
+        eyeColor: 'Silver-grey',
+        skinTone: 'Pale with faint shadow markings',
+        facialFeatures: 'Sharp jawline, high cheekbones, slightly pointed ears',
+        distinguishingMarks: 'Intricate shadow tattoos on forearms, scar across left temple',
+        clothing: 'Dark leather coat, silver-buckled boots, shadow-woven cloak',
+        accessories: 'Silver pendant with shadow crystal, leather gloves',
+        
+        // Personality Core
+        personalityType: 'INTJ - The Architect',
+        coreTraits: ['Analytical', 'Reserved', 'Loyal', 'Haunted', 'Protective'],
+        positiveTraits: ['Intelligent', 'Dedicated', 'Resourceful', 'Empathetic', 'Strategic'],
+        negativeTraits: ['Brooding', 'Secretive', 'Self-doubting', 'Isolationist', 'Guilt-ridden'],
+        fears: ['Losing control of shadow powers', 'Hurting innocents', 'Confronting his past'],
+        desires: ['Redemption', 'Peace', 'Understanding his abilities', 'Protecting others'],
+        motivations: ['Atoning for past mistakes', 'Uncovering truth about shadow realm'],
+        moralAlignment: 'Chaotic Good',
+        
+        // Background & History
+        backstory: 'Once a respected Royal Inquisitor, Kaelen\'s life changed when he was exposed to shadow realm energy during a mission gone wrong. The exposure gave him supernatural abilities but cost him his position and nearly his sanity.',
+        childhood: 'Raised by his grandmother after parents died in a plague. Showed early aptitude for investigation and justice.',
+        education: 'Royal Academy of Investigation, graduated top of class',
+        formativeEvents: [
+          'Parents\' death when he was 8',
+          'Discovery of investigative talents at 12',
+          'Graduation from Royal Academy at 20',
+          'The Shadow Incident at 28',
+          'Exile from the Royal Court at 29'
+        ],
+        trauma: 'Shadow realm exposure, witnessing innocent deaths during failed mission',
+        secrets: ['Can communicate with shadow entities', 'Has prophetic dreams', 'Is being hunted by former colleagues'],
+        
+        // Skills & Abilities
+        primarySkills: ['Shadow manipulation', 'Investigation', 'Combat tactics', 'Stealth', 'Deduction'],
+        secondarySkills: ['Lockpicking', 'Negotiation', 'Research', 'Survival', 'First aid'],
+        combatSkills: ['Swordsmanship', 'Shadow magic', 'Hand-to-hand combat', 'Tactical planning'],
+        socialSkills: ['Reading people', 'Intimidation', 'Protective instincts'],
+        intellectualSkills: ['Pattern recognition', 'Memory palace technique', 'Language (Ancient Valdorian)'],
+        magicalAbilities: ['Shadow walking', 'Shadow sight', 'Shadow binding', 'Emotional sensing through shadows'],
+        weaknesses: ['Bright light disrupts powers', 'Emotional instability affects control', 'Physical exhaustion from overuse'],
+        
+        // Relationships
+        familyRelations: {
+          parents: 'Deceased - Marcus and Elara Shadowborn',
+          siblings: 'None',
+          spouse: 'None',
+          children: 'None',
+          guardians: 'Grandmother Nyx (deceased)'
+        },
+        romanticInterests: [
+          { name: 'Seraphina', relationship: 'Romantic interest', status: 'Complicated', description: 'Mutual attraction, conflicted by duty' }
+        ],
+        allies: [
+          { name: 'Seraphina', relationship: 'Trusted partner', loyalty: 9 },
+          { name: 'Roric', relationship: 'Reluctant ally', loyalty: 6 }
+        ],
+        enemies: [
+          { name: 'High Inquisitor Malachar', relationship: 'Former mentor turned enemy', threat: 10 },
+          { name: 'Shadow Council', relationship: 'Ancient enemies', threat: 8 }
+        ],
+        mentors: [
+          { name: 'Grandmother Nyx', relationship: 'Guardian/Mentor', status: 'Deceased', influence: 'Taught him to trust his instincts' }
+        ],
+        
+        // Story Elements
+        characterArc: 'From guilt-ridden exile to redeemed protector who learns to accept his powers and past',
+        internalConflict: 'Struggling between his desire to help others and fear of his dangerous abilities',
+        externalConflict: 'Being hunted by former colleagues while trying to prevent shadow realm invasion',
+        growth: 'Learning to trust others, accepting his shadow nature as part of who he is',
+        role: 'Protagonist - The reluctant hero with a dark past',
+        importance: 'Primary',
+        firstAppearance: 'Chapter 1',
+        lastAppearance: 'Epilogue',
+        
+        // Dialogue & Voice
+        speechPatterns: ['Speaks formally when nervous', 'Uses shadow metaphors', 'Often trails off when thinking'],
+        vocabulary: 'Educated, occasionally archaic terms',
+        accent: 'Slight Northern Valdorian accent',
+        catchphrases: ['The shadows know', 'In darkness, truth'],
+        
+        // Development Notes
+        characterTheme: 'Redemption through acceptance',
+        symbolism: 'Represents the balance between light and dark',
+        inspiration: 'Classic detective archetype meets supernatural elements',
+        notes: 'Key to bridging human and shadow realm storylines',
+        tags: ['protagonist', 'detective', 'supernatural', 'haunted', 'redeemer']
+      },
+      { 
+        id: 'char2', 
+        name: 'Seraphina Brightflame', 
+        image: 'https://picsum.photos/seed/char2/800/1200', 
+        quote: 'Destiny is not a path given, but a road forged in fire.',
+        
+        // Core Identity
+        fullName: 'Seraphina Aria Brightflame',
+        aliases: ['Sera', 'The Phoenix Warrior', 'Flame Bearer'],
+        title: 'Captain of the Royal Guard',
+        age: 28,
+        dateOfBirth: 'Summer\'s Peak, Year 1295',
+        placeOfBirth: 'Solareth, Capital of Valdoria',
+        nationality: 'Valdorian',
+        species: 'Human (Fire-blessed)',
+        gender: 'Female',
+        sexuality: 'Heterosexual',
+        pronouns: 'she/her',
+        
+        // Physical Appearance  
+        height: '5\'8"',
+        weight: '140 lbs',
+        build: 'Athletic and strong',
+        hairColor: 'Auburn with golden highlights',
+        hairStyle: 'Long, often braided for combat',
+        eyeColor: 'Emerald green with gold flecks',
+        skinTone: 'Sun-kissed olive',
+        facialFeatures: 'Strong features, determined expression, high cheekbones',
+        distinguishingMarks: 'Phoenix tattoo on right shoulder, small scar on chin',
+        clothing: 'Royal guard armor with flame motifs, practical combat gear',
+        accessories: 'Phoenix feather pendant, flame-blessed sword',
+        
+        // Personality & Relationships
+        personalityType: 'ENFJ - The Protagonist',
+        coreTraits: ['Brave', 'Compassionate', 'Determined', 'Loyal', 'Inspiring'],
+        role: 'Deuteragonist - The loyal warrior',
+        characterArc: 'From duty-bound soldier to independent leader who learns to balance duty with personal desires',
+        romanticInterests: [
+          { name: 'Kaelen', relationship: 'Romantic interest', status: 'Developing', description: 'Growing attraction despite conflicting duties' }
+        ],
+        allies: [
+          { name: 'Kaelen', relationship: 'Trusted partner', loyalty: 9 },
+          { name: 'Royal Guard Unit', relationship: 'Commands respect', loyalty: 8 }
+        ],
+        importance: 'Primary'
+      },
+      { 
+        id: 'char3', 
+        name: 'King Roric Ironhart', 
+        image: 'https://picsum.photos/seed/char3/800/1200', 
+        quote: 'A crown weighs nothing, but the head that wears it bears the world.',
+        
+        // Core Identity
+        fullName: 'Roric Aldwin Ironhart III',
+        aliases: ['The Iron King', 'Defender of the Realm'],
+        title: 'King of Valdoria',
+        age: 45,
+        dateOfBirth: 'Winter\'s End, Year 1278',
+        importance: 'Primary'
+      },
+      { 
+        id: 'char4', 
+        name: 'Elena Mistweaver', 
+        image: 'https://picsum.photos/seed/char4/800/1200', 
+        quote: 'Magic is not about power, but about understanding the threads that bind all things.',
+        
+        // Core Identity
+        fullName: 'Elena Cordelia Mistweaver',
+        aliases: ['The Weaver', 'Mist Sage'],
+        title: 'Court Mage',
+        age: 38,
+        species: 'Human (Mage)',
+        gender: 'Female',
+        height: '5\'5"',
+        hairColor: 'Silver-white',
+        eyeColor: 'Violet',
+        role: 'Supporting Character - The wise mentor',
+        importance: 'Secondary',
+        primarySkills: ['Elemental magic', 'Divination', 'Healing', 'Enchanting'],
+        backstory: 'The royal court\'s most trusted mage, Elena has served three generations of the Ironhart dynasty.',
+        personalityType: 'INFJ - The Advocate',
+        coreTraits: ['Wise', 'Patient', 'Mysterious', 'Protective', 'Intuitive']
+      },
+      { 
+        id: 'char5', 
+        name: 'Captain Marcus Steelwind', 
+        image: 'https://picsum.photos/seed/char5/800/1200', 
+        quote: 'Honor is not in the victory, but in how we face the battle.',
+        
+        // Core Identity
+        fullName: 'Marcus Alexander Steelwind',
+        aliases: ['Steel', 'The Fortress'],
+        title: 'Captain of the City Watch',
+        age: 40,
+        species: 'Human',
+        gender: 'Male',
+        height: '6\'0"',
+        hairColor: 'Brown with gray streaks',
+        eyeColor: 'Brown',
+        role: 'Supporting Character - The reliable ally',
+        importance: 'Secondary',
+        primarySkills: ['Leadership', 'Swordsmanship', 'Tactics', 'Investigation'],
+        backstory: 'A veteran soldier who rose through the ranks to lead the city watch.',
+        personalityType: 'ESTJ - The Executive',
+        coreTraits: ['Dependable', 'Just', 'Disciplined', 'Pragmatic', 'Loyal']
+      },
+      { 
+        id: 'char6', 
+        name: 'Lyra Nightingale', 
+        image: 'https://picsum.photos/seed/char6/800/1200', 
+        quote: 'Every shadow hides a secret, and every secret has its price.',
+        
+        // Core Identity
+        fullName: 'Lyra Evelyn Nightingale',
+        aliases: ['Night', 'The Songbird'],
+        title: 'Master Thief',
+        age: 24,
+        species: 'Human',
+        gender: 'Female',
+        height: '5\'3"',
+        hairColor: 'Black',
+        eyeColor: 'Green',
+        role: 'Supporting Character - The reluctant ally',
+        importance: 'Secondary',
+        primarySkills: ['Stealth', 'Lockpicking', 'Acrobatics', 'Information gathering'],
+        backstory: 'An orphan who learned to survive on the streets and became the city\'s most skilled thief.',
+        personalityType: 'ESTP - The Entrepreneur',
+        coreTraits: ['Cunning', 'Independent', 'Resourceful', 'Witty', 'Loyal (to few)']
+      },
+      { 
+        id: 'char7', 
+        name: 'High Inquisitor Malachar', 
+        image: 'https://picsum.photos/seed/char7/800/1200', 
+        quote: 'Order must be maintained, even if it means sacrificing the few for the many.',
+        
+        // Core Identity
+        fullName: 'Malachar Darius Blackthorn',
+        aliases: ['The Iron Fist', 'Shadow Hunter'],
+        title: 'High Inquisitor',
+        age: 52,
+        species: 'Human',
+        gender: 'Male',
+        height: '6\'1"',
+        hairColor: 'Gray',
+        eyeColor: 'Steel blue',
+        role: 'Primary Antagonist',
+        importance: 'Primary',
+        primarySkills: ['Divine magic', 'Interrogation', 'Leadership', 'Combat'],
+        backstory: 'Kaelen\'s former mentor who believes in order above all else.',
+        personalityType: 'ENTJ - The Commander',
+        coreTraits: ['Authoritarian', 'Disciplined', 'Ruthless', 'Intelligent', 'Zealous']
+      },
+      { 
+        id: 'char8', 
+        name: 'Brother Thomas', 
+        image: 'https://picsum.photos/seed/char8/800/1200', 
+        quote: 'Faith is not the absence of doubt, but the courage to act despite it.',
+        
+        // Core Identity
+        fullName: 'Thomas Benedict Lightheart',
+        aliases: ['Tom', 'The Gentle Priest'],
+        title: 'Temple Priest',
+        age: 35,
+        species: 'Human',
+        gender: 'Male',
+        height: '5\'10"',
+        hairColor: 'Brown',
+        eyeColor: 'Blue',
+        role: 'Supporting Character - The moral compass',
+        importance: 'Tertiary',
+        primarySkills: ['Healing magic', 'Counseling', 'Ancient languages', 'Herbalism'],
+        backstory: 'A humble priest who provides spiritual guidance to the protagonists.',
+        personalityType: 'ISFJ - The Protector',
+        coreTraits: ['Compassionate', 'Wise', 'Humble', 'Patient', 'Faithful']
+      },
+      { 
+        id: 'char9', 
+        name: 'Tavern Keeper Grim', 
+        image: 'https://picsum.photos/seed/char9/800/1200', 
+        quote: 'A good ale and a warm hearth can solve more problems than any sword.',
+        
+        // Core Identity
+        fullName: 'Grimwald Ironfoot',
+        aliases: ['Grim', 'Old Iron'],
+        title: 'Tavern Keeper',
+        age: 58,
+        species: 'Dwarf',
+        gender: 'Male',
+        height: '4\'8"',
+        hairColor: 'Gray beard',
+        eyeColor: 'Brown',
+        role: 'Supporting Character - The information broker',
+        importance: 'Tertiary',
+        primarySkills: ['Brewing', 'Information gathering', 'Diplomacy', 'Axe fighting'],
+        backstory: 'A retired dwarf warrior who now runs the most popular tavern in the city.',
+        personalityType: 'ESFP - The Entertainer',
+        coreTraits: ['Jovial', 'Observant', 'Protective', 'Wise', 'Hospitable']
+      },
+      { 
+        id: 'char10', 
+        name: 'Lady Isabelle Thornwick', 
+        image: 'https://picsum.photos/seed/char10/800/1200', 
+        quote: 'Politics is like gardening - you must know when to prune and when to let grow.',
+        
+        // Core Identity
+        fullName: 'Isabelle Rosemary Thornwick',
+        aliases: ['Lady Thorn', 'The Rose'],
+        title: 'Court Noble',
+        age: 42,
+        species: 'Human',
+        gender: 'Female',
+        height: '5\'6"',
+        hairColor: 'Blonde',
+        eyeColor: 'Blue',
+        role: 'Supporting Character - The political manipulator',
+        importance: 'Tertiary',
+        primarySkills: ['Diplomacy', 'Intrigue', 'Economics', 'Manipulation'],
+        backstory: 'A cunning noble who plays the political game for the good of the realm.',
+        personalityType: 'ENTJ - The Commander',
+        coreTraits: ['Ambitious', 'Intelligent', 'Manipulative', 'Strategic', 'Patriotic']
+      }
     ],
     featured: true,
     bookType: 'Novel',
