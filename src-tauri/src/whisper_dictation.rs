@@ -40,8 +40,8 @@ impl SessionRecorder {
             .as_secs();
         let session_id = format!("dictation_{}", timestamp);
         
-        // Create sessions directory
-        let sessions_dir = PathBuf::from("dictation_sessions");
+        // Create sessions directory outside src-tauri to avoid triggering dev rebuilds
+        let sessions_dir = PathBuf::from("../dictation_sessions");
         fs::create_dir_all(&sessions_dir)?;
         
         let session_path = sessions_dir.join(format!("{}.wav", session_id));
@@ -1014,7 +1014,7 @@ pub async fn is_dictation_running() -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn list_dictation_sessions() -> Result<Vec<serde_json::Value>, String> {
-    let sessions_dir = PathBuf::from("dictation_sessions");
+    let sessions_dir = PathBuf::from("../dictation_sessions");
     
     if !sessions_dir.exists() {
         return Ok(vec![]);

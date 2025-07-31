@@ -2,8 +2,10 @@
 
 ## System Requirements
 - macOS 10.15+ (Catalina or later)
-- Xcode Command Line Tools installed
+- Xcode Command Line Tools installed (`xcode-select --install`)
+- **CMake installed** (`brew install cmake`) - **Required for whisper-rs compilation**
 - Rust 1.77.2+ installed
+- Node.js and npm
 
 ## Installation Steps
 
@@ -12,12 +14,23 @@
 # Install Rust (if not already installed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
+# Install Xcode Command Line Tools (required for compilation)
+xcode-select --install
+
+# Install CMake (REQUIRED - whisper-rs needs cmake to build the C++ library)
+brew install cmake
+
+# Verify cmake is installed
+cmake --version
+
 # Install Node.js and npm (if not already installed)
 brew install node
 
 # Install project dependencies
 npm install
 ```
+
+**⚠️ CMake is Essential:** The cmake installation is not optional. whisper-rs uses cmake to build the underlying whisper.cpp C++ library. Without cmake, you'll get build errors.
 
 ### 2. Download Whisper Model
 ```bash
@@ -55,6 +68,30 @@ The app looks for the Whisper model in these locations (in order):
 3. `models/ggml-base.en.bin` (fallback)
 
 ### Troubleshooting
+
+## Troubleshooting
+
+### **"cmake is not installed" Error** 
+⚠️ **Most Common macOS Build Error**
+
+**Root Cause:** whisper-rs requires cmake to build the underlying whisper.cpp C++ library.
+
+**Solution:**
+```bash
+# Install cmake using Homebrew (recommended)
+brew install cmake
+
+# Verify installation
+cmake --version
+# Should show: cmake version 3.x.x
+
+# If homebrew is not installed first:
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+**Alternative cmake installation:**
+- **Direct download:** https://cmake.org/download/ (add to PATH manually)
+- **MacPorts:** `sudo port install cmake`
 
 #### "Microphone not available" Error
 - Check System Preferences > Security & Privacy > Privacy > Microphone
