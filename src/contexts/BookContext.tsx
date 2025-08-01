@@ -1,37 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { Book, Version, Character } from '../types';
+import { Book, Version, Character, PlotArc } from '../types';
 import { MOCK_BOOKS } from '../constants';
-
-// Additional types for version-level data
-export interface PlotArc {
-  id: string;
-  title: string;
-  description: string;
-  status: 'PLANNING' | 'IN_PROGRESS' | 'COMPLETED';
-  scenes: PlotScene[];
-  characters: string[]; // character IDs
-  timeline: {
-    startChapter?: number;
-    endChapter?: number;
-    duration?: string;
-  };
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PlotScene {
-  id: string;
-  title: string;
-  description: string;
-  chapter?: number;
-  wordCount?: number;
-  status: 'DRAFT' | 'WRITTEN' | 'EDITED' | 'FINAL';
-  characters: string[];
-  plotPoints: string[];
-  notes?: string;
-}
+import { WorldData, Location, WorldObject, Lore, MagicSystem } from '../pages/BookForge/components/planning/types/WorldBuildingTypes';
 
 export interface WorldBuildingElement {
   id: string;
@@ -56,33 +27,25 @@ export interface WorldBuildingElement {
   updatedAt: string;
 }
 
-// Enhanced version interface with version-level data
-export interface EnhancedVersion extends Version {
-  characters: Character[];
-  plotArcs: PlotArc[];
-  worldBuilding: WorldBuildingElement[];
-}
-
-// Enhanced book interface
-export interface EnhancedBook extends Omit<Book, 'versions' | 'characters'> {
-  versions: EnhancedVersion[];
-}
-
 // Context interface
 interface BookContextType {
   // Current state
-  books: EnhancedBook[];
+  books: Book[];
   loading: boolean;
   error: string | null;
   
+  // World Building UI state
+  selectedWorldId: string | null;
+  setSelectedWorldId: (worldId: string | null) => void;
+  
   // Book operations
-  getBook: (bookId: string) => EnhancedBook | null;
-  updateBook: (bookId: string, updates: Partial<EnhancedBook>) => void;
+  getBook: (bookId: string) => Book | null;
+  updateBook: (bookId: string, updates: Partial<Book>) => void;
   
   // Version operations
-  getVersion: (bookId: string, versionId: string) => EnhancedVersion | null;
-  updateVersion: (bookId: string, versionId: string, updates: Partial<EnhancedVersion>) => void;
-  createVersion: (bookId: string, versionData: Omit<EnhancedVersion, 'id'>) => EnhancedVersion;
+  getVersion: (bookId: string, versionId: string) => Version | null;
+  updateVersion: (bookId: string, versionId: string, updates: Partial<Version>) => void;
+  createVersion: (bookId: string, versionData: Omit<Version, 'id'>) => Version;
   
   // Character operations
   getCharacters: (bookId: string, versionId: string) => Character[];
@@ -93,17 +56,45 @@ interface BookContextType {
   
   // Plot Arc operations
   getPlotArcs: (bookId: string, versionId: string) => PlotArc[];
-  getPlotArc: (bookId: string, versionId: string, arcId: string) => PlotArc | null;
-  createPlotArc: (bookId: string, versionId: string, arcData: Omit<PlotArc, 'id'>) => PlotArc;
-  updatePlotArc: (bookId: string, versionId: string, arcId: string, updates: Partial<PlotArc>) => void;
-  deletePlotArc: (bookId: string, versionId: string, arcId: string) => void;
+  getPlotArc: (bookId: string, versionId: string, plotArcId: string) => PlotArc | null;
+  createPlotArc: (bookId: string, versionId: string, plotArcData: Omit<PlotArc, 'id'>) => PlotArc;
+  updatePlotArc: (bookId: string, versionId: string, plotArcId: string, updates: Partial<PlotArc>) => void;
+  deletePlotArc: (bookId: string, versionId: string, plotArcId: string) => void;
   
-  // World Building operations
-  getWorldBuilding: (bookId: string, versionId: string) => WorldBuildingElement[];
-  getWorldBuildingElement: (bookId: string, versionId: string, elementId: string) => WorldBuildingElement | null;
-  createWorldBuildingElement: (bookId: string, versionId: string, elementData: Omit<WorldBuildingElement, 'id'>) => WorldBuildingElement;
-  updateWorldBuildingElement: (bookId: string, versionId: string, elementId: string, updates: Partial<WorldBuildingElement>) => void;
-  deleteWorldBuildingElement: (bookId: string, versionId: string, elementId: string) => void;
+  // World operations
+  getWorlds: (bookId: string, versionId: string) => WorldData[];
+  getWorld: (bookId: string, versionId: string, worldId: string) => WorldData | null;
+  createWorld: (bookId: string, versionId: string, worldData: Omit<WorldData, 'id'>) => WorldData;
+  updateWorld: (bookId: string, versionId: string, worldId: string, updates: Partial<WorldData>) => void;
+  deleteWorld: (bookId: string, versionId: string, worldId: string) => void;
+  
+  // Location operations
+  getLocations: (bookId: string, versionId: string, worldId: string) => Location[];
+  getLocation: (bookId: string, versionId: string, worldId: string, locationId: string) => Location | null;
+  createLocation: (bookId: string, versionId: string, worldId: string, locationData: Omit<Location, 'id' | 'parentWorldId'>) => Location;
+  updateLocation: (bookId: string, versionId: string, worldId: string, locationId: string, updates: Partial<Location>) => void;
+  deleteLocation: (bookId: string, versionId: string, worldId: string, locationId: string) => void;
+  
+  // World Object operations
+  getWorldObjects: (bookId: string, versionId: string, worldId: string) => WorldObject[];
+  getWorldObject: (bookId: string, versionId: string, worldId: string, objectId: string) => WorldObject | null;
+  createWorldObject: (bookId: string, versionId: string, worldId: string, objectData: Omit<WorldObject, 'id' | 'parentWorldId'>) => WorldObject;
+  updateWorldObject: (bookId: string, versionId: string, worldId: string, objectId: string, updates: Partial<WorldObject>) => void;
+  deleteWorldObject: (bookId: string, versionId: string, worldId: string, objectId: string) => void;
+  
+  // Lore operations
+  getLore: (bookId: string, versionId: string, worldId: string) => Lore[];
+  getLoreItem: (bookId: string, versionId: string, worldId: string, loreId: string) => Lore | null;
+  createLore: (bookId: string, versionId: string, worldId: string, loreData: Omit<Lore, 'id' | 'parentWorldId'>) => Lore;
+  updateLore: (bookId: string, versionId: string, worldId: string, loreId: string, updates: Partial<Lore>) => void;
+  deleteLore: (bookId: string, versionId: string, worldId: string, loreId: string) => void;
+  
+  // Magic System operations
+  getMagicSystems: (bookId: string, versionId: string, worldId: string) => MagicSystem[];
+  getMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemId: string) => MagicSystem | null;
+  createMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemData: Omit<MagicSystem, 'id' | 'parentWorldId'>) => MagicSystem;
+  updateMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemId: string, updates: Partial<MagicSystem>) => void;
+  deleteMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemId: string) => void;
   
   // Utility methods
   generateId: () => string;
@@ -122,185 +113,37 @@ export const useBookContext = () => {
   return context;
 };
 
-// Convert legacy books to enhanced books with version-level data
-const convertToEnhancedBooks = (books: Book[]): EnhancedBook[] => {
-  return books.map(book => {
-    console.log('BookContext: Converting book:', book);
-    const enhancedVersions: EnhancedVersion[] = (book.versions || []).map(version => ({
-      ...version,
-      characters: book.characters || [], // Move characters to version level
-      plotArcs: generateSamplePlotArcs(book.id, version.id),
-      worldBuilding: generateSampleWorldBuilding(book.id, version.id),
-    }));
-
-    return {
-      ...book,
-      versions: enhancedVersions,
-    };
-  });
-};
-
-// Generate sample plot arcs for each version
-const generateSamplePlotArcs = (bookId: string, versionId: string): PlotArc[] => {
-  const baseArcs = [
-    {
-      id: `arc-${bookId}-${versionId}-1`,
-      title: 'Opening Hook',
-      description: 'Establish the protagonist and their world, introduce the inciting incident',
-      status: 'COMPLETED' as const,
-      scenes: [
-        {
-          id: `scene-${bookId}-${versionId}-1`,
-          title: 'Opening Scene',
-          description: 'Introduce the protagonist in their normal world',
-          chapter: 1,
-          wordCount: 2500,
-          status: 'FINAL' as const,
-          characters: ['char1'],
-          plotPoints: ['Character introduction', 'World establishment'],
-          notes: 'Strong opening that hooks the reader'
-        }
-      ],
-      characters: ['char1'],
-      timeline: { startChapter: 1, endChapter: 3, duration: '3 chapters' },
-      tags: ['opening', 'character-introduction'],
-      createdAt: '2024-01-15T10:00:00Z',
-      updatedAt: '2024-01-20T15:30:00Z'
-    },
-    {
-      id: `arc-${bookId}-${versionId}-2`,
-      title: 'Rising Action',
-      description: 'Build tension and develop character relationships',
-      status: 'IN_PROGRESS' as const,
-      scenes: [
-        {
-          id: `scene-${bookId}-${versionId}-2`,
-          title: 'First Challenge',
-          description: 'Protagonist faces their first major obstacle',
-          chapter: 5,
-          wordCount: 3200,
-          status: 'WRITTEN' as const,
-          characters: ['char1', 'char2'],
-          plotPoints: ['First obstacle', 'Character growth'],
-          notes: 'Important character development moment'
-        }
-      ],
-      characters: ['char1', 'char2', 'char3'],
-      timeline: { startChapter: 4, endChapter: 12, duration: '9 chapters' },
-      tags: ['rising-action', 'character-development'],
-      createdAt: '2024-01-16T09:00:00Z',
-      updatedAt: '2024-01-25T11:15:00Z'
-    },
-    {
-      id: `arc-${bookId}-${versionId}-3`,
-      title: 'Climax',
-      description: 'The final confrontation and resolution',
-      status: 'PLANNING' as const,
-      scenes: [],
-      characters: ['char1', 'char2', 'char3'],
-      timeline: { startChapter: 18, endChapter: 20, duration: '3 chapters' },
-      tags: ['climax', 'resolution'],
-      createdAt: '2024-01-17T14:00:00Z',
-      updatedAt: '2024-01-17T14:00:00Z'
-    }
-  ];
-
-  return baseArcs;
-};
-
-// Generate sample world building elements
-const generateSampleWorldBuilding = (bookId: string, versionId: string): WorldBuildingElement[] => {
-  const baseElements = [
-    {
-      id: `world-${bookId}-${versionId}-1`,
-      type: 'LOCATION' as const,
-      title: 'Shadowhaven',
-      description: 'A mysterious city built in the shadow of ancient mountains',
-      details: {
-        geography: 'Located in a valley surrounded by towering peaks, with perpetual mist',
-        history: 'Founded centuries ago by refugees fleeing a great war',
-        politics: 'Governed by a council of elder families',
-        economy: 'Based on shadow crystal mining and mysterious trade routes',
-        culture: 'Values secrecy and knowledge, with a complex social hierarchy'
-      },
-      relatedElements: [`world-${bookId}-${versionId}-2`],
-      relatedCharacters: ['char1'],
-      tags: ['city', 'mysterious', 'ancient'],
-      createdAt: '2024-01-15T12:00:00Z',
-      updatedAt: '2024-01-22T16:45:00Z'
-    },
-    {
-      id: `world-${bookId}-${versionId}-2`,
-      type: 'MAGIC_SYSTEM' as const,
-      title: 'Shadow Magic',
-      description: 'A form of magic that draws power from darkness and shadow',
-      details: {
-        magic: 'Practitioners can manipulate shadows, become incorporeal, and see through darkness. Power increases at night and in dark places. Overuse can lead to "shadow sickness" where users begin to fade from reality.',
-        relationships: ['Tied to the shadow realm', 'Opposed by light magic']
-      },
-      relatedElements: [`world-${bookId}-${versionId}-1`],
-      relatedCharacters: ['char1'],
-      tags: ['magic', 'shadow', 'supernatural'],
-      createdAt: '2024-01-16T08:30:00Z',
-      updatedAt: '2024-01-23T10:20:00Z'
-    },
-    {
-      id: `world-${bookId}-${versionId}-3`,
-      type: 'ORGANIZATION' as const,
-      title: 'Royal Inquisitors',
-      description: 'Elite investigators serving the crown',
-      details: {
-        politics: 'Direct servants of the monarchy, investigating supernatural crimes and threats',
-        culture: 'Bound by strict codes of honor and duty, often operating alone',
-        relationships: ['Serves the Crown', 'Investigates supernatural threats']
-      },
-      relatedElements: [],
-      relatedCharacters: ['char1'],
-      tags: ['organization', 'investigation', 'royal'],
-      createdAt: '2024-01-17T11:00:00Z',
-      updatedAt: '2024-01-24T13:30:00Z'
-    }
-  ];
-
-  return baseElements;
-};
-
 interface BookContextProviderProps {
   children: ReactNode;
 }
 
 export const BookContextProvider: React.FC<BookContextProviderProps> = ({ children }) => {
-  const [books, setBooks] = useState<EnhancedBook[]>([]);
+  const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // World Building UI state
+  const [selectedWorldId, setSelectedWorldId] = useState<string | null>(null);
 
   // Initialize books data
   useEffect(() => {
     try {
-      console.log('BookContext: Original MOCK_BOOKS:', MOCK_BOOKS);
-      const enhancedBooks = convertToEnhancedBooks(MOCK_BOOKS);
-      console.log('BookContext: Enhanced books:', enhancedBooks);
-      setBooks(enhancedBooks);
-      console.log('BookContext: Final books state:', books, enhancedBooks);
+      console.log('BookContext: Using MOCK_BOOKS directly:', MOCK_BOOKS);
+      setBooks(MOCK_BOOKS);
       setLoading(false);
     } catch (err) {
       console.error('BookContext: Error loading books:', err);
-      setError('Failed to load books data');
+      setError('Failed to load books');
       setLoading(false);
     }
   }, []);
 
-  // Utility function to generate IDs
-  const generateId = (): string => {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  };
-
   // Book operations
-  const getBook = (id: string): EnhancedBook | null => {
+  const getBook = (id: string): Book | null => {
     return books.find(book => book.id === id) || null;
   };
 
-  const updateBook = (id: string, updates: Partial<EnhancedBook>): void => {
+  const updateBook = (id: string, updates: Partial<Book>): void => {
     setBooks(prevBooks => 
       prevBooks.map(book => 
         book.id === id ? { ...book, ...updates } : book
@@ -309,36 +152,39 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
   };
 
   // Version operations
-  const getVersion = (bookId: string, versionId: string): EnhancedVersion | null => {
+  const getVersion = (bookId: string, versionId: string): Version | null => {
     const book = getBook(bookId);
-    return book?.versions.find(version => version.id === versionId) || null;
+    return book?.versions?.find((version: Version) => version.id === versionId) || null;
   };
 
-  const updateVersion = (bookId: string, versionId: string, updates: Partial<EnhancedVersion>): void => {
-    setBooks(prevBooks =>
-      prevBooks.map(book =>
-        book.id === bookId
+  const updateVersion = (bookId: string, versionId: string, updates: Partial<Version>): void => {
+    setBooks(prevBooks => 
+      prevBooks.map(book => 
+        book.id === bookId 
           ? {
               ...book,
-              versions: book.versions.map(version =>
+              versions: book.versions?.map((version: Version) =>
                 version.id === versionId ? { ...version, ...updates } : version
-              )
+              ) || []
             }
           : book
       )
     );
   };
 
-  const createVersion = (bookId: string, versionData: Omit<EnhancedVersion, 'id'>): EnhancedVersion => {
-    const newVersion: EnhancedVersion = {
+  const createVersion = (bookId: string, versionData: Omit<Version, 'id'>): Version => {
+    const newVersion: Version = {
       ...versionData,
       id: generateId(),
     };
 
-    setBooks(prevBooks =>
-      prevBooks.map(book =>
-        book.id === bookId
-          ? { ...book, versions: [...book.versions, newVersion] }
+    setBooks(prevBooks => 
+      prevBooks.map(book => 
+        book.id === bookId 
+          ? {
+              ...book,
+              versions: [...(book.versions || []), newVersion]
+            }
           : book
       )
     );
@@ -346,53 +192,48 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     return newVersion;
   };
 
-  // Character operations (version-level)
+  // Character operations
   const getCharacters = (bookId: string, versionId: string): Character[] => {
     const version = getVersion(bookId, versionId);
     return version?.characters || [];
   };
 
   const getCharacter = (bookId: string, versionId: string, characterId: string): Character | null => {
-    const characters = getCharacters(bookId, versionId);
-    return characters.find(char => char.id === characterId) || null;
+    const version = getVersion(bookId, versionId);
+    return version?.characters.find(char => char.id === characterId) || null;
   };
 
   const createCharacter = (bookId: string, versionId: string, characterData: Omit<Character, 'id'>): Character => {
-    const book = getBook(bookId);
-    const version = getVersion(bookId, versionId);
-    
-    if (!book || !version) {
-      throw new Error('Book or version not found');
-    }
-
     const newCharacter: Character = {
       ...characterData,
       id: generateId(),
     };
 
-    const updatedCharacters = [...version.characters, newCharacter];
-    updateVersion(bookId, versionId, { characters: updatedCharacters });
+    const version = getVersion(bookId, versionId);
+    if (version) {
+      const updatedCharacters = [...version.characters, newCharacter];
+      updateVersion(bookId, versionId, { characters: updatedCharacters });
+    }
 
     return newCharacter;
   };
 
   const updateCharacter = (bookId: string, versionId: string, characterId: string, updates: Partial<Character>): void => {
     const version = getVersion(bookId, versionId);
-    if (!version) return;
-
-    const updatedCharacters = version.characters.map(char =>
-      char.id === characterId ? { ...char, ...updates } : char
-    );
-
-    updateVersion(bookId, versionId, { characters: updatedCharacters });
+    if (version) {
+      const updatedCharacters = version.characters.map((char: Character) =>
+        char.id === characterId ? { ...char, ...updates } : char
+      );
+      updateVersion(bookId, versionId, { characters: updatedCharacters });
+    }
   };
 
   const deleteCharacter = (bookId: string, versionId: string, characterId: string): void => {
     const version = getVersion(bookId, versionId);
-    if (!version) return;
-
-    const updatedCharacters = version.characters.filter(char => char.id !== characterId);
-    updateVersion(bookId, versionId, { characters: updatedCharacters });
+    if (version) {
+      const updatedCharacters = version.characters.filter(char => char.id !== characterId);
+      updateVersion(bookId, versionId, { characters: updatedCharacters });
+    }
   };
 
   // Plot Arc operations
@@ -401,127 +242,346 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     return version?.plotArcs || [];
   };
 
-  const getPlotArc = (bookId: string, versionId: string, arcId: string): PlotArc | null => {
-    const plotArcs = getPlotArcs(bookId, versionId);
-    return plotArcs.find(arc => arc.id === arcId) || null;
+  const getPlotArc = (bookId: string, versionId: string, plotArcId: string): PlotArc | null => {
+    const version = getVersion(bookId, versionId);
+    return version?.plotArcs.find(arc => arc.id === plotArcId) || null;
   };
 
-  const createPlotArc = (bookId: string, versionId: string, arcData: Omit<PlotArc, 'id'>): PlotArc => {
-    const book = getBook(bookId);
-    const version = getVersion(bookId, versionId);
-    
-    if (!book || !version) {
-      throw new Error('Book or version not found');
-    }
-
-    const newArc: PlotArc = {
-      ...arcData,
+  const createPlotArc = (bookId: string, versionId: string, plotArcData: Omit<PlotArc, 'id'>): PlotArc => {
+    const newPlotArc: PlotArc = {
+      ...plotArcData,
       id: generateId(),
     };
 
-    const updatedArcs = [...version.plotArcs, newArc];
-    updateVersion(bookId, versionId, { plotArcs: updatedArcs });
-
-    return newArc;
-  };
-
-  const updatePlotArc = (bookId: string, versionId: string, arcId: string, updates: Partial<PlotArc>): void => {
     const version = getVersion(bookId, versionId);
-    if (!version) return;
-
-    const updatedArcs = version.plotArcs.map(arc =>
-      arc.id === arcId ? { ...arc, ...updates } : arc
-    );
-
-    updateVersion(bookId, versionId, { plotArcs: updatedArcs });
-  };
-
-  const deletePlotArc = (bookId: string, versionId: string, arcId: string): void => {
-    const version = getVersion(bookId, versionId);
-    if (!version) return;
-
-    const updatedArcs = version.plotArcs.filter(arc => arc.id !== arcId);
-    updateVersion(bookId, versionId, { plotArcs: updatedArcs });
-  };
-
-  // World Building operations
-  const getWorldBuilding = (bookId: string, versionId: string): WorldBuildingElement[] => {
-    const version = getVersion(bookId, versionId);
-    return version?.worldBuilding || [];
-  };
-
-  const getWorldBuildingElement = (bookId: string, versionId: string, elementId: string): WorldBuildingElement | null => {
-    const elements = getWorldBuilding(bookId, versionId);
-    return elements.find(element => element.id === elementId) || null;
-  };
-
-  const createWorldBuildingElement = (bookId: string, versionId: string, elementData: Omit<WorldBuildingElement, 'id'>): WorldBuildingElement => {
-    const book = getBook(bookId);
-    const version = getVersion(bookId, versionId);
-    
-    if (!book || !version) {
-      throw new Error('Book or version not found');
+    if (version) {
+      const updatedPlotArcs = [...version.plotArcs, newPlotArc];
+      updateVersion(bookId, versionId, { plotArcs: updatedPlotArcs });
     }
 
-    const newElement: WorldBuildingElement = {
-      ...elementData,
+    return newPlotArc;
+  };
+
+  const updatePlotArc = (bookId: string, versionId: string, plotArcId: string, updates: Partial<PlotArc>): void => {
+    const version = getVersion(bookId, versionId);
+    if (version) {
+      const updatedPlotArcs = version.plotArcs.map(arc =>
+        arc.id === plotArcId ? { ...arc, ...updates } : arc
+      );
+      updateVersion(bookId, versionId, { plotArcs: updatedPlotArcs });
+    }
+  };
+
+  const deletePlotArc = (bookId: string, versionId: string, plotArcId: string): void => {
+    const version = getVersion(bookId, versionId);
+    if (version) {
+      const updatedPlotArcs = version.plotArcs.filter(arc => arc.id !== plotArcId);
+      updateVersion(bookId, versionId, { plotArcs: updatedPlotArcs });
+    }
+  };
+
+  // World operations
+  const getWorlds = (bookId: string, versionId: string): WorldData[] => {
+    const version = getVersion(bookId, versionId);
+    return version?.worlds || [];
+  };
+
+  const getWorld = (bookId: string, versionId: string, worldId: string): WorldData | null => {
+    const version = getVersion(bookId, versionId);
+    return version?.worlds.find(world => world.id === worldId) || null;
+  };
+
+  const createWorld = (bookId: string, versionId: string, worldData: Omit<WorldData, 'id'>): WorldData => {
+    const newWorld: WorldData = {
+      ...worldData,
       id: generateId(),
     };
 
-    const updatedElements = [...version.worldBuilding, newElement];
-    updateVersion(bookId, versionId, { worldBuilding: updatedElements });
+    const version = getVersion(bookId, versionId);
+    if (version) {
+      const updatedWorlds = [...version.worlds, newWorld];
+      updateVersion(bookId, versionId, { worlds: updatedWorlds });
+    }
 
-    return newElement;
+    return newWorld;
   };
 
-  const updateWorldBuildingElement = (bookId: string, versionId: string, elementId: string, updates: Partial<WorldBuildingElement>): void => {
+  const updateWorld = (bookId: string, versionId: string, worldId: string, updates: Partial<WorldData>): void => {
     const version = getVersion(bookId, versionId);
-    if (!version) return;
-
-    const updatedElements = version.worldBuilding.map(element =>
-      element.id === elementId ? { ...element, ...updates } : element
-    );
-
-    updateVersion(bookId, versionId, { worldBuilding: updatedElements });
+    if (version) {
+      const updatedWorlds = version.worlds.map(world =>
+        world.id === worldId ? { ...world, ...updates } : world
+      );
+      updateVersion(bookId, versionId, { worlds: updatedWorlds });
+    }
   };
 
-  const deleteWorldBuildingElement = (bookId: string, versionId: string, elementId: string): void => {
+  const deleteWorld = (bookId: string, versionId: string, worldId: string): void => {
     const version = getVersion(bookId, versionId);
-    if (!version) return;
+    if (version) {
+      const updatedWorlds = version.worlds.filter(world => world.id !== worldId);
+      updateVersion(bookId, versionId, { worlds: updatedWorlds });
+    }
+  };
 
-    const updatedElements = version.worldBuilding.filter(element => element.id !== elementId);
-    updateVersion(bookId, versionId, { worldBuilding: updatedElements });
+  // Location operations
+  const getLocations = (bookId: string, versionId: string, worldId: string): Location[] => {
+    const world = getWorld(bookId, versionId, worldId);
+    return world?.locations || [];
+  };
+
+  const getLocation = (bookId: string, versionId: string, worldId: string, locationId: string): Location | null => {
+    const world = getWorld(bookId, versionId, worldId);
+    return world?.locations.find(loc => loc.id === locationId) || null;
+  };
+
+  const createLocation = (bookId: string, versionId: string, worldId: string, locationData: Omit<Location, 'id' | 'parentWorldId'>): Location => {
+    const newLocation: Location = {
+      ...locationData,
+      id: generateId(),
+      parentWorldId: worldId,
+    };
+
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedLocations = [...world.locations, newLocation];
+      updateWorld(bookId, versionId, worldId, { locations: updatedLocations });
+    }
+
+    return newLocation;
+  };
+
+  const updateLocation = (bookId: string, versionId: string, worldId: string, locationId: string, updates: Partial<Location>): void => {
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedLocations = world.locations.map(loc =>
+        loc.id === locationId ? { ...loc, ...updates } : loc
+      );
+      updateWorld(bookId, versionId, worldId, { locations: updatedLocations });
+    }
+  };
+
+  const deleteLocation = (bookId: string, versionId: string, worldId: string, locationId: string): void => {
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedLocations = world.locations.filter(loc => loc.id !== locationId);
+      updateWorld(bookId, versionId, worldId, { locations: updatedLocations });
+    }
+  };
+
+  // World Object operations
+  const getWorldObjects = (bookId: string, versionId: string, worldId: string): WorldObject[] => {
+    const world = getWorld(bookId, versionId, worldId);
+    return world?.objects || [];
+  };
+
+  const getWorldObject = (bookId: string, versionId: string, worldId: string, objectId: string): WorldObject | null => {
+    const world = getWorld(bookId, versionId, worldId);
+    return world?.objects.find(obj => obj.id === objectId) || null;
+  };
+
+  const createWorldObject = (bookId: string, versionId: string, worldId: string, objectData: Omit<WorldObject, 'id' | 'parentWorldId'>): WorldObject => {
+    const newObject: WorldObject = {
+      ...objectData,
+      id: generateId(),
+      parentWorldId: worldId,
+    };
+
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedObjects = [...world.objects, newObject];
+      updateWorld(bookId, versionId, worldId, { objects: updatedObjects });
+    }
+
+    return newObject;
+  };
+
+  const updateWorldObject = (bookId: string, versionId: string, worldId: string, objectId: string, updates: Partial<WorldObject>): void => {
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedObjects = world.objects.map(obj =>
+        obj.id === objectId ? { ...obj, ...updates } : obj
+      );
+      updateWorld(bookId, versionId, worldId, { objects: updatedObjects });
+    }
+  };
+
+  const deleteWorldObject = (bookId: string, versionId: string, worldId: string, objectId: string): void => {
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedObjects = world.objects.filter(obj => obj.id !== objectId);
+      updateWorld(bookId, versionId, worldId, { objects: updatedObjects });
+    }
+  };
+
+  // Lore operations
+  const getLore = (bookId: string, versionId: string, worldId: string): Lore[] => {
+    const world = getWorld(bookId, versionId, worldId);
+    return world?.lore || [];
+  };
+
+  const getLoreItem = (bookId: string, versionId: string, worldId: string, loreId: string): Lore | null => {
+    const world = getWorld(bookId, versionId, worldId);
+    return world?.lore.find(lore => lore.id === loreId) || null;
+  };
+
+  const createLore = (bookId: string, versionId: string, worldId: string, loreData: Omit<Lore, 'id' | 'parentWorldId'>): Lore => {
+    const newLore: Lore = {
+      ...loreData,
+      id: generateId(),
+      parentWorldId: worldId,
+    };
+
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedLore = [...world.lore, newLore];
+      updateWorld(bookId, versionId, worldId, { lore: updatedLore });
+    }
+
+    return newLore;
+  };
+
+  const updateLore = (bookId: string, versionId: string, worldId: string, loreId: string, updates: Partial<Lore>): void => {
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedLore = world.lore.map(lore =>
+        lore.id === loreId ? { ...lore, ...updates } : lore
+      );
+      updateWorld(bookId, versionId, worldId, { lore: updatedLore });
+    }
+  };
+
+  const deleteLore = (bookId: string, versionId: string, worldId: string, loreId: string): void => {
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedLore = world.lore.filter(lore => lore.id !== loreId);
+      updateWorld(bookId, versionId, worldId, { lore: updatedLore });
+    }
+  };
+
+  // Magic System operations
+  const getMagicSystems = (bookId: string, versionId: string, worldId: string): MagicSystem[] => {
+    const world = getWorld(bookId, versionId, worldId);
+    return world?.magicSystems || [];
+  };
+
+  const getMagicSystem = (bookId: string, versionId: string, worldId: string, magicSystemId: string): MagicSystem | null => {
+    const world = getWorld(bookId, versionId, worldId);
+    return world?.magicSystems.find(magic => magic.id === magicSystemId) || null;
+  };
+
+  const createMagicSystem = (bookId: string, versionId: string, worldId: string, magicSystemData: Omit<MagicSystem, 'id' | 'parentWorldId'>): MagicSystem => {
+    const newMagicSystem: MagicSystem = {
+      ...magicSystemData,
+      id: generateId(),
+      parentWorldId: worldId,
+    };
+
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedMagicSystems = [...world.magicSystems, newMagicSystem];
+      updateWorld(bookId, versionId, worldId, { magicSystems: updatedMagicSystems });
+    }
+
+    return newMagicSystem;
+  };
+
+  const updateMagicSystem = (bookId: string, versionId: string, worldId: string, magicSystemId: string, updates: Partial<MagicSystem>): void => {
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedMagicSystems = world.magicSystems.map(magic =>
+        magic.id === magicSystemId ? { ...magic, ...updates } : magic
+      );
+      updateWorld(bookId, versionId, worldId, { magicSystems: updatedMagicSystems });
+    }
+  };
+
+  const deleteMagicSystem = (bookId: string, versionId: string, worldId: string, magicSystemId: string): void => {
+    const world = getWorld(bookId, versionId, worldId);
+    if (world) {
+      const updatedMagicSystems = world.magicSystems.filter(magic => magic.id !== magicSystemId);
+      updateWorld(bookId, versionId, worldId, { magicSystems: updatedMagicSystems });
+    }
+  };
+
+  // Utility methods
+  const generateId = (): string => {
+    return `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   };
 
   const refreshData = (): void => {
-    const enhancedBooks = convertToEnhancedBooks(MOCK_BOOKS);
-    setBooks(enhancedBooks);
+    setBooks(MOCK_BOOKS);
   };
 
   const contextValue: BookContextType = {
+    // Current state
     books,
     loading,
     error,
+    
+    // World Building UI state
+    selectedWorldId,
+    setSelectedWorldId,
+    
+    // Book operations
     getBook,
     updateBook,
+    
+    // Version operations
     getVersion,
     updateVersion,
     createVersion,
+    
+    // Character operations
     getCharacters,
     getCharacter,
     createCharacter,
     updateCharacter,
     deleteCharacter,
+    
+    // Plot Arc operations
     getPlotArcs,
     getPlotArc,
     createPlotArc,
     updatePlotArc,
     deletePlotArc,
-    getWorldBuilding,
-    getWorldBuildingElement,
-    createWorldBuildingElement,
-    updateWorldBuildingElement,
-    deleteWorldBuildingElement,
+    
+    // World operations
+    getWorlds,
+    getWorld,
+    createWorld,
+    updateWorld,
+    deleteWorld,
+    
+    // Location operations
+    getLocations,
+    getLocation,
+    createLocation,
+    updateLocation,
+    deleteLocation,
+    
+    // World Object operations
+    getWorldObjects,
+    getWorldObject,
+    createWorldObject,
+    updateWorldObject,
+    deleteWorldObject,
+    
+    // Lore operations
+    getLore,
+    getLoreItem,
+    createLore,
+    updateLore,
+    deleteLore,
+    
+    // Magic System operations
+    getMagicSystems,
+    getMagicSystem,
+    createMagicSystem,
+    updateMagicSystem,
+    deleteMagicSystem,
+    
+    // Utility methods
     generateId,
     refreshData,
   };
@@ -551,4 +611,4 @@ export const useCurrentBookAndVersion = () => {
   };
 };
 
-export default BookContextProvider;
+export default BookContext;

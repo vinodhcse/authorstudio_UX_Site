@@ -1,4 +1,34 @@
 
+import { WorldData } from './pages/BookForge/components/planning/types/WorldBuildingTypes';
+
+export interface PlotArc {
+  id: string;
+  title: string;
+  description: string;
+  status: 'PLANNING' | 'IN_PROGRESS' | 'COMPLETED';
+  scenes: PlotScene[];
+  characters: string[]; // character IDs
+  timeline: {
+    startChapter?: number;
+    endChapter?: number;
+    duration?: string;
+  };
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlotScene {
+  id: string;
+  title: string;
+  description: string;
+  chapter?: number;
+  wordCount?: number;
+  status: 'DRAFT' | 'WRITTEN' | 'EDITED' | 'FINAL';
+  characters: string[];
+  plotPoints: string[];
+  notes?: string;
+}
 
 export interface Relationship {
   name: string;
@@ -128,6 +158,9 @@ export interface Version {
         name: string;
         avatar: string;
     }
+    characters: Character[];
+    plotArcs: PlotArc[];
+    worlds: WorldData[];
 }
 
 export type ActivityAction = 'created version' | 'updated details' | 'invited collaborator' | 'deleted version' | 'reviewed version';

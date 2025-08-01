@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Book, Version, Theme } from '../../../types';
 import PlotArcsBoard from './planning/PlotArcsBoard';
@@ -17,14 +17,17 @@ interface PlanningPageProps {
     searchQuery?: string;
 }
 
-const PlanningPage: React.FC<PlanningPageProps> = ({ book, version, theme, activeTab = 'Plot Arcs', searchQuery = '' }) => {
-    const [autoSaveStatus, setAutoSaveStatus] = useState<'saving' | 'saved' | 'error'>('saved');
-
+const PlanningPage: React.FC<PlanningPageProps> = ({ 
+    book, 
+    version, 
+    theme, 
+    activeTab = 'Plot Arcs', 
+    searchQuery = ''
+}) => {
     // Mock auto-save functionality
     useEffect(() => {
         const interval = setInterval(() => {
-            setAutoSaveStatus('saving');
-            setTimeout(() => setAutoSaveStatus('saved'), 1000);
+            // Auto-save logic can be added here
         }, 30000); // Auto-save every 30 seconds
 
         return () => clearInterval(interval);
@@ -35,34 +38,17 @@ const PlanningPage: React.FC<PlanningPageProps> = ({ book, version, theme, activ
             case 'Plot Arcs':
                 return <PlotArcsBoard book={book} version={version} theme={theme} searchQuery={searchQuery} />;
             case 'World Building':
-                return <WorldBuildingBoard book={book} version={version} theme={theme} />;
+                return (
+                    <WorldBuildingBoard 
+                        book={book} 
+                        version={version} 
+                        theme={theme} 
+                    />
+                );
             case 'Characters':
                 return <CharacterPage theme={theme} searchQuery={searchQuery} />;
             default:
                 return <PlotArcsBoard book={book} version={version} theme={theme} searchQuery={searchQuery} />;
-        }
-    };
-
-    const getAutoSaveStatusInfo = () => {
-        switch (autoSaveStatus) {
-            case 'saving':
-                return { 
-                    text: 'Saving...', 
-                    color: 'bg-yellow-500', 
-                    pulseColor: 'bg-yellow-500'
-                };
-            case 'saved':
-                return { 
-                    text: 'All changes saved', 
-                    color: 'bg-green-500', 
-                    pulseColor: 'bg-green-500'
-                };
-            case 'error':
-                return { 
-                    text: 'Error saving', 
-                    color: 'bg-red-500', 
-                    pulseColor: 'bg-red-500'
-                };
         }
     };
 

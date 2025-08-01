@@ -3,9 +3,10 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Book, Version, Theme } from '../../../types';
-import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon, Wand2Icon, UserIcon, SearchIcon, LayoutGridIcon, ClockIcon, MapIcon, ViewIcon } from '../../../constants';
+import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon, Wand2Icon, UserIcon, SearchIcon, LayoutGridIcon, ClockIcon, MapIcon, ViewIcon, GlobeIcon } from '../../../constants';
 import ChapterSettingsModal from './ChapterSettingsModal';
 import { useToolWindowStore } from '../../../stores/toolWindowStore';
+import { useBookContext, useCurrentBookAndVersion } from '../../../contexts/BookContext';
 
 const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNode; className?: string }> = ({ trigger, children, className }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -150,6 +151,103 @@ const EditorTab: React.FC<{ name: string; isActive: boolean; onClick: () => void
           />
         )}
       </button>
+    );
+};
+
+// Separate component for World Building header to use hooks properly
+const WorldBuildingHeader: React.FC<{
+    searchQuery: string;
+    onSearchChange: (query: string) => void;
+}> = ({ searchQuery, onSearchChange }) => {
+    const { bookId, versionId } = useCurrentBookAndVersion();
+    const { getWorlds, selectedWorldId, setSelectedWorldId } = useBookContext();
+    const [isWorldSelectorOpen, setIsWorldSelectorOpen] = useState(false);
+    
+    const worlds = bookId && versionId ? getWorlds(bookId, versionId) : [];
+    const selectedWorld = worlds.find(w => w.id === selectedWorldId);
+    
+    return (
+        <div className="relative w-full h-10 bg-gradient-to-br from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 rounded-full overflow-visible border border-gray-700 dark:border-gray-300 shadow-inner">
+            <div className="absolute inset-0 flex items-center justify-between px-4 text-white dark:text-black">
+                <div className="flex items-center gap-3 flex-1 mr-4">
+                    <SearchIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => onSearchChange(e.target.value)}
+                        placeholder="Search world elements, locations, cultures..."
+                        className="bg-transparent border-none outline-none text-sm placeholder-white/50 dark:placeholder-black/50 text-white dark:text-black flex-1 min-w-0"
+                    />
+                </div>
+                
+                {/* World Selector or Create World Button */}
+                <div className="relative">
+                    {worlds.length > 0 ? (
+                        <>
+                            <motion.button
+                                onClick={() => setIsWorldSelectorOpen(!isWorldSelectorOpen)}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-white/10 dark:bg-black/10 rounded-lg hover:bg-white/20 dark:hover:bg-black/20 transition-colors"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                            >
+                                <GlobeIcon className="h-4 w-4" />
+                                <span className="text-xs max-w-24 truncate">{selectedWorld?.name || 'Select World'}</span>
+                                <ChevronDownIcon className="h-4 w-4" />
+                            </motion.button>
+
+                            <AnimatePresence>
+                                {isWorldSelectorOpen && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        className="absolute top-full right-0 mt-2 w-64 bg-gradient-to-br from-gray-800 to-black dark:from-slate-100 dark:to-slate-200 rounded-lg shadow-xl border border-gray-600 dark:border-gray-300 z-50"
+                                    >
+                                        <div className="p-2">
+                                            {worlds.map((world) => (
+                                                <motion.button
+                                                    key={world.id}
+                                                    onClick={() => {
+                                                        setSelectedWorldId(world.id);
+                                                        setIsWorldSelectorOpen(false);
+                                                    }}
+                                                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
+                                                        selectedWorldId === world.id
+                                                            ? 'bg-green-500 text-white'
+                                                            : 'text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10'
+                                                    }`}
+                                                    whileHover={{ scale: 1.02 }}
+                                                    whileTap={{ scale: 0.98 }}
+                                                >
+                                                    <div className="font-medium">{world.name}</div>
+                                                    <div className="text-xs opacity-70 truncate">{world.description}</div>
+                                                </motion.button>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </>
+                    ) : (
+                        /* Create World Button when no worlds exist */
+                        <motion.button
+                            onClick={() => {
+                                // This will trigger the world creation modal in WorldBuildingBoard
+                                console.log('Create world button clicked');
+                            }}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                        >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                            <span className="text-xs">Create World</span>
+                        </motion.button>
+                    )}
+                </div>
+            </div>
+        </div>
     );
 };
 
@@ -336,23 +434,13 @@ const PlanningHeader: React.FC<{
         );
     }
 
-    // For World Building page - simple search
+    // For World Building page - search + world selector
     if (activePlanningTab === 'World Building') {
         return (
-            <div className="relative w-full h-10 bg-gradient-to-br from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 rounded-full overflow-visible border border-gray-700 dark:border-gray-300 shadow-inner">
-                <div className="absolute inset-0 flex items-center justify-between px-4 text-white dark:text-black">
-                    <div className="flex items-center gap-3 flex-1">
-                        <SearchIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => onSearchChange(e.target.value)}
-                            placeholder="Search world elements, locations, cultures..."
-                            className="bg-transparent border-none outline-none text-sm placeholder-white/50 dark:placeholder-black/50 text-white dark:text-black flex-1 min-w-0"
-                        />
-                    </div>
-                </div>
-            </div>
+            <WorldBuildingHeader 
+                searchQuery={searchQuery}
+                onSearchChange={onSearchChange}
+            />
         );
     }
 

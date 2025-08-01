@@ -1,7 +1,369 @@
 
 
 import React from 'react';
-import { Book } from './types';
+import { Book, PlotArc } from './types';
+
+// World Building Data
+import { WorldData } from './pages/BookForge/components/planning/types/WorldBuildingTypes';
+
+// Sample Plot Arcs
+export const SAMPLE_PLOT_ARCS: PlotArc[] = [
+    {
+        id: 'arc_001',
+        title: 'The Shadow Awakening',
+        description: 'Kaelen discovers his shadow powers and begins to understand their origin.',
+        status: 'COMPLETED',
+        scenes: [
+            {
+                id: 'scene_001',
+                title: 'First Contact with Shadows',
+                description: 'Kaelen\'s first encounter with shadow realm energy.',
+                chapter: 1,
+                wordCount: 2500,
+                status: 'FINAL',
+                characters: ['char1'],
+                plotPoints: ['Shadow energy exposure', 'Power manifestation', 'Initial confusion'],
+                notes: 'Key opening scene that sets up the entire magical system.'
+            },
+            {
+                id: 'scene_002',
+                title: 'Learning to Control',
+                description: 'Kaelen begins training with his newfound abilities.',
+                chapter: 3,
+                wordCount: 3000,
+                status: 'FINAL',
+                characters: ['char1'],
+                plotPoints: ['Training montage', 'First successful shadow walk', 'Mentor figure appears'],
+                notes: 'Character development and skill building.'
+            }
+        ],
+        characters: ['char1'],
+        timeline: {
+            startChapter: 1,
+            endChapter: 5,
+            duration: '2 weeks in-story'
+        },
+        tags: ['magic system', 'character development', 'origin story'],
+        createdAt: '2024-01-15T10:00:00Z',
+        updatedAt: '2024-01-20T15:30:00Z'
+    },
+    {
+        id: 'arc_002',
+        title: 'The Investigation Begins',
+        description: 'Kaelen starts investigating the mysterious shadow incidents across the city.',
+        status: 'IN_PROGRESS',
+        scenes: [
+            {
+                id: 'scene_003',
+                title: 'Crime Scene Analysis',
+                description: 'Kaelen investigates the first shadow-related incident.',
+                chapter: 6,
+                wordCount: 2800,
+                status: 'WRITTEN',
+                characters: ['char1'],
+                plotPoints: ['Evidence gathering', 'Shadow trace detection', 'Connection to larger plot'],
+                notes: 'Introduces the mystery element.'
+            }
+        ],
+        characters: ['char1'],
+        timeline: {
+            startChapter: 6,
+            endChapter: 12,
+            duration: '1 month in-story'
+        },
+        tags: ['mystery', 'investigation', 'world building'],
+        createdAt: '2024-01-20T11:00:00Z',
+        updatedAt: '2024-01-25T14:45:00Z'
+    }
+];
+
+export const MOCK_WORLD_DATA: WorldData[] = [
+    {
+        id: "world_001",
+        name: "Middle-earth",
+        description: "A vast land inhabited by Men, Elves, Dwarves, Hobbits, and many other creatures. The central stage of the War of the Ring.",
+        maps: ["https://example.com/maps/middleearth.png"],
+        themes: ["Good vs Evil", "Hope", "Corruption", "Friendship"],
+        history: [
+            {
+                event: "Origins of Middle-earth",
+                eventNote: "Created in the Music of the Ainur, Middle-earth has endured wars against Morgoth and Sauron.",
+                date: "First Age"
+            }
+        ],
+        locations: [
+            {
+                id: "loc_shire",
+                name: "The Shire",
+                type: "Region",
+                region: "Eriador",
+                description: "A peaceful region, home to Hobbits. Known for rolling green hills and simple living.",
+                image: "https://example.com/images/shire.jpg",
+                history: [
+                    {
+                        event: "Founding of the Shire",
+                        eventNote: "Hobbits settled in this region and established their homeland.",
+                        date: "1601 T.A."
+                    }
+                ],
+                geography: {
+                    terrain: "Rolling hills and farmland",
+                    climate: "Temperate",
+                    floraFauna: ["Oak trees", "Apple orchards", "Sheep", "Ponies"]
+                },
+                culture: {
+                    traditions: ["Birthday parties", "Harvest festivals"],
+                    language: ["Westron"],
+                    religion: ["None organized"],
+                    governance: "Nominally ruled by the Thain."
+                },
+                politics: {
+                    alliances: [],
+                    conflicts: [],
+                    leaders: ["Thain Paladin Took II"]
+                },
+                economy: {
+                    trade: ["Farming", "Ale brewing"],
+                    resources: ["Grain", "Livestock"],
+                    technology: "Pre-industrial"
+                },
+                beliefsAndMyths: ["Legends of Bullroarer Took"],
+                landmarks: ["Bag End", "Green Dragon Inn"],
+                timelineEvents: [
+                    {
+                        event: "Departure of Frodo",
+                        eventNote: "Frodo leaves the Shire on his quest to destroy the Ring.",
+                        date: "September 23, 3018 T.A."
+                    }
+                ],
+                parentWorldId: "world_001"
+            },
+            {
+                id: "loc_mordor",
+                name: "Mordor",
+                type: "Dark Realm",
+                region: "Eastern Middle-earth",
+                description: "A volcanic wasteland dominated by Mount Doom, the stronghold of the Dark Lord Sauron.",
+                image: "https://example.com/images/mordor.jpg",
+                history: [
+                    {
+                        event: "Rise of Sauron",
+                        eventNote: "Sauron established his fortress of Barad-dûr in this land.",
+                        date: "Second Age"
+                    }
+                ],
+                geography: {
+                    terrain: "Volcanic wasteland and ash plains",
+                    climate: "Hot and dry",
+                    floraFauna: ["Sparse vegetation", "Orcs", "Fell beasts"]
+                },
+                culture: {
+                    traditions: ["Dark sorcery", "War"],
+                    language: ["Black Speech"],
+                    religion: ["Worship of Sauron"],
+                    governance: "Absolute tyranny under Sauron"
+                },
+                politics: {
+                    alliances: ["Haradrim", "Easterlings"],
+                    conflicts: ["War against the Free Peoples"],
+                    leaders: ["Sauron", "Witch-king of Angmar"]
+                },
+                economy: {
+                    trade: ["War materials", "Slavery"],
+                    resources: ["Iron", "Coal"],
+                    technology: "Industrial warfare"
+                },
+                beliefsAndMyths: ["The One Ring's creation"],
+                landmarks: ["Barad-dûr", "Mount Doom", "Black Gate"],
+                timelineEvents: [
+                    {
+                        event: "War of the Ring",
+                        eventNote: "The final battle against the forces of darkness.",
+                        date: "3019 T.A."
+                    }
+                ],
+                parentWorldId: "world_001"
+            },
+            {
+                id: "loc_gondor",
+                name: "Gondor",
+                type: "Kingdom",
+                region: "Southern Middle-earth",
+                description: "The greatest kingdom of Men in Middle-earth, heir to the glory of Númenor.",
+                image: "https://example.com/images/gondor.jpg",
+                history: [
+                    {
+                        event: "Founding of Gondor",
+                        eventNote: "Founded by Elendil and his sons after the fall of Númenor.",
+                        date: "3320 S.A."
+                    }
+                ],
+                geography: {
+                    terrain: "Mountains, plains, and coastal regions",
+                    climate: "Mediterranean",
+                    floraFauna: ["White trees", "Eagles", "Horses"]
+                },
+                culture: {
+                    traditions: ["Noble lineages", "Scholarly pursuits"],
+                    language: ["Westron", "Sindarin"],
+                    religion: ["Eru Ilúvatar"],
+                    governance: "Hereditary monarchy with stewards"
+                },
+                politics: {
+                    alliances: ["Rohan", "Shire"],
+                    conflicts: ["War against Mordor"],
+                    leaders: ["Aragorn (King Elessar)", "Denethor (Steward)"]
+                },
+                economy: {
+                    trade: ["Maritime commerce", "Craftsmanship"],
+                    resources: ["Stone", "Metals", "Crops"],
+                    technology: "Advanced for the age"
+                },
+                beliefsAndMyths: ["Return of the King prophecy"],
+                landmarks: ["Minas Tirith", "Osgiliath", "Dol Amroth"],
+                timelineEvents: [
+                    {
+                        event: "War of the Ring",
+                        eventNote: "The final battle against the forces of darkness.",
+                        date: "3019 T.A."
+                    }
+                ],
+                parentWorldId: "world_001"
+            }
+        ],
+        objects: [
+            {
+                id: "obj_ring",
+                name: "The One Ring",
+                type: "Magical Artifact",
+                origin: "Forged by Sauron in Mount Doom.",
+                description: "A golden ring with the power to dominate all other Rings of Power.",
+                image: "https://example.com/images/one-ring.jpg",
+                powers: ["Invisibility", "Domination of wills", "Enhanced perception"],
+                limitations: [
+                    "Corrupts its bearer",
+                    "Can only be destroyed in Mount Doom",
+                    "Draws Sauron's attention"
+                ],
+                currentHolder: "char_frodo",
+                pastOwners: ["char_sauron", "char_isildur", "char_gollum"],
+                timelineEvents: [
+                    {
+                        event: "War of the Ring",
+                        eventNote: "The final battle against the forces of darkness.",
+                        date: "3019 T.A."
+                    }
+                ],
+                parentWorldId: "world_001"
+            },
+            {
+                id: "obj_anduril",
+                name: "Andúril",
+                type: "Legendary Sword",
+                origin: "Reforged from the shards of Narsil by the elves of Rivendell.",
+                description: "The Flame of the West, sword of Aragorn, King of Gondor.",
+                image: "https://example.com/images/anduril.jpg",
+                powers: ["Exceptional sharpness", "Unbreakable", "Symbol of kingship"],
+                limitations: ["Requires worthy wielder"],
+                currentHolder: "char_aragorn",
+                pastOwners: ["char_isildur", "char_elendil"],
+                timelineEvents: [
+                    {
+                        event: "War of the Ring",
+                        eventNote: "The final battle against the forces of darkness.",
+                        date: "3019 T.A."
+                    }
+                ],
+                parentWorldId: "world_001"
+            }
+        ],
+        lore: [
+            {
+                id: "lore_war_of_ring",
+                title: "The War of the Ring",
+                category: "historical event",
+                description: "The final conflict of the Third Age, uniting the Free Peoples against Sauron.",
+                timeline: {
+                    startYear: "3018",
+                    endYear: "3019",
+                    age: "Third Age"
+                },
+                keyFigures: ["char_frodo", "char_aragorn", "char_gandalf"],
+                locationsInvolved: ["loc_gondor", "loc_mordor", "loc_shire"],
+                objectsInvolved: ["obj_ring"],
+                outcome: "Destruction of the One Ring and downfall of Sauron.",
+                culturalImpact: "Remembered in the Red Book of Westmarch.",
+                parentWorldId: "world_001"
+            },
+            {
+                id: "lore_creation_of_ring",
+                title: "The Forging of the One Ring",
+                category: "myth",
+                description: "Sauron secretly forged the One Ring to control all other Rings of Power.",
+                timeline: {
+                    startYear: "1600",
+                    endYear: "1600",
+                    age: "Second Age"
+                },
+                keyFigures: ["char_sauron"],
+                locationsInvolved: ["loc_mordor"],
+                objectsInvolved: ["obj_ring"],
+                outcome: "Creation of the most powerful ring, leading to the War of the Last Alliance.",
+                culturalImpact: "The beginning of Sauron's dominion over Middle-earth.",
+                parentWorldId: "world_001"
+            }
+        ],
+        magicSystems: [
+            {
+                id: "magic_ring_power",
+                name: "The Power of the Rings",
+                category: "Artifact-Based Magic",
+                sourceOfPower: "Forged by Sauron in Mount Doom, tied to his essence.",
+                practitioners: ["Ringbearers"],
+                rules: [
+                    "Grants invisibility and prolonged life",
+                    "Corrupts the bearer's will over time",
+                    "Strengthens Sauron's power when worn"
+                ],
+                limitations: [
+                    "Only destroyed in Mount Doom",
+                    "Draws Sauron's gaze to the bearer",
+                    "Gradually dominates the wearer's mind"
+                ],
+                notableUsers: ["char_sauron", "char_frodo", "char_gollum"],
+                importantObjects: ["obj_ring"],
+                locationsOfPower: ["loc_mordor", "Mount Doom"],
+                loreReferences: ["lore_creation_of_ring", "lore_war_of_ring"],
+                culturalImpact: "Feared by all races; central to the Third Age conflict.",
+                parentWorldId: "world_001"
+            },
+            {
+                id: "magic_elven_song",
+                name: "Elven Song Magic",
+                category: "Natural Magic",
+                sourceOfPower: "Connection to the Music of Creation and the natural world.",
+                practitioners: ["Elves", "Some Rangers"],
+                rules: [
+                    "Powered by harmony with nature",
+                    "Requires deep understanding of music and language",
+                    "Stronger in ancient elven realms"
+                ],
+                limitations: [
+                    "Weakens as the world ages",
+                    "Requires pure intent",
+                    "Cannot be used for domination"
+                ],
+                notableUsers: ["char_elrond", "char_galadriel", "char_legolas"],
+                importantObjects: ["Vilya", "Nenya"],
+                locationsOfPower: ["Rivendell", "Lothlórien"],
+                loreReferences: ["lore_creation_of_ring"],
+                culturalImpact: "Preserves elven realms and aids the Free Peoples.",
+                parentWorldId: "world_001"
+            }
+        ],
+        tags: ["fantasy", "epic", "saga", "tolkien"]
+    }
+];
 
 export const PenIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -825,9 +1187,39 @@ export const MOCK_BOOKS: Book[] = [
     synopsis: 'A detective with a troubled past finds himself entangled in a web of deceit when a seemingly simple case of a missing person unravels a conspiracy that reaches the highest echelons of power.',
     description: 'A riveting urban fantasy where ancient magic clashes with modern technology, forcing a cynical detective to confront his own supernatural heritage.',
     versions: [
-        { id: 'v1', name: 'Manuscript v1', status: 'FINAL', wordCount: 52000, createdAt: '2 months ago', contributor: { name: 'Alex J. Doe', avatar: 'https://picsum.photos/seed/user/40/40' }},
-        { id: 'v2', name: 'Editor Pass', status: 'IN_REVIEW', wordCount: 52364, createdAt: '1 month ago', contributor: { name: 'Jane Smith', avatar: 'https://picsum.photos/seed/collab1/40/40' }},
-        { id: 'v3', name: 'Draft v2', status: 'DRAFT', wordCount: 53010, createdAt: '2 days ago', contributor: { name: 'Alex J. Doe', avatar: 'https://picsum.photos/seed/user/40/40' }},
+        { 
+            id: 'v1', 
+            name: 'Manuscript v1', 
+            status: 'FINAL', 
+            wordCount: 52000, 
+            createdAt: '2 months ago', 
+            contributor: { name: 'Alex J. Doe', avatar: 'https://picsum.photos/seed/user/40/40'},
+            characters: [],
+            plotArcs: SAMPLE_PLOT_ARCS,
+            worlds: MOCK_WORLD_DATA
+        },
+        { 
+            id: 'v2', 
+            name: 'Editor Pass', 
+            status: 'IN_REVIEW', 
+            wordCount: 52364, 
+            createdAt: '1 month ago', 
+            contributor: { name: 'Jane Smith', avatar: 'https://picsum.photos/seed/collab1/40/40'},
+            characters: [],
+            plotArcs: SAMPLE_PLOT_ARCS,
+            worlds: MOCK_WORLD_DATA
+        },
+        { 
+            id: 'v3', 
+            name: 'Draft v2', 
+            status: 'DRAFT', 
+            wordCount: 53010, 
+            createdAt: '2 days ago', 
+            contributor: { name: 'Alex J. Doe', avatar: 'https://picsum.photos/seed/user/40/40' },
+            characters: [],
+            plotArcs: SAMPLE_PLOT_ARCS,
+            worlds: MOCK_WORLD_DATA
+        },
     ],
     activity: [
         { id: 'a1', user: { name: 'Alex J. Doe', avatar: 'https://picsum.photos/seed/user/40/40'}, action: 'created version', target: 'Draft v2', timestamp: '2 days ago' },
@@ -858,7 +1250,17 @@ export const MOCK_BOOKS: Book[] = [
     publishedStatus: 'Unpublished',
     synopsis: 'A captivating tale that weaves through multiple perspectives, exploring the depths of human nature and the complexities of modern life. This literary masterpiece challenges conventional storytelling while maintaining an emotional core that resonates with readers across generations.',
     versions: [
-       { id: 'v1', name: 'Initial Draft', status: 'DRAFT', wordCount: 23791, createdAt: '2 days ago', contributor: { name: 'Maria Garcia', avatar: 'https://picsum.photos/seed/collab3/40/40' }}
+       { 
+           id: 'v1', 
+           name: 'Initial Draft', 
+           status: 'DRAFT', 
+           wordCount: 23791, 
+           createdAt: '2 days ago', 
+           contributor: { name: 'Maria Garcia', avatar: 'https://picsum.photos/seed/collab3/40/40' },
+           characters: [],
+           plotArcs: [],
+           worlds: []
+       }
     ],
     activity: []
   },
@@ -1024,3 +1426,12 @@ export const NetworkIcon = (props: React.SVGProps<SVGSVGElement>) => (
         <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"></path>
     </svg>
 );
+
+export const GlobeIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="2" y1="12" x2="22" y2="12"></line>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+    </svg>
+);
+

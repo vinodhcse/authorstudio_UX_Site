@@ -15,7 +15,7 @@ import CustomNodeTest from './components/CustomNodeTest';
 import NameGeneratorPage from './pages/Tools/NameGeneratorPage';
 import CharacterProfileBuilder from './pages/Tools/CharacterProfileBuilder';
 import WhisperTestPage from './pages/WhisperTestPage';
-import BookContextProvider from './contexts/BookContext';
+import { BookContextProvider } from './contexts/BookContext';
 
 // Tool Window Components
 import NameGeneratorTool from './pages/Tools/NameGeneratorTool';

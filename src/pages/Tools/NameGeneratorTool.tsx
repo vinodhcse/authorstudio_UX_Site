@@ -3,14 +3,14 @@ import { motion } from 'framer-motion';
 import { listen } from '@tauri-apps/api/event';
 import ToolWindowControls from '../../components/ToolWindowControls';
 
-interface BookContext {
+interface ToolContext {
   bookId: string;
   versionId: string;
   toolName: string;
 }
 
 const NameGeneratorTool: React.FC = () => {
-  const [context, setContext] = useState<BookContext | null>(null);
+  const [context, setContext] = useState<ToolContext | null>(null);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [generatedNames, setGeneratedNames] = useState<string[]>([]);
