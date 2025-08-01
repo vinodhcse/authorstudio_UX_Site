@@ -95,9 +95,10 @@ const BookDetailsPage: React.FC<BookDetailsPageProps> = ({ books, onUpdateBook, 
                 </div>
             </motion.div>
 
-            <AnimatePresence>
+            <AnimatePresence mode="wait">
                 {isEditModalOpen && book && (
                     <EditBookModal
+                        key={`edit-modal-${book.id}`}
                         isOpen={isEditModalOpen}
                         onClose={() => setEditModalOpen(false)}
                         book={book}
@@ -106,6 +107,7 @@ const BookDetailsPage: React.FC<BookDetailsPageProps> = ({ books, onUpdateBook, 
                 )}
                 {isCreateVersionModalOpen && book && (
                     <CreateVersionModal
+                        key={`version-modal-${book.id}`}
                         isOpen={isCreateVersionModalOpen}
                         onClose={() => setCreateVersionModalOpen(false)}
                         bookVersions={book.versions || []}

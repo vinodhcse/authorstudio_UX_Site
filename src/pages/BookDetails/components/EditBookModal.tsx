@@ -195,115 +195,123 @@ const EditBookModal: React.FC<EditBookModalProps> = ({ isOpen, onClose, book, on
         });
     };
 
+    const handleClose = () => {
+        setActiveTab('details'); // Reset tab state before closing
+        onClose();
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         onUpdateBook(formData);
+        handleClose(); // Use the enhanced close handler
     };
-
-    if (!isOpen || !book) return null;
 
     const tabs: {id: Tab, label: string}[] = [{id: 'details', label: 'Book Details'}, {id: 'publisher', label: 'Publisher'}];
 
     return (
-        <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-            onClick={onClose}
-        >
-            <motion.div
-                initial={{ scale: 0.9, y: 50, opacity: 0 }}
-                animate={{ scale: 1, y: 0, opacity: 1 }}
-                exit={{ scale: 0.9, y: 50, opacity: 0 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                className="bg-gradient-to-br from-gray-200 to-gray-50 dark:from-gray-900 dark:to-black rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200/50 dark:border-gray-800/50 custom-scrollbar"
-                onClick={(e) => e.stopPropagation()}
-            >
-                <form onSubmit={handleSubmit} className="p-8 space-y-6">
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Book Details</h2>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Refine the details of "{book.title}"</p>
-                    </div>
+        <AnimatePresence mode="wait">
+            {isOpen && book && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+                    onClick={handleClose}
+                >
+                    <motion.div
+                        initial={{ scale: 0.9, y: 50, opacity: 0 }}
+                        animate={{ scale: 1, y: 0, opacity: 1 }}
+                        exit={{ scale: 0.9, y: 50, opacity: 0 }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                        className="bg-gradient-to-br from-gray-200 to-gray-50 dark:from-gray-900 dark:to-black rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200/50 dark:border-gray-800/50 custom-scrollbar"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <form onSubmit={handleSubmit} className="p-8 space-y-6">
+                            <div>
+                                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Book Details</h2>
+                                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Refine the details of "{book.title}"</p>
+                            </div>
 
-                    <div className="flex w-full p-1 rounded-full bg-gray-200/70 dark:bg-gray-800/50">
-                       {tabs.map(tab => (
-                            <button
-                                key={tab.id}
-                                type="button"
-                                onClick={() => setActiveTab(tab.id)}
-                                className="relative w-full px-4 py-2 text-sm font-medium rounded-full focus:outline-none transition-colors"
-                            >
-                                <span className={`relative z-10 ${activeTab === tab.id ? 'text-black dark:text-white' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}>
-                                    {tab.label}
-                                </span>
-                                {activeTab === tab.id && (
-                                <motion.div
-                                    className="absolute inset-0 bg-white dark:bg-black rounded-full shadow-md"
-                                    layoutId="editModalTabPill"
-                                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                                />
-                                )}
-                            </button>
-                       ))}
-                    </div>
-                    
-                    <div className="relative min-h-[350px]">
-                        <AnimatePresence mode="wait">
-                            <motion.div
-                                key={activeTab}
-                                initial={{ opacity: 0, x: activeTab === 'details' ? -20 : 20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: activeTab === 'details' ? -20 : 20 }}
-                                transition={{ duration: 0.2, ease: 'easeInOut' }}
-                                className="space-y-6"
-                            >
-                                {activeTab === 'details' ? (
-                                    <>
-                                        <FormInput name="title" label="Book Title" value={formData.title || ''} onChange={(e) => handleFormChange('title', e.target.value)} placeholder="Enter your book title" />
-                                        <FormInput name="subtitle" label="Subtitle" value={formData.subtitle || ''} onChange={(e) => handleFormChange('subtitle', e.target.value)} placeholder="Enter book subtitle" optional />
-                                        <FormInput name="author" label="Author Name" value={formData.author || ''} onChange={(e) => handleFormChange('author', e.target.value)} placeholder="Enter author name" />
-                                        <FormTextarea name="synopsis" label="Synopsis" value={formData.synopsis || ''} onChange={(e) => handleFormChange('synopsis', e.target.value)} placeholder="Enter book synopsis" rows={4} />
-                                        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                                            <ComboBox name="genre" label="Genre" value={formData.genre || ''} onChange={(v) => handleFormChange('genre', v)} options={genreOptions} placeholder="Select or type genre"/>
-                                            <ComboBox name="subgenre" label="Subgenre" value={formData.subgenre || ''} onChange={(v) => handleFormChange('subgenre', v)} options={subGenreOptions} placeholder="Select or type subgenre" optional/>
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                                            <FormSelect name="bookType" label="Book Type" value={formData.bookType || 'Novel'} onChange={(e) => handleFormChange('bookType', e.target.value)}>
-                                                <option className="bg-gray-100 dark:bg-gray-800">Novel</option>
-                                                <option className="bg-gray-100 dark:bg-gray-800">Screenplay</option>
-                                                <option className="bg-gray-100 dark:bg-gray-800">Novella</option>
-                                                <option className="bg-gray-100 dark:bg-gray-800">Series</option>
-                                            </FormSelect>
-                                            <ComboBox name="prose" label="Book Prose" value={formData.prose || ''} onChange={(v) => handleFormChange('prose', v)} options={proseOptions} placeholder="Select or type prose"/>
-                                        </div>
-                                        <ComboBox name="language" label="Language" value={formData.language || ''} onChange={(v) => handleFormChange('language', v)} options={languages} placeholder="Select or type language"/>
-                                    </>
-                                ) : (
-                                     <>
-                                        <FormInput name="publisher" label="Publisher Name" value={formData.publisher || ''} onChange={(e) => handleFormChange('publisher', e.target.value)} placeholder="Enter publisher name" />
-                                        <FormInput name="publisherLink" label="Publisher Link" value={formData.publisherLink || ''} onChange={(e) => handleFormChange('publisherLink', e.target.value)} placeholder="https://..." optional />
-                                        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                                            <FormInput name="printISBN" label="Print ISBN" value={formData.printISBN || ''} onChange={(e) => handleFormChange('printISBN', e.target.value)} placeholder="Enter print ISBN" optional />
-                                            <FormInput name="ebookISBN" label="E-book ISBN" value={formData.ebookISBN || ''} onChange={(e) => handleFormChange('ebookISBN', e.target.value)} placeholder="Enter e-book ISBN" optional />
-                                        </div>
-                                     </>
-                                )}
-                            </motion.div>
-                        </AnimatePresence>
-                    </div>
-                    
-                    <div className="pt-6 flex justify-end gap-4 border-t border-gray-200/50 dark:border-gray-700/50">
-                        <button type="button" onClick={onClose} className="px-6 py-2 bg-gray-500/10 hover:bg-gray-500/20 dark:bg-gray-700 dark:hover:bg-gray-600 backdrop-blur-sm border border-white/20 text-gray-800 dark:text-gray-200 font-semibold rounded-lg transition-colors">
-                            Cancel
-                        </button>
-                         <button type="submit" className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-all transform hover:scale-105 shadow-lg shadow-purple-500/20">
-                            Update Book
-                        </button>
-                    </div>
-                </form>
-            </motion.div>
-        </motion.div>
+                            <div className="flex w-full p-1 rounded-full bg-gray-200/70 dark:bg-gray-800/50">
+                               {tabs.map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className="relative w-full px-4 py-2 text-sm font-medium rounded-full focus:outline-none transition-colors"
+                                    >
+                                        <span className={`relative z-10 ${activeTab === tab.id ? 'text-black dark:text-white' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}>
+                                            {tab.label}
+                                        </span>
+                                        {activeTab === tab.id && (
+                                        <motion.div
+                                            className="absolute inset-0 bg-white dark:bg-black rounded-full shadow-md"
+                                            layoutId={`editModal-${book?.id}-tabPill`}
+                                            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                                        />
+                                        )}
+                                    </button>
+                               ))}
+                            </div>
+                            
+                            <div className="relative min-h-[350px]">
+                                <AnimatePresence mode="wait">
+                                    <motion.div
+                                        key={`${activeTab}-${book.id}`}
+                                        initial={{ opacity: 0, x: activeTab === 'details' ? -20 : 20 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        exit={{ opacity: 0, x: activeTab === 'details' ? -20 : 20 }}
+                                        transition={{ duration: 0.2, ease: 'easeInOut' }}
+                                        className="space-y-6"
+                                    >
+                                        {activeTab === 'details' ? (
+                                            <>
+                                                <FormInput name="title" label="Book Title" value={formData.title || ''} onChange={(e) => handleFormChange('title', e.target.value)} placeholder="Enter your book title" />
+                                                <FormInput name="subtitle" label="Subtitle" value={formData.subtitle || ''} onChange={(e) => handleFormChange('subtitle', e.target.value)} placeholder="Enter book subtitle" optional />
+                                                <FormInput name="author" label="Author Name" value={formData.author || ''} onChange={(e) => handleFormChange('author', e.target.value)} placeholder="Enter author name" />
+                                                <FormTextarea name="synopsis" label="Synopsis" value={formData.synopsis || ''} onChange={(e) => handleFormChange('synopsis', e.target.value)} placeholder="Enter book synopsis" rows={4} />
+                                                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                                                    <ComboBox name="genre" label="Genre" value={formData.genre || ''} onChange={(v) => handleFormChange('genre', v)} options={genreOptions} placeholder="Select or type genre"/>
+                                                    <ComboBox name="subgenre" label="Subgenre" value={formData.subgenre || ''} onChange={(v) => handleFormChange('subgenre', v)} options={subGenreOptions} placeholder="Select or type subgenre" optional/>
+                                                </div>
+                                                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                                                    <FormSelect name="bookType" label="Book Type" value={formData.bookType || 'Novel'} onChange={(e) => handleFormChange('bookType', e.target.value)}>
+                                                        <option className="bg-gray-100 dark:bg-gray-800">Novel</option>
+                                                        <option className="bg-gray-100 dark:bg-gray-800">Screenplay</option>
+                                                        <option className="bg-gray-100 dark:bg-gray-800">Novella</option>
+                                                        <option className="bg-gray-100 dark:bg-gray-800">Series</option>
+                                                    </FormSelect>
+                                                    <ComboBox name="prose" label="Book Prose" value={formData.prose || ''} onChange={(v) => handleFormChange('prose', v)} options={proseOptions} placeholder="Select or type prose"/>
+                                                </div>
+                                                <ComboBox name="language" label="Language" value={formData.language || ''} onChange={(v) => handleFormChange('language', v)} options={languages} placeholder="Select or type language"/>
+                                            </>
+                                        ) : (
+                                             <>
+                                                <FormInput name="publisher" label="Publisher Name" value={formData.publisher || ''} onChange={(e) => handleFormChange('publisher', e.target.value)} placeholder="Enter publisher name" />
+                                                <FormInput name="publisherLink" label="Publisher Link" value={formData.publisherLink || ''} onChange={(e) => handleFormChange('publisherLink', e.target.value)} placeholder="https://..." optional />
+                                                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                                                    <FormInput name="printISBN" label="Print ISBN" value={formData.printISBN || ''} onChange={(e) => handleFormChange('printISBN', e.target.value)} placeholder="Enter print ISBN" optional />
+                                                    <FormInput name="ebookISBN" label="E-book ISBN" value={formData.ebookISBN || ''} onChange={(e) => handleFormChange('ebookISBN', e.target.value)} placeholder="Enter e-book ISBN" optional />
+                                                </div>
+                                             </>
+                                        )}
+                                    </motion.div>
+                                </AnimatePresence>
+                            </div>
+                            
+                            <div className="pt-6 flex justify-end gap-4 border-t border-gray-200/50 dark:border-gray-700/50">
+                                <button type="button" onClick={handleClose} className="px-6 py-2 bg-gray-500/10 hover:bg-gray-500/20 dark:bg-gray-700 dark:hover:bg-gray-600 backdrop-blur-sm border border-white/20 text-gray-800 dark:text-gray-200 font-semibold rounded-lg transition-colors">
+                                    Cancel
+                                </button>
+                                 <button type="submit" className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition-all transform hover:scale-105 shadow-lg shadow-purple-500/20">
+                                    Update Book
+                                </button>
+                            </div>
+                        </form>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 };
 
