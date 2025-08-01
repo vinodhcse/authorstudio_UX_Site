@@ -175,15 +175,33 @@ const WorldBuildingHeader: React.FC<{
                         type="text"
                         value={searchQuery}
                         onChange={(e) => onSearchChange(e.target.value)}
-                        placeholder="Search world elements, locations, cultures..."
+                        placeholder="Search locations, objects, lore, magic systems..."
                         className="bg-transparent border-none outline-none text-sm placeholder-white/50 dark:placeholder-black/50 text-white dark:text-black flex-1 min-w-0"
                     />
                 </div>
                 
-                {/* World Selector or Create World Button */}
-                <div className="relative">
-                    {worlds.length > 0 ? (
-                        <>
+                {/* World Selector and Create World Button */}
+                <div className="flex items-center gap-2">
+                    {/* Create World Button - Always visible */}
+                    <motion.button
+                        onClick={() => {
+                            // Dispatch a custom event that WorldBuildingBoard can listen to
+                            window.dispatchEvent(new CustomEvent('triggerCreateWorld'));
+                        }}
+                        className="flex items-center gap-1 px-2 py-1.5 bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        title="Create New World"
+                    >
+                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        <span className="text-xs">Create</span>
+                    </motion.button>
+
+                    {/* World Selector - Only show when worlds exist */}
+                    {worlds.length > 0 && (
+                        <div className="relative">
                             <motion.button
                                 onClick={() => setIsWorldSelectorOpen(!isWorldSelectorOpen)}
                                 className="flex items-center gap-2 px-3 py-1.5 bg-white/10 dark:bg-black/10 rounded-lg hover:bg-white/20 dark:hover:bg-black/20 transition-colors"
@@ -227,23 +245,7 @@ const WorldBuildingHeader: React.FC<{
                                     </motion.div>
                                 )}
                             </AnimatePresence>
-                        </>
-                    ) : (
-                        /* Create World Button when no worlds exist */
-                        <motion.button
-                            onClick={() => {
-                                // This will trigger the world creation modal in WorldBuildingBoard
-                                console.log('Create world button clicked');
-                            }}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                        >
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                            </svg>
-                            <span className="text-xs">Create World</span>
-                        </motion.button>
+                        </div>
                     )}
                 </div>
             </div>

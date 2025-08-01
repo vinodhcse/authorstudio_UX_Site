@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import ReactFlow, {
     Node,
@@ -30,11 +30,12 @@ interface WorldBuildingBoardProps {
     book: Book;
     version: Version;
     theme: Theme;
+    searchQuery?: string;
 }
 
 type WorldTab = 'locations' | 'objects' | 'lore' | 'magic-systems' | 'maps' | 'visualization';
 
-const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme }) => {
+const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQuery: externalSearchQuery = '' }) => {
     const { bookId, versionId } = useCurrentBookAndVersion();
     const { 
         getWorlds, 
@@ -84,9 +85,18 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme }) => {
     const [isCreateLoreModalOpen, setIsCreateLoreModalOpen] = useState(false);
     const [isCreateMagicSystemModalOpen, setIsCreateMagicSystemModalOpen] = useState(false);
     
-    // Search state
-    const [searchQuery, setSearchQuery] = useState('');
-    const [showHeroSection, setShowHeroSection] = useState(true);
+    // Use external search query instead of internal state
+    const searchQuery = externalSearchQuery;
+
+    // Listen for create world events from header
+    useEffect(() => {
+        const handleCreateWorld = () => {
+            setIsCreateWorldModalOpen(true);
+        };
+
+        window.addEventListener('triggerCreateWorld', handleCreateWorld);
+        return () => window.removeEventListener('triggerCreateWorld', handleCreateWorld);
+    }, []);
 
     // Filter functions for search
     const filterBySearch = (items: any[], searchFields: string[]) => {
@@ -750,41 +760,8 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme }) => {
                     renderEmptyState()
                 ) : (
                     <>
-                        {/* Search Bar */}
-                        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-                            <div className="flex items-center gap-3">
-                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                </svg>
-                                <input
-                                    type="text"
-                                    placeholder="Search locations, objects, lore, magic systems..."
-                                    value={searchQuery}
-                                    onChange={(e) => {
-                                        setSearchQuery(e.target.value);
-                                        // Hide hero section when searching
-                                        setShowHeroSection(e.target.value.trim() === '');
-                                    }}
-                                    className="flex-1 border-none outline-none bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-500"
-                                />
-                                {searchQuery && (
-                                    <button
-                                        onClick={() => {
-                                            setSearchQuery('');
-                                            setShowHeroSection(true);
-                                        }}
-                                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                                    >
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* World Hero Section - conditional */}
-                        {showHeroSection && <WorldHeroSection />}
+                        {/* World Hero Section - conditional, hide when searching */}
+                        {!searchQuery?.trim() && <WorldHeroSection />}
 
                         {/* Tab Navigation */}
                         <TabSwitcher />

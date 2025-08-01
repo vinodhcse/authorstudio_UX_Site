@@ -43,6 +43,7 @@ const PlanningPage: React.FC<PlanningPageProps> = ({
                         book={book} 
                         version={version} 
                         theme={theme} 
+                        searchQuery={searchQuery}
                     />
                 );
             case 'Characters':
