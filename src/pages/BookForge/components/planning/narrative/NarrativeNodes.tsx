@@ -1151,7 +1151,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
                       e.stopPropagation();
                       console.log('Open location modal for:', locId);
                     }}
-                    className="bg-green-500/30 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-full border border-green-300/30 hover:bg-green-500/50 transition-colors"
+                    className="bg-green-100 text-green-900 text-xs px-3 py-1.5 rounded-full border-2 border-green-400 hover:bg-green-200 transition-colors font-medium shadow-md"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
@@ -1160,7 +1160,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
                 ))}
                 {locations.length > 3 && (
                   <div 
-                    className="bg-green-500/20 text-white/70 text-xs px-2 py-1 rounded-full cursor-pointer"
+                    className="bg-green-50 text-green-800 text-xs px-3 py-1.5 rounded-full cursor-pointer border border-green-300 shadow-sm"
                     title={`Other locations: ${locations.slice(3).map((id: string) => `Location ${id.slice(-1)}`).join(', ')}`}
                   >
                     +{locations.length - 3}
@@ -1181,7 +1181,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
                       e.stopPropagation();
                       console.log('Open object modal for:', objId);
                     }}
-                    className="bg-blue-500/30 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-full border border-blue-300/30 hover:bg-blue-500/50 transition-colors"
+                    className="bg-blue-100 text-blue-900 text-xs px-3 py-1.5 rounded-full border-2 border-blue-400 hover:bg-blue-200 transition-colors font-medium shadow-md"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
@@ -1190,7 +1190,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
                 ))}
                 {objects.length > 3 && (
                   <div 
-                    className="bg-blue-500/20 text-white/70 text-xs px-2 py-1 rounded-full cursor-pointer"
+                    className="bg-blue-50 text-blue-800 text-xs px-3 py-1.5 rounded-full cursor-pointer border border-blue-300 shadow-sm"
                     title={`Other objects: ${objects.slice(3).map((id: string) => `Object ${id.slice(-1)}`).join(', ')}`}
                   >
                     +{objects.length - 3}
@@ -1211,7 +1211,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
                       e.stopPropagation();
                       console.log('Open lore modal for:', loreId);
                     }}
-                    className="bg-purple-500/30 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-full border border-purple-300/30 hover:bg-purple-500/50 transition-colors"
+                    className="bg-purple-100 text-purple-900 text-xs px-3 py-1.5 rounded-full border-2 border-purple-400 hover:bg-purple-200 transition-colors font-medium shadow-md"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
@@ -1220,7 +1220,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
                 ))}
                 {lore.length > 3 && (
                   <div 
-                    className="bg-purple-500/20 text-white/70 text-xs px-2 py-1 rounded-full cursor-pointer"
+                    className="bg-purple-50 text-purple-800 text-xs px-3 py-1.5 rounded-full cursor-pointer border border-purple-300 shadow-sm"
                     title={`Other lore: ${lore.slice(3).map((id: string) => `Lore ${id.slice(-1)}`).join(', ')}`}
                   >
                     +{lore.length - 3}
