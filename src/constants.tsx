@@ -1435,3 +1435,178 @@ export const GlobeIcon = (props: React.SVGProps<SVGSVGElement>) => (
     </svg>
 );
 
+// Harry Potter Narrative Layout Data for BookContext
+export const HARRY_POTTER_NARRATIVE_DATA = {
+  plotArcs: [
+    {
+      id: 'arc_main_story',
+      title: 'Harry Potter and the Philosopher\'s Stone',
+      description: 'A boy wizard discovers his magical heritage and faces the dark wizard who killed his parents',
+      status: 'COMPLETED' as const,
+      scenes: [
+        {
+          id: 'scene_privet_drive',
+          title: 'The Boy Who Lived',
+          description: 'Harry is delivered to the Dursleys',
+          chapter: 1,
+          wordCount: 2500,
+          status: 'FINAL' as const,
+          characters: ['harry_potter', 'dumbledore', 'mcgonagall', 'hagrid'],
+          plotPoints: ['Voldemort\'s defeat', 'Harry placed with Dursleys', 'Letter left for Harry'],
+          notes: 'Establishes the premise and sets up Harry\'s tragic beginning'
+        },
+        {
+          id: 'scene_zoo_incident',
+          title: 'The Snake Incident',
+          description: 'Harry talks to a snake at the zoo',
+          chapter: 2,
+          wordCount: 1800,
+          status: 'FINAL' as const,
+          characters: ['harry_potter', 'dudley_dursley'],
+          plotPoints: ['Harry\'s first sign of magic', 'Parseltongue ability revealed'],
+          notes: 'First hint of Harry\'s magical abilities'
+        }
+      ],
+      characters: ['harry_potter', 'dumbledore', 'hagrid', 'mcgonagall'],
+      timeline: {
+        startChapter: 1,
+        endChapter: 17,
+        duration: 'One school year'
+      },
+      tags: ['main plot', 'coming of age', 'hero\'s journey'],
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z'
+    }
+  ],
+  characters: [
+    {
+      id: 'harry_potter',
+      name: 'Harry Potter',
+      image: 'https://picsum.photos/seed/harry/400/600',
+      quote: 'I don\'t think you\'re a waste of space.',
+      fullName: 'Harry James Potter',
+      aliases: ['The Boy Who Lived', 'The Chosen One'],
+      age: 11,
+      species: 'Human (Wizard)',
+      gender: 'Male',
+      pronouns: 'he/him',
+      height: '4\'8"',
+      build: 'Small and skinny',
+      hairColor: 'Black and messy',
+      eyeColor: 'Bright green',
+      distinguishingMarks: 'Lightning bolt scar on forehead',
+      personalityType: 'ISFP - The Adventurer',
+      coreTraits: ['Brave', 'Loyal', 'Curious', 'Modest', 'Sometimes reckless'],
+      fears: ['Loss of loved ones', 'Voldemort', 'Being alone'],
+      desires: ['Belonging', 'Family', 'To be normal', 'To help others'],
+      motivations: ['Finding his place in the wizarding world', 'Understanding his past'],
+      backstory: 'Orphaned as a baby when Voldemort killed his parents. Lived with abusive relatives until age 11.',
+      characterArc: 'From neglected orphan to confident hero who defeats Voldemort',
+      role: 'Protagonist',
+      tags: ['protagonist', 'wizard', 'gryffindor']
+    },
+    {
+      id: 'hermione_granger',
+      name: 'Hermione Granger',
+      image: 'https://picsum.photos/seed/hermione/400/600',
+      quote: 'Books! And cleverness! There are more important things, but friendship and bravery.',
+      fullName: 'Hermione Jean Granger',
+      age: 11,
+      species: 'Human (Muggle-born witch)',
+      gender: 'Female',
+      pronouns: 'she/her',
+      hairColor: 'Bushy brown',
+      eyeColor: 'Brown',
+      personalityType: 'ISTJ - The Logistician',
+      coreTraits: ['Intelligent', 'Studious', 'Loyal', 'Perfectionist', 'Justice-oriented'],
+      fears: ['Failure', 'Being expelled', 'Not being good enough'],
+      desires: ['Academic success', 'Acceptance', 'Making a difference'],
+      motivations: ['Proving herself in the wizarding world', 'Helping her friends'],
+      characterArc: 'From know-it-all outcast to valued friend and brilliant witch',
+      role: 'Deuteragonist',
+      tags: ['main character', 'witch', 'gryffindor', 'muggle-born']
+    },
+    {
+      id: 'ron_weasley',
+      name: 'Ron Weasley',
+      image: 'https://picsum.photos/seed/ron/400/600',
+      quote: 'Bloody hell!',
+      fullName: 'Ronald Bilius Weasley',
+      age: 11,
+      species: 'Human (Wizard)',
+      gender: 'Male',
+      pronouns: 'he/him',
+      hairColor: 'Red',
+      eyeColor: 'Blue',
+      personalityType: 'ESFP - The Entertainer',
+      coreTraits: ['Loyal', 'Humorous', 'Brave', 'Insecure', 'Hot-tempered'],
+      fears: ['Spiders', 'Being overshadowed', 'Poverty'],
+      desires: ['Recognition', 'Achievement', 'Being special'],
+      motivations: ['Proving himself worthy', 'Supporting his friends'],
+      characterArc: 'From insecure youngest son to confident and brave friend',
+      role: 'Tritagonist',
+      tags: ['main character', 'wizard', 'gryffindor', 'pure-blood']
+    }
+  ],
+  worlds: [
+    {
+      id: 'wizarding_world',
+      name: 'The Wizarding World',
+      description: 'A hidden magical society existing alongside the mundane world',
+      theme: 'Wonder and magic hidden in plain sight',
+      locations: [
+        {
+          id: 'hogwarts',
+          name: 'Hogwarts School of Witchcraft and Wizardry',
+          type: 'School',
+          description: 'A magical school housed in a medieval castle in Scotland',
+          geography: 'Scottish Highlands, surrounded by mountains, forest, and a lake',
+          significance: 'Primary setting, Harry\'s first true home',
+          parentWorldId: 'wizarding_world'
+        },
+        {
+          id: 'diagon_alley',
+          name: 'Diagon Alley',
+          type: 'Commercial District',
+          description: 'Hidden magical shopping street in London',
+          geography: 'Cobblestone street behind The Leaky Cauldron pub',
+          significance: 'Gateway to the wizarding world for Harry',
+          parentWorldId: 'wizarding_world'
+        },
+        {
+          id: 'privet_drive',
+          name: 'Privet Drive',
+          type: 'Residential Street',
+          description: 'Mundane suburban street where Harry lives with the Dursleys',
+          geography: 'Little Whinging, Surrey, England',
+          significance: 'Harry\'s prison and protection before Hogwarts',
+          parentWorldId: 'wizarding_world'
+        }
+      ],
+      objects: [
+        {
+          id: 'philosophers_stone',
+          name: 'The Philosopher\'s Stone',
+          type: 'Magical Artifact',
+          description: 'Legendary alchemical substance capable of granting immortality',
+          powers: ['Grants immortality', 'Turns any metal into gold', 'Creates Elixir of Life'],
+          currentHolder: 'nicolas_flamel',
+          significance: 'Central MacGuffin driving the plot',
+          parentWorldId: 'wizarding_world'
+        }
+      ],
+      lore: [
+        {
+          id: 'boy_who_lived',
+          title: 'The Boy Who Lived',
+          category: 'legend',
+          description: 'The story of how baby Harry Potter survived the Killing Curse',
+          keyFigures: ['harry_potter', 'voldemort', 'lily_potter', 'james_potter'],
+          outcome: 'Voldemort\'s temporary defeat and Harry becoming famous',
+          parentWorldId: 'wizarding_world'
+        }
+      ]
+    }
+  ]
+};
+
