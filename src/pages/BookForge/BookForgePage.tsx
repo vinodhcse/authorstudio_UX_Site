@@ -1,12 +1,11 @@
 
-import React, { useState } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, Navigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Editor as TipTapEditor } from '@tiptap/react';
 import { Theme } from '../../types';
 import EditorHeader from './components/EditorHeader';
 import Editor from './components/Editor';
-import ScrollMinimap from './components/ScrollMinimap';
 import EditorFooter from './components/EditorFooter';
 import FloatingActionButton from './components/FloatingActionButton';
 import { useCurrentBookAndVersion } from '../../contexts/BookContext';
@@ -18,10 +17,30 @@ interface BookForgePageProps {
 
 const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
     const { bookId, versionId } = useParams<{ bookId: string, versionId: string }>();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [showTypographySettings, setShowTypographySettings] = useState(false);
     const [editorInstance, setEditorInstance] = useState<TipTapEditor | null>(null);
-    const [activeMode, setActiveMode] = useState('Writing');
-    const [activePlanningTab, setActivePlanningTab] = useState<'Plot Arcs' | 'World Building' | 'Characters'>('Plot Arcs');
+    
+    // Get URL parameters for mode and tab
+    const modeFromUrl = searchParams.get('mode') || 'Writing';
+    const tabFromUrl = searchParams.get('tab') || 'PlotArcs';
+    
+    // Convert URL tab names to component-friendly names
+    const getTabName = (urlTab: string): 'Plot Arcs' | 'World Building' | 'Characters' => {
+        switch (urlTab) {
+            case 'PlotArcs':
+                return 'Plot Arcs';
+            case 'WorldBuilding':
+                return 'World Building';
+            case 'Character':
+                return 'Characters';
+            default:
+                return 'Plot Arcs';
+        }
+    };
+    
+    const [activeMode, setActiveMode] = useState(modeFromUrl);
+    const [activePlanningTab, setActivePlanningTab] = useState<'Plot Arcs' | 'World Building' | 'Characters'>(getTabName(tabFromUrl));
     const [planningLayout, setPlanningLayout] = useState('Plot');
     const [planningSubview, setPlanningSubview] = useState('by character');
     const [planningSearchQuery, setPlanningSearchQuery] = useState('');
@@ -32,6 +51,40 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
     // Debug logging
     console.log('BookForgePage - URL params:', { bookId, versionId });
     console.log('BookForgePage - Context data:', { currentBook, currentVersion, loading, error });
+    console.log('BookForgePage - URL mode and tab:', { mode: modeFromUrl, tab: tabFromUrl });
+    
+    // Update URL when mode or tab changes
+    useEffect(() => {
+        const params = new URLSearchParams(searchParams);
+        
+        // Set mode parameter
+        if (activeMode !== 'Writing') {
+            params.set('mode', activeMode);
+        } else {
+            params.delete('mode');
+        }
+        
+        // Set tab parameter only if in Planning mode
+        if (activeMode === 'Planning') {
+            const urlTabName = activePlanningTab === 'Plot Arcs' ? 'PlotArcs' : 
+                              activePlanningTab === 'World Building' ? 'WorldBuilding' : 'Character';
+            if (urlTabName !== 'PlotArcs') {
+                params.set('tab', urlTabName);
+            } else {
+                params.delete('tab');
+            }
+        } else {
+            params.delete('tab');
+        }
+        
+        // Preserve other existing parameters (like selectedNodeId)
+        const newSearch = params.toString();
+        const currentSearch = searchParams.toString();
+        
+        if (newSearch !== currentSearch) {
+            setSearchParams(params, { replace: true });
+        }
+    }, [activeMode, activePlanningTab, searchParams, setSearchParams]);
     
     const handlePlanningNavigation = (tab: 'Plot Arcs' | 'World Building' | 'Characters') => {
         setActivePlanningTab(tab);
@@ -53,6 +106,14 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                 setPlanningLayout('Character');
                 setPlanningSubview('Timeline Event');
                 break;
+        }
+    };
+    
+    const handleModeChange = (mode: string) => {
+        setActiveMode(mode);
+        // If switching to Planning mode and no specific tab is set, default to Plot Arcs
+        if (mode === 'Planning' && !tabFromUrl) {
+            setActivePlanningTab('Plot Arcs');
         }
     };
     
@@ -127,7 +188,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                 setTheme={setTheme}
                 onOpenTypographySettings={handleOpenTypographySettings}
                 activeMode={activeMode}
-                setActiveMode={setActiveMode}
+                setActiveMode={handleModeChange}
                 activePlanningTab={activePlanningTab}
                 planningLayout={planningLayout}
                 planningSubview={planningSubview}
@@ -148,7 +209,6 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                     planningTab={activePlanningTab}
                     planningSearchQuery={planningSearchQuery}
                 />
-                {/* <ScrollMinimap editor={editorInstance} /> */}
             </div>
             <EditorFooter 
                 book={compatibilityBook} 
