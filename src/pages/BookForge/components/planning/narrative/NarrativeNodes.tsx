@@ -8,7 +8,8 @@ import {
   UserGroupIcon,
   MapPinIcon,
   SparklesIcon,
-  BookOpenIcon
+  BookOpenIcon,
+  CursorArrowRaysIcon
 } from '@heroicons/react/24/outline';
 import { NarrativeNode } from '../../../../../types/narrative-layout';
 
@@ -21,6 +22,7 @@ interface BaseNodeProps {
   onAddChild: (id: string, nodeType: string) => void;
   onExpand?: (id: string) => void;
   onCollapse?: (id: string) => void;
+  onSelect?: (id: string) => void;
   onCharacterClick?: (characterId: string, nodeId: string, event: React.MouseEvent) => void;
   expandedNodes?: Set<string>;
   allNodes?: NarrativeNode[];
@@ -137,7 +139,7 @@ const StatusBadge: React.FC<{ status: NarrativeNode['status'] }> = ({ status }) 
 
 // Enhanced 3D Compact Node Component
 const CompactNode: React.FC<BaseNodeProps & { nodeType: string; color: string }> = ({ 
-  data, onClick, onEdit, onExpand, onCharacterClick, nodeType, color, allNodes = [] 
+  data, onClick, onEdit, onExpand, onSelect, onCharacterClick, nodeType, color, allNodes = [] 
 }) => {
   const isMuted = data.isMuted || false;
 
@@ -282,23 +284,48 @@ const CompactNode: React.FC<BaseNodeProps & { nodeType: string; color: string }>
             )}
           </div>
 
-          {/* Edit button that's always visible */}
-          <motion.button
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onEdit(data.id);
-            }}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-            }}
-            className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500/70 hover:bg-blue-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-20"
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-          >
-            <PencilIcon className="w-3 h-3 text-white" />
-          </motion.button>
+          {/* Action buttons */}
+          <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {/* Select button */}
+            {onSelect && (
+              <motion.button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onSelect(data.id);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
+                className="w-6 h-6 bg-green-500/70 hover:bg-green-500 rounded-full flex items-center justify-center transition-colors z-20"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                title="Select as root node"
+              >
+                <CursorArrowRaysIcon className="w-3 h-3 text-white" />
+              </motion.button>
+            )}
+            
+            {/* Edit button */}
+            <motion.button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onEdit(data.id);
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              className="w-6 h-6 bg-blue-500/70 hover:bg-blue-500 rounded-full flex items-center justify-center transition-colors z-20"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              title="Edit node"
+            >
+              <PencilIcon className="w-3 h-3 text-white" />
+            </motion.button>
+          </div>
         </motion.div>
         
         {/* Animated glow effect - reduced */}
@@ -335,7 +362,7 @@ const ExpandedNode: React.FC<BaseNodeProps & {
   color: string; 
   icon: React.ComponentType<{ className?: string }>;
 }> = ({ 
-  data, onClick, onEdit, onDelete, onAddChild, onCollapse, onCharacterClick,
+  data, onClick, onEdit, onDelete, onAddChild, onCollapse, onSelect, onCharacterClick,
   nodeType, color, icon: Icon, allNodes = []
 }) => {
   const [isHovering, setIsHovering] = useState(false);
@@ -539,6 +566,27 @@ const ExpandedNode: React.FC<BaseNodeProps & {
                 e.preventDefault();
               }}
             >
+              {/* Select button */}
+              {onSelect && (
+                <motion.button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onSelect(data.id);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
+                  className="p-2 rounded-full bg-green-500/30 hover:bg-green-500/50 transition-colors backdrop-blur-sm"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.95 }}
+                  title="Select as root node"
+                >
+                  <CursorArrowRaysIcon className="w-4 h-4 text-white drop-shadow-sm" />
+                </motion.button>
+              )}
+              
               <motion.button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -566,7 +614,7 @@ const ExpandedNode: React.FC<BaseNodeProps & {
                   e.stopPropagation();
                   e.preventDefault();
                 }}
-                className="p-2 rounded-full bg-green-500/30 hover:bg-green-500/50 transition-colors backdrop-blur-sm"
+                className="p-2 rounded-full bg-amber-500/30 hover:bg-amber-500/50 transition-colors backdrop-blur-sm"
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
               >

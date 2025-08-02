@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactFlow, {
     Node,
     Edge,
@@ -75,6 +75,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
 }) => {
     // URL state management for drill-down mode
     const [searchParams] = useSearchParams();
+    const navigate = useNavigate();
 
     // Narrative layout state
     const [narrativeNodes, setNarrativeNodes] = useState<NarrativeFlowNode[]>([]);
@@ -270,6 +271,14 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         });
     }, []);
 
+    const handleNodeSelect = useCallback((nodeId: string) => {
+        // Navigate to the same page but with the selected node as root
+        navigate(`?selectedNodeId=${nodeId}`);
+        
+        // Reload the page to re-initialize with the new root node
+        window.location.reload();
+    }, [navigate]);
+
     const handleAddChildNode = useCallback((parentId: string, nodeType: NarrativeNode['type']) => {
         setCreateNodeModal({
             parentId,
@@ -343,6 +352,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onSelect={handleNodeSelect}
                 onCharacterClick={handleCharacterClick}
                 expandedNodes={layoutConfig.expandedNodes}
                 allNodes={narrativeNodes}
@@ -357,6 +367,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onSelect={handleNodeSelect}
                 onCharacterClick={handleCharacterClick}
                 expandedNodes={layoutConfig.expandedNodes}
                 allNodes={narrativeNodes}
@@ -371,6 +382,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onSelect={handleNodeSelect}
                 onCharacterClick={handleCharacterClick}
                 expandedNodes={layoutConfig.expandedNodes}
                 allNodes={narrativeNodes}
@@ -385,6 +397,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onSelect={handleNodeSelect}
                 onCharacterClick={handleCharacterClick}
                 expandedNodes={layoutConfig.expandedNodes}
                 allNodes={narrativeNodes}
@@ -399,6 +412,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onSelect={handleNodeSelect}
                 onCharacterClick={handleCharacterClick}
                 expandedNodes={layoutConfig.expandedNodes}
                 allNodes={narrativeNodes}
@@ -413,6 +427,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onSelect={handleNodeSelect}
                 onCharacterClick={handleCharacterClick}
                 expandedNodes={layoutConfig.expandedNodes}
                 allNodes={narrativeNodes}
@@ -427,6 +442,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onSelect={handleNodeSelect}
                 onCharacterClick={handleCharacterClick}
                 expandedNodes={layoutConfig.expandedNodes}
                 allNodes={narrativeNodes}
@@ -441,12 +457,13 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onSelect={handleNodeSelect}
                 onCharacterClick={handleCharacterClick}
                 expandedNodes={layoutConfig.expandedNodes}
                 allNodes={narrativeNodes}
             />
         ),
-    }), [handleExpandNode, handleCollapseNode, handleNodeClick, handleNodeEdit, handleAddChildNode, handleCharacterClick, layoutConfig.expandedNodes, narrativeNodes]);
+    }), [handleExpandNode, handleCollapseNode, handleNodeClick, handleNodeEdit, handleAddChildNode, handleNodeSelect, handleCharacterClick, layoutConfig.expandedNodes, narrativeNodes]);
 
     const handleConnect = useCallback(
         (params: Connection) => {

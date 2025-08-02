@@ -209,6 +209,20 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({
     }
   }, [existingNode, modalData.nodeType, isVisible]);
 
+  // Handle escape key to close modal
+  useEffect(() => {
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isVisible) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscapeKey);
+    return () => {
+      document.removeEventListener('keydown', handleEscapeKey);
+    };
+  }, [isVisible, onClose]);
+
   const getDefaultTitle = (nodeType: NarrativeNode['type']): string => {
     switch (nodeType) {
       case 'outline': return 'New Story Outline';
@@ -367,7 +381,14 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({
           <span className="text-gray-700 dark:text-gray-300">
             {selectedItems.length > 0 
               ? multiSelect 
-                ? `${selectedItems.length} selected`
+                ? (() => {
+                    const selectedNames = selectedItems.map(id => 
+                      items.find(item => item.id === id)?.[displayField]
+                    ).filter(Boolean);
+                    return selectedNames.length <= 3 
+                      ? selectedNames.join(', ')
+                      : `${selectedNames.slice(0, 2).join(', ')} +${selectedNames.length - 2} more`;
+                  })()
                 : items.find(item => item.id === selectedItems[0])?.[displayField] || 'Selected'
               : `Select ${title.toLowerCase()}...`
             }
@@ -453,7 +474,6 @@ export const CreateNodeModal: React.FC<CreateNodeModalProps> = ({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-        onClick={onClose}
       >
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
