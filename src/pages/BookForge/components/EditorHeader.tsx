@@ -1,9 +1,9 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Book, Version, Theme } from '../../../types';
-import { SunIcon, MoonIcon, SystemIcon, ChevronDownIcon, PenIcon, SettingsIcon, GripVerticalIcon, TrashIcon, TypeIcon, Wand2Icon, UserIcon, SearchIcon, LayoutGridIcon, ClockIcon, MapIcon, ViewIcon, GlobeIcon } from '../../../constants';
+import { SunIcon, MoonIcon, ChevronDownIcon, TrashIcon, UserIcon, MagnifyingGlassIcon, Squares2X2Icon, GlobeAltIcon, PencilIcon, CogIcon, ComputerDesktopIcon, Bars3BottomLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import ChapterSettingsModal from './ChapterSettingsModal';
 import { useToolWindowStore } from '../../../stores/toolWindowStore';
 import { useBookContext, useCurrentBookAndVersion } from '../../../contexts/BookContext';
@@ -60,7 +60,7 @@ const ChapterProgressBar: React.FC<{ book: Book, onOpenSettings: () => void, onO
                         whileHover={{ scale: 1.2, rotate: 15 }}
                         transition={{ type: 'spring', stiffness: 400, damping: 10 }}
                     >
-                        <SettingsIcon className="h-5 w-5" />
+                        <CogIcon className="h-5 w-5" />
                     </motion.button>
                     <div onClick={() => setIsOpen(!isOpen)} className="flex-grow flex items-center justify-center gap-2 cursor-pointer h-full min-w-0">
                         <p className="font-bold truncate text-sm leading-tight text-shadow-sm">
@@ -76,7 +76,7 @@ const ChapterProgressBar: React.FC<{ book: Book, onOpenSettings: () => void, onO
                         transition={{ type: 'spring', stiffness: 400, damping: 10 }}
                         title="Typography & Formatting Settings"
                     >
-                        <TypeIcon className="h-5 w-5" />
+                        <Bars3BottomLeftIcon className="h-5 w-5" />
                     </motion.button>
                     <button onClick={() => setIsOpen(!isOpen)} className="p-2 hover:bg-white/10 dark:hover:bg-black/10 rounded-full transition-colors z-10">
                         <ChevronDownIcon className="h-5 w-5 flex-shrink-0" />
@@ -95,13 +95,13 @@ const ChapterProgressBar: React.FC<{ book: Book, onOpenSettings: () => void, onO
                          <div key={act} className="mb-1">
                              <div className="flex items-center justify-between px-2 py-1 group/act">
                                 <div className="flex items-center gap-2">
-                                    <GripVerticalIcon className="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-grab" />
+                                    <Bars3BottomLeftIcon className="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-grab" />
                                     <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">{act}</h4>
                                 </div>
                                 <div className="opacity-0 group-hover/act:opacity-100 transition-opacity">
                                     <DropdownMenu 
                                         className="w-56"
-                                        trigger={<button className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:bg-white/10 dark:hover:bg-black/10 hover:text-white dark:hover:text-black"><SettingsIcon className="w-4 h-4"/></button>}
+                                        trigger={<button className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:bg-white/10 dark:hover:bg-black/10 hover:text-white dark:hover:text-black"><CogIcon className="w-4 h-4"/></button>}
                                     >
                                         <a href="#" className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">Add New Chapter</a>
                                         <a href="#" className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">Import Chapter</a>
@@ -114,8 +114,8 @@ const ChapterProgressBar: React.FC<{ book: Book, onOpenSettings: () => void, onO
                                  <a key={chapter} href="#" className="group/chapter flex items-center justify-between pl-8 pr-2 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">
                                      <span>{chapter}</span>
                                      <div className="flex items-center gap-1 opacity-0 group-hover/chapter:opacity-100 transition-opacity">
-                                        <button className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"><GripVerticalIcon className="w-4 h-4 text-gray-400 dark:text-gray-500"/></button>
-                                        <button className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"><SettingsIcon className="w-4 h-4 text-gray-400 dark:text-gray-500"/></button>
+                                        <button className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"><Bars3BottomLeftIcon className="w-4 h-4 text-gray-400 dark:text-gray-500"/></button>
+                                        <button className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"><CogIcon className="w-4 h-4 text-gray-400 dark:text-gray-500"/></button>
                                         <button className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"><TrashIcon className="w-4 h-4 text-gray-400 dark:text-gray-500 hover:text-red-400 dark:hover:text-red-500"/></button>
                                      </div>
                                  </a>
@@ -170,7 +170,7 @@ const WorldBuildingHeader: React.FC<{
         <div className="relative w-full h-10 bg-gradient-to-br from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 rounded-full overflow-visible border border-gray-700 dark:border-gray-300 shadow-inner">
             <div className="absolute inset-0 flex items-center justify-between px-4 text-white dark:text-black">
                 <div className="flex items-center gap-3 flex-1 mr-4">
-                    <SearchIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
+                    <MagnifyingGlassIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
                     <input
                         type="text"
                         value={searchQuery}
@@ -208,7 +208,7 @@ const WorldBuildingHeader: React.FC<{
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
                             >
-                                <GlobeIcon className="h-4 w-4" />
+                                <GlobeAltIcon className="h-4 w-4" />
                                 <span className="text-xs max-w-24 truncate">{selectedWorld?.name || 'Select World'}</span>
                                 <ChevronDownIcon className="h-4 w-4" />
                             </motion.button>
@@ -261,175 +261,155 @@ const PlanningHeader: React.FC<{
     onPlanningSubviewChange: (subview: string) => void;
     searchQuery: string;
     onSearchChange: (query: string) => void;
-}> = ({ activePlanningTab, planningLayout, planningSubview, onPlanningLayoutChange, onPlanningSubviewChange, searchQuery, onSearchChange }) => {
-    const [isLayoutOpen, setIsLayoutOpen] = useState(false);
-    const [isSubviewOpen, setIsSubviewOpen] = useState(false);
-
+}> = ({ activePlanningTab, searchQuery, onSearchChange }) => {
     // Only show layout controls for Plot Arcs
     if (activePlanningTab === 'Plot Arcs') {
-        // Layout-specific configurations for Plot Arcs page
-        const getLayoutConfig = () => {
-            switch (planningLayout) {
-                case 'Plot':
-                    return {
-                        searchPlaceholder: 'Search for Scenes, Characters, events...',
-                        subviews: ['by character', 'world Location', 'world Object', 'timeline event']
-                    };
-                case 'Character':
-                    return {
-                        searchPlaceholder: 'Search Characters, their attributes',
-                        subviews: ['Timeline Event', 'Relationship Web']
-                    };
-                case 'World Entity':
-                    return {
-                        searchPlaceholder: 'Search world objects, location and their attributes...',
-                        subviews: ['Timeline Event', 'Locations', 'Object/items', 'Lore']
-                    };
-                case 'Timeline':
-                    return {
-                        searchPlaceholder: 'Search timeline events, dates...',
-                        subviews: ['Plots', 'Characters', 'World Locations', 'World Object/Items', 'Lore']
-                    };
-                default:
-                    return {
-                        searchPlaceholder: 'Search for Scenes, Characters, events...',
-                        subviews: ['by character', 'world Location', 'world Object', 'timeline event']
-                    };
+        const [isLayoutOpen, setIsLayoutOpen] = useState(false);
+        const dropdownRef = useRef<HTMLDivElement>(null);
+
+        // Layout definitions matching PlotArcsBoard
+        const layoutOptions = [
+            {
+                category: 'Outline Layouts',
+                items: [
+                    { id: 'narrative', label: 'Narrative Layout', description: 'Hierarchical story structure view' },
+                    { id: 'character-screentime', label: 'Character Screen Time', description: 'Character presence analysis' },
+                    { id: 'object-screentime', label: 'Object Screen Time', description: 'Object appearance frequency' },
+                    { id: 'location-screentime', label: 'Location Screen Time', description: 'Location usage analysis' },
+                    { id: 'lore-screentime', label: 'Lore Screen Time', description: 'Lore element frequency' }
+                ]
+            },
+            {
+                category: 'Character Layouts',
+                items: [
+                    { id: 'character-progression', label: 'Character Progression', description: 'Character development arcs' },
+                    { id: 'character-heatmap', label: 'Character Appearance Heat Map', description: 'Visual character frequency' },
+                    { id: 'character-journey', label: 'Character Journey', description: 'Character path through story' },
+                    { id: 'character-possession', label: 'Character Possession Arc', description: 'Character asset relationships' }
+                ]
+            },
+            {
+                category: 'World Layouts',
+                items: [
+                    { id: 'world-map', label: 'World Map Layout', description: 'Spatial story relationships' },
+                    { id: 'world-affinity', label: 'World Affinity Layout', description: 'Location relationship mapping' }
+                ]
+            },
+            {
+                category: 'Lore & Symbolic Layouts',
+                items: [
+                    { id: 'lore-web', label: 'Lore Web Layout', description: 'Knowledge interconnections' },
+                    { id: 'symbolic-connections', label: 'Symbolic Connections Layout', description: 'Thematic element links' }
+                ]
+            },
+            {
+                category: 'Themes & Analytical Layouts',
+                items: [
+                    { id: 'emotional-arc', label: 'Emotional Arc Layout', description: 'Story emotional progression' },
+                    { id: 'pacing-layout', label: 'Pacing Layout', description: 'Story rhythm analysis' }
+                ]
             }
+        ];
+
+        // Get current layout from URL params
+        const currentLayout = new URLSearchParams(window.location.search).get('layout') || 'narrative';
+        const currentLayoutItem = layoutOptions
+            .flatMap(category => category.items)
+            .find(item => item.id === currentLayout) || layoutOptions[0].items[0];
+
+        // Handle layout change by updating URL params
+        const handleLayoutChange = (layoutId: string) => {
+            const params = new URLSearchParams(window.location.search);
+            params.set('layout', layoutId);
+            window.history.pushState({}, '', `?${params.toString()}`);
+            setIsLayoutOpen(false);
         };
 
-        const config = getLayoutConfig();
+        useEffect(() => {
+            const handleClickOutside = (event: MouseEvent) => {
+                if (dropdownRef.current && !dropdownRef.current.contains(event.target as HTMLElement)) {
+                    setIsLayoutOpen(false);
+                }
+            };
+            
+            document.addEventListener("mousedown", handleClickOutside);
+            return () => document.removeEventListener("mousedown", handleClickOutside);
+        }, []);
 
         return (
             <div className="relative w-full h-10 bg-gradient-to-br from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 rounded-full overflow-visible border border-gray-700 dark:border-gray-300 shadow-inner">
                 <div className="absolute inset-0 flex items-center justify-between px-4 text-white dark:text-black">
                     {/* Left: Search Bar */}
                     <div className="flex items-center gap-3 flex-1 mr-4">
-                        <SearchIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
+                        <MagnifyingGlassIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={(e) => onSearchChange(e.target.value)}
-                            placeholder={config.searchPlaceholder}
+                            placeholder="Search for Scenes, Characters, events..."
                             className="bg-transparent border-none outline-none text-sm placeholder-white/50 dark:placeholder-black/50 text-white dark:text-black flex-1 min-w-0"
                         />
                     </div>
 
-                    {/* Right: Layout and Subview Controls */}
-                    <div className="flex items-center gap-2">
-                        {/* Layout Selector */}
-                        <div className="relative">
-                            <motion.button
-                                onClick={() => setIsLayoutOpen(!isLayoutOpen)}
-                                className="flex items-center gap-2 px-3 py-1.5 bg-white/10 dark:bg-black/10 rounded-lg hover:bg-white/20 dark:hover:bg-black/20 transition-colors"
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                            >
-                                {planningLayout === 'Plot' && <LayoutGridIcon className="h-4 w-4" />}
-                                {planningLayout === 'Character' && <UserIcon className="h-4 w-4" />}
-                                {planningLayout === 'World Entity' && <MapIcon className="h-4 w-4" />}
-                                {planningLayout === 'Timeline' && <ClockIcon className="h-4 w-4" />}
-                                <ChevronDownIcon className="h-4 w-4" />
-                            </motion.button>
+                    {/* Right: Layout Selector */}
+                    <div className="relative" ref={dropdownRef}>
+                        <motion.button
+                            onClick={() => setIsLayoutOpen(!isLayoutOpen)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white/10 dark:bg-black/10 rounded-lg hover:bg-white/20 dark:hover:bg-black/20 transition-colors"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                        >
+                            <Squares2X2Icon className="h-4 w-4" />
+                            <span className="text-xs max-w-24 truncate">{currentLayoutItem.label}</span>
+                            <ChevronDownIcon className="h-4 w-4" />
+                        </motion.button>
 
-                            <AnimatePresence>
-                                {isLayoutOpen && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: -10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        className="absolute top-full right-0 mt-2 w-48 bg-gradient-to-br from-gray-800 to-black dark:from-slate-100 dark:to-slate-200 rounded-lg shadow-xl border border-gray-600 dark:border-gray-300 z-50"
-                                    >
-                                        <div className="p-2">
-                                            {['Plot', 'Character', 'World Entity', 'Timeline'].map((layout) => (
+                        <AnimatePresence>
+                            {isLayoutOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="absolute top-full right-0 mt-2 w-[30rem] bg-gradient-to-br from-black to-gray-800 dark:from-slate-100 dark:to-slate-200 rounded-lg shadow-lg p-2 z-50 border border-gray-700/50 dark:border-gray-200/50 max-h-80 overflow-y-auto no-scrollbar"
+                                >
+                                    {layoutOptions.map((category) => (
+                                        <div key={category.category} className="mb-1">
+                                            <div className="flex items-center justify-between px-2 py-1 group/category">
+                                                <div className="flex items-center gap-2">
+                                                    <Bars3BottomLeftIcon className="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-grab" />
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">{category.category}</h4>
+                                                </div>
+                                            </div>
+                                            {category.items.map((item) => (
                                                 <motion.button
-                                                    key={layout}
-                                                    onClick={() => {
-                                                        onPlanningLayoutChange(layout);
-                                                        // Auto-select first subview when layout changes
-                                                        const newConfig = (() => {
-                                                            switch (layout) {
-                                                                case 'Plot':
-                                                                    return { subviews: ['by character', 'world Location', 'world Object', 'timeline event'] };
-                                                                case 'Character':
-                                                                    return { subviews: ['Timeline Event', 'Relationship Web'] };
-                                                                case 'World Entity':
-                                                                    return { subviews: ['Timeline Event', 'Locations', 'Object/items', 'Lore'] };
-                                                                case 'Timeline':
-                                                                    return { subviews: ['Plots', 'Characters', 'World Locations', 'World Object/Items', 'Lore'] };
-                                                                default:
-                                                                    return { subviews: ['by character', 'world Location', 'world Object', 'timeline event'] };
-                                                            }
-                                                        })();
-                                                        onPlanningSubviewChange(newConfig.subviews[0]);
-                                                        setIsLayoutOpen(false);
-                                                    }}
-                                                    className={`w-full text-left flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors ${
-                                                        planningLayout === layout
-                                                            ? 'bg-blue-500 text-white'
+                                                    key={item.id}
+                                                    onClick={() => handleLayoutChange(item.id)}
+                                                    className={`group/layout flex items-center justify-between pl-8 pr-2 py-1.5 text-sm rounded-md w-full text-left transition-colors ${
+                                                        currentLayout === item.id 
+                                                            ? 'bg-blue-500/20 text-blue-200 dark:text-blue-700' 
                                                             : 'text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10'
                                                     }`}
-                                                    whileHover={{ scale: 1.02 }}
-                                                    whileTap={{ scale: 0.98 }}
+                                                    whileHover={{ x: 4 }}
                                                 >
-                                                    {layout === 'Plot' && <LayoutGridIcon className="h-4 w-4" />}
-                                                    {layout === 'Character' && <UserIcon className="h-4 w-4" />}
-                                                    {layout === 'World Entity' && <MapIcon className="h-4 w-4" />}
-                                                    {layout === 'Timeline' && <ClockIcon className="h-4 w-4" />}
-                                                    {layout}
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="font-medium truncate">
+                                                            {item.label}
+                                                        </span>
+                                                        <span className="text-xs opacity-70 truncate">
+                                                            {item.description}
+                                                        </span>
+                                                    </div>
+                                                    {currentLayout === item.id && (
+                                                        <div className="w-2 h-2 bg-blue-400 rounded-full ml-2 flex-shrink-0"></div>
+                                                    )}
                                                 </motion.button>
                                             ))}
                                         </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </div>
-
-                        {/* Subview Selector */}
-                        <div className="relative">
-                            <motion.button
-                                onClick={() => setIsSubviewOpen(!isSubviewOpen)}
-                                className="flex items-center gap-2 px-3 py-1.5 bg-white/10 dark:bg-black/10 rounded-lg hover:bg-white/20 dark:hover:bg-black/20 transition-colors"
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                            >
-                                <ViewIcon className="h-4 w-4" />
-                                <span className="text-xs">{planningSubview}</span>
-                                <ChevronDownIcon className="h-4 w-4" />
-                            </motion.button>
-
-                            <AnimatePresence>
-                                {isSubviewOpen && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: -10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        className="absolute top-full right-0 mt-2 w-56 bg-gradient-to-br from-gray-800 to-black dark:from-slate-100 dark:to-slate-200 rounded-lg shadow-xl border border-gray-600 dark:border-gray-300 z-50"
-                                    >
-                                        <div className="p-2">
-                                            {config.subviews.map((subview) => (
-                                                <motion.button
-                                                    key={subview}
-                                                    onClick={() => {
-                                                        onPlanningSubviewChange(subview);
-                                                        setIsSubviewOpen(false);
-                                                    }}
-                                                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
-                                                        planningSubview === subview
-                                                            ? 'bg-blue-500 text-white'
-                                                            : 'text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10'
-                                                    }`}
-                                                    whileHover={{ scale: 1.02 }}
-                                                    whileTap={{ scale: 0.98 }}
-                                                >
-                                                    {subview}
-                                                </motion.button>
-                                            ))}
-                                        </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </div>
+                                    ))}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
             </div>
@@ -452,7 +432,7 @@ const PlanningHeader: React.FC<{
             <div className="relative w-full h-10 bg-gradient-to-br from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 rounded-full overflow-visible border border-gray-700 dark:border-gray-300 shadow-inner">
                 <div className="absolute inset-0 flex items-center justify-between px-4 text-white dark:text-black">
                     <div className="flex items-center gap-3 flex-1">
-                        <SearchIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
+                        <MagnifyingGlassIcon className="h-4 w-4 text-white/70 dark:text-black/70" />
                         <input
                             type="text"
                             value={searchQuery}
@@ -525,7 +505,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                 <div className="grid grid-cols-[1fr_auto_1fr] items-center h-20">
                     <div className="flex justify-start">
                          <Link to={`/book/${book.id}`} className="flex items-center gap-2 cursor-pointer">
-                            <PenIcon className="h-6 w-6 text-gray-900 dark:text-white"/>
+                            <PencilIcon className="h-6 w-6 text-gray-900 dark:text-white"/>
                             <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-gray-900 to-black dark:from-white dark:to-gray-400 bg-clip-text text-transparent">
                                 AuthorStudio
                             </h1>
@@ -571,7 +551,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                             {/* Tools Menu */}
                             <DropdownMenu trigger={
                                 <button className="flex items-center gap-2 p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">
-                                    <Wand2Icon className="h-5 w-5" />
+                                    <SparklesIcon className="h-5 w-5" />
                                     <span className="text-sm font-medium">Tools</span>
                                 </button>
                             }>
@@ -579,7 +559,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                                     onClick={() => handleOpenTool('name-generator')}
                                     className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
                                 >
-                                    <Wand2Icon className="h-4 w-4" />
+                                    <SparklesIcon className="h-4 w-4" />
                                     Name Generator
                                 </button>
                                 <button 
@@ -594,7 +574,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                              <DropdownMenu trigger={<button className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">{theme === 'dark' ? <MoonIcon className="h-5 w-5" /> : <SunIcon className="h-5 w-5" />}</button>}>
                                 <button onClick={() => handleThemeChange('light')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <SunIcon className="h-4 w-4"/> Light</button>
                                 <button onClick={() => handleThemeChange('dark')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <MoonIcon className="h-4 w-4"/> Dark</button>
-                                <button onClick={() => handleThemeChange('system')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <SystemIcon className="h-4 w-4"/> System</button>
+                                <button onClick={() => handleThemeChange('system')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <ComputerDesktopIcon className="h-4 w-4"/> System</button>
                             </DropdownMenu>
 
                             <DropdownMenu trigger={<img src="https://picsum.photos/seed/user/40/40" alt="User Avatar" className="w-9 h-9 rounded-full cursor-pointer ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-gray-900 ring-transparent hover:ring-purple-500 transition-all"/>}>

@@ -117,6 +117,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
         }
     };
     
+    
     // Handle loading and error states
     if (loading) {
         return (

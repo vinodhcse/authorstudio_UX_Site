@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import ReactFlow, {
     Node,
     Edge,
@@ -11,12 +11,10 @@ import ReactFlow, {
     useEdgesState,
     Connection,
     ReactFlowProvider,
-    Panel,
     ConnectionLineType
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Book, Version, Theme } from '../../../../types';
-import { PlusIcon } from '../../../../constants';
 
 
 
@@ -32,9 +30,10 @@ import {
     ObjectArcNodeComponent,
     LoreArcNodeComponent
 } from './narrative/NarrativeNodes';
-import { CreateNodeModal } from './narrative/CreateNodeModal';
+import { EnhancedCreateNodeModal } from './narrative/EnhancedCreateNodeModal';
 import { CharacterPopup } from './narrative/CharacterPopup';
 import { AISuggestions } from './narrative/AISuggestions';
+import FloatingControls from './narrative/FloatingControls';
 import NarrativeBreadcrumb from './narrative/NarrativeBreadcrumb';
 import { 
     generateSampleNarrativeData,
@@ -74,9 +73,25 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     viewMode = 'board', 
     statusFilter = 'all' 
 }) => {
-    // URL state management for drill-down mode
+    // URL state management for drill-down mode and layout
     const [searchParams] = useSearchParams();
-    const navigate = useNavigate();
+    
+    // Get current layout from URL or default to 'narrative'
+    const currentLayout = searchParams.get('layout') || 'narrative';
+
+    // Layout change handler
+    const handleLayoutChange = useCallback((layoutId: string) => {
+        const params = new URLSearchParams(searchParams);
+        params.set('layout', layoutId);
+        
+        // Use history.pushState to preserve the full URL path and all params
+        const currentPath = window.location.pathname;
+        const newSearch = params.toString();
+        window.history.pushState({}, '', `${currentPath}?${newSearch}`);
+        
+        // Trigger a state update or re-render if needed
+        window.dispatchEvent(new PopStateEvent('popstate'));
+    }, [searchParams]);
 
     // Narrative layout state
     const [narrativeNodes, setNarrativeNodes] = useState<NarrativeFlowNode[]>([]);
@@ -120,6 +135,35 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     // ReactFlow hooks
     const [nodes, setNodes, defaultOnNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+    // Mock data for filters
+    const availableCharacters = [
+        { id: 'char-1', name: 'Emma Harrison' },
+        { id: 'char-2', name: 'Marcus Vale' },
+        { id: 'char-3', name: 'Aria Blackwood' },
+        { id: 'char-4', name: 'The Mentor' }
+    ];
+
+    const availableLocations = [
+        { id: 'loc-1', name: 'The Academy' },
+        { id: 'loc-2', name: 'Shadow Realm' },
+        { id: 'loc-3', name: 'Crystal Caverns' },
+        { id: 'loc-4', name: 'Ancient Library' }
+    ];
+
+    const availableObjects = [
+        { id: 'obj-1', name: 'Crystal of Power' },
+        { id: 'obj-2', name: 'Ancient Scroll' },
+        { id: 'obj-3', name: 'Mystic Blade' },
+        { id: 'obj-4', name: 'Portal Key' }
+    ];
+
+    const availableTimelineEvents = [
+        { id: 'timeline-1', name: 'The Dark Lord Returns', tag: 'Present' },
+        { id: 'timeline-2', name: 'Battle of Shadowmere', tag: 'Past' },
+        { id: 'timeline-3', name: 'Vision of the Chosen One', tag: 'Future' },
+        { id: 'timeline-4', name: 'Memory of First Love', tag: 'Flashback' }
+    ];
 
     // Custom onNodesChange that persists position changes
     const onNodesChange = useCallback((changes: any[]) => {
@@ -273,29 +317,48 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     }, []);
 
     const handleNodeSelect = useCallback((nodeId: string) => {
-        // Navigate to the same page but with the selected node as root
-        navigate(`?selectedNodeId=${nodeId}`);
+        // Update URL without page reload
+        const params = new URLSearchParams(window.location.search);
+        params.set('selectedNodeId', nodeId);
+        params.set('mode', 'Planning');
+        params.set('tab', 'PlotArcs');
         
-        // Reload the page to re-initialize with the new root node
-        window.location.reload();
-    }, [navigate]);
+        // Use history.pushState instead of navigate to avoid full reload
+        window.history.pushState({}, '', `?${params.toString()}`);
+        
+        // Update the layout config to trigger re-render with new selected node
+        setLayoutConfig(prev => ({
+            ...prev,
+            selectedNode: nodeId
+        }));
+    }, []);
 
     // Breadcrumb navigation handlers
     const handleBreadcrumbNavigate = useCallback((nodeId: string | null) => {
+        const params = new URLSearchParams(window.location.search);
+        
         if (nodeId) {
-            // Navigate to specific node
-            const params = new URLSearchParams(window.location.search);
+            // Navigate to specific node - only update node-related params
             params.set('selectedNodeId', nodeId);
-            navigate(`?${params.toString()}`);
+            // Preserve mode and tab if they exist, otherwise set defaults
+            if (!params.has('mode')) params.set('mode', 'Planning');
+            if (!params.has('tab')) params.set('tab', 'PlotArcs');
         } else {
-            // Navigate to overview (remove selectedNodeId)
-            const params = new URLSearchParams(window.location.search);
+            // Navigate to overview (remove selectedNodeId but preserve other params)
             params.delete('selectedNodeId');
-            const newSearch = params.toString();
-            navigate(newSearch ? `?${newSearch}` : window.location.pathname);
         }
-        window.location.reload();
-    }, [navigate]);
+        
+        // Preserve existing book, version, and layout params
+        const newSearch = params.toString();
+        const currentPath = window.location.pathname;
+        window.history.pushState({}, '', newSearch ? `${currentPath}?${newSearch}` : currentPath);
+        
+        // Update the layout config
+        setLayoutConfig(prev => ({
+            ...prev,
+            selectedNode: nodeId
+        }));
+    }, []);
 
     const handleGoBack = useCallback(() => {
         // For now, go back to overview. Could be enhanced to go to parent node
@@ -563,16 +626,6 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         [narrativeNodes]
     );
 
-    const handleAddPlotPoint = useCallback(() => {
-        setCreateNodeModal({
-            parentId: null,
-            nodeType: 'scene',
-            position: { x: Math.random() * 500 + 100, y: Math.random() * 400 + 100 },
-            isVisible: true
-        });
-        setEditingNode(null);
-    }, []);
-
     const handleCreateNode = useCallback((nodeData: Partial<NarrativeNode>) => {
         if (editingNode) {
             // Update existing node - simplified update
@@ -761,105 +814,43 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                         nodeColor={theme === 'dark' ? '#6b7280' : '#9ca3af'}
                         className={theme === 'dark' ? 'dark' : ''}
                     />
-                    
-                    {/* Toolbar Panel */}
-                    <Panel position="top-right" className="space-y-2">
-                        {/* View Controls */}
-                        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 border border-gray-200 dark:border-gray-700">
-                            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
-                                VIEW CONTROLS
-                            </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                <motion.button
-                                    onClick={handleExpandAll}
-                                    className="px-2 py-1 text-xs rounded font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50"
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                >
-                                    Expand All
-                                </motion.button>
-                                <motion.button
-                                    onClick={handleCollapseAll}
-                                    className="px-2 py-1 text-xs rounded font-medium bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-900/50"
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                >
-                                    Collapse All
-                                </motion.button>
-                                <motion.button
-                                    onClick={handleShowAll}
-                                    className="px-2 py-1 text-xs rounded font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50"
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                >
-                                    Show All
-                                </motion.button>
-                                <motion.button
-                                    onClick={handleResetToHierarchy}
-                                    className="px-2 py-1 text-xs rounded font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50"
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                >
-                                    Hierarchy
-                                </motion.button>
-                                <motion.button
-                                    onClick={adjustLayout}
-                                    className="px-2 py-1 text-xs rounded font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/50"
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                >
-                                    Auto Layout
-                                </motion.button>
-                            </div>
-                        </div>
-
-                        {/* Quick Create */}
-                        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 border border-gray-200 dark:border-gray-700">
-                            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
-                                QUICK CREATE (Drag to Canvas)
-                            </div>
-                            <div className="grid grid-cols-2 gap-1">
-                                {createNodeShortcuts.map(({ type, label, color }) => (
-                                    <motion.button
-                                        key={type}
-                                        draggable
-                                        onDragStart={(event: any) => {
-                                            event.dataTransfer.setData('application/reactflow', type);
-                                            event.dataTransfer.effectAllowed = 'move';
-                                        }}
-                                        onClick={() => {
-                                            setCreateNodeModal({
-                                                parentId: null,
-                                                nodeType: type,
-                                                position: { x: Math.random() * 500 + 100, y: Math.random() * 400 + 100 },
-                                                isVisible: true
-                                            });
-                                            setEditingNode(null);
-                                        }}
-                                        className={`px-2 py-1 text-xs rounded font-medium bg-${color}-100 dark:bg-${color}-900/30 text-${color}-700 dark:text-${color}-300 hover:bg-${color}-200 dark:hover:bg-${color}-900/50 cursor-grab active:cursor-grabbing`}
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                    >
-                                        {label}
-                                    </motion.button>
-                                ))}
-                            </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                                💡 Drag buttons to canvas or click to place randomly
-                            </div>
-                        </div>
-
-                        <motion.button
-                            onClick={handleAddPlotPoint}
-                            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2"
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                        >
-                            <PlusIcon className="w-4 h-4" />
-                            Add Scene
-                        </motion.button>
-                    </Panel>
                 </ReactFlow>
+
+                {/* Floating Controls - replaces the old Panel controls */}
+                <FloatingControls
+                    // View Controls
+                    onExpandAll={handleExpandAll}
+                    onCollapseAll={handleCollapseAll}
+                    onShowAll={handleShowAll}
+                    onResetToHierarchy={handleResetToHierarchy}
+                    onAdjustLayout={adjustLayout}
+                    
+                    // Quick Create
+                    createNodeShortcuts={createNodeShortcuts}
+                    onCreateNode={(modalData) => {
+                        setCreateNodeModal(modalData);
+                        setEditingNode(null);
+                    }}
+                    onDragStart={(event: any, type) => {
+                        event.dataTransfer.setData('application/reactflow', type);
+                        event.dataTransfer.effectAllowed = 'move';
+                    }}
+                    
+                    // Filters
+                    filters={layoutConfig.filters}
+                    onFiltersChange={(newFilters) => {
+                        setLayoutConfig(prev => ({
+                            ...prev,
+                            filters: newFilters
+                        }));
+                    }}
+                    
+                    // Mock data
+                    availableCharacters={availableCharacters}
+                    availableLocations={availableLocations}
+                    availableObjects={availableObjects}
+                    availableTimelineEvents={availableTimelineEvents}
+                />
             </div>
         );
     };
@@ -937,15 +928,35 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             
             {/* Content */}
             <div className="flex-1 min-h-0">
-                {viewMode === 'board' ? (
+                {/* Only show narrative layout for now, other layouts will be implemented later */}
+                {currentLayout === 'narrative' && viewMode === 'board' ? (
                     <ReactFlowProvider>
                         <div className="w-full h-full">
                             {renderBoardView()}
                         </div>
                     </ReactFlowProvider>
-                ) : (
+                ) : currentLayout === 'narrative' && viewMode === 'list' ? (
                     <div className="w-full h-full overflow-auto">
                         {renderListView()}
+                    </div>
+                ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                        <div className="text-center">
+                            <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                                {currentLayout.charAt(0).toUpperCase() + currentLayout.slice(1)} Layout
+                            </h3>
+                            <p className="text-gray-500 dark:text-gray-400 mb-4">
+                                This layout is coming soon!
+                            </p>
+                            <motion.button
+                                onClick={() => handleLayoutChange('narrative')}
+                                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                            >
+                                Return to Narrative Layout
+                            </motion.button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -967,14 +978,13 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             )}
 
             {/* Create/Edit Node Modal */}
-            <CreateNodeModal
+            <EnhancedCreateNodeModal
                 isVisible={createNodeModal.isVisible}
                 modalData={createNodeModal}
                 onClose={handleCloseModal}
                 onCreate={handleCreateNode}
                 existingNode={editingNode}
                 availableNodes={narrativeNodes.map(n => n.data)}
-                theme={theme === 'system' ? 'dark' : theme}
             />
 
             {/* AI Suggestions */}

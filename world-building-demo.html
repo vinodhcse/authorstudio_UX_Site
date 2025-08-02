@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>World Building Page Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f9fafb;
+            color: #111827;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 16px 24px;
+        }
+        .header-top {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header-title h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .world-selector {
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            background: white;
+        }
+        .create-btn {
+            background: #16a34a;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .tabs {
+            display: flex;
+            gap: 4px;
+        }
+        .tab {
+            padding: 8px 12px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tab.active {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .tab:not(.active) {
+            color: #6b7280;
+        }
+        .tab:hover:not(.active) {
+            background: #f3f4f6;
+        }
+        .content {
+            padding: 24px;
+        }
+        .world-details {
+            display: grid;
+            gap: 24px;
+        }
+        .detail-section {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 24px;
+        }
+        .detail-section h3 {
+            margin: 0 0 16px 0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .tag {
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 14px;
+        }
+        .tag.theme {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        .tag.general {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        .history-event {
+            background: #f9fafb;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 8px;
+        }
+        .event-title {
+            font-weight: 500;
+            margin: 0;
+        }
+        .event-date {
+            font-size: 14px;
+            color: #6b7280;
+        }
+        .event-description {
+            font-size: 14px;
+            color: #6b7280;
+            margin: 0;
+        }
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
+        .card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .card-image {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(45deg, #10b981, #3b82f6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+        .card-content {
+            padding: 16px;
+        }
+        .card-title {
+            margin: 0 0 8px 0;
+            font-weight: 600;
+        }
+        .card-description {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            color: #6b7280;
+        }
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .card-meta {
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .card-type {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .type-location {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .type-object {
+            background: #fdf2f8;
+            color: #be185d;
+        }
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .section-title {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .add-btn {
+            background: #16a34a;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-top">
+                <div class="header-title">
+                    <h1>🌍 World Building</h1>
+                    <select class="world-selector">
+                        <option>Middle-earth</option>
+                        <option>Narnia</option>
+                        <option>Westeros</option>
+                    </select>
+                </div>
+                <button class="create-btn">+ Create New World</button>
+            </div>
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('details')">🌍 World Details</button>
+                <button class="tab" onclick="showTab('locations')">📍 Locations</button>
+                <button class="tab" onclick="showTab('objects')">📚 Objects</button>
+                <button class="tab" onclick="showTab('lore')">📜 Lore</button>
+                <button class="tab" onclick="showTab('magic')">🔮 Magic Systems</button>
+                <button class="tab" onclick="showTab('maps')">🗺️ Maps</button>
+                <button class="tab" onclick="showTab('visualization')">🌐 Visualization</button>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- World Details Tab -->
+            <div id="details-content" class="tab-content">
+                <div class="detail-section">
+                    <h3>Middle-earth</h3>
+                    <p>A vast land inhabited by Men, Elves, Dwarves, Hobbits, and many other creatures. The central stage of the War of the Ring.</p>
+                    
+                    <div class="detail-grid">
+                        <div>
+                            <h4>Themes</h4>
+                            <div class="tags">
+                                <span class="tag theme">Good vs Evil</span>
+                                <span class="tag theme">Hope</span>
+                                <span class="tag theme">Corruption</span>
+                                <span class="tag theme">Friendship</span>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4>Tags</h4>
+                            <div class="tags">
+                                <span class="tag general">fantasy</span>
+                                <span class="tag general">epic</span>
+                                <span class="tag general">saga</span>
+                                <span class="tag general">tolkien</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 24px;">
+                        <h4>History</h4>
+                        <div class="history-event">
+                            <div class="event-header">
+                                <h5 class="event-title">Origins of Middle-earth</h5>
+                                <span class="event-date">First Age</span>
+                            </div>
+                            <p class="event-description">Created in the Music of the Ainur, Middle-earth has endured wars against Morgoth and Sauron.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Locations Tab -->
+            <div id="locations-content" class="tab-content hidden">
+                <div class="section-header">
+                    <h3 class="section-title">Locations</h3>
+                    <button class="add-btn">+ Add Location</button>
+                </div>
+                <div class="cards-grid">
+                    <div class="card">
+                        <div class="card-image">The Shire</div>
+                        <div class="card-content">
+                            <h4 class="card-title">The Shire</h4>
+                            <p class="card-description">A peaceful region, home to Hobbits. Known for rolling green hills and simple living.</p>
+                            <div class="card-footer">
+                                <span class="card-meta">Eriador</span>
+                                <span class="card-type type-location">Region</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-image">Mordor</div>
+                        <div class="card-content">
+                            <h4 class="card-title">Mordor</h4>
+                            <p class="card-description">A volcanic wasteland dominated by Mount Doom, the stronghold of the Dark Lord Sauron.</p>
+                            <div class="card-footer">
+                                <span class="card-meta">Eastern Middle-earth</span>
+                                <span class="card-type type-location">Dark Realm</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-image">Gondor</div>
+                        <div class="card-content">
+                            <h4 class="card-title">Gondor</h4>
+                            <p class="card-description">The greatest kingdom of Men in Middle-earth, heir to the glory of Númenor.</p>
+                            <div class="card-footer">
+                                <span class="card-meta">Southern Middle-earth</span>
+                                <span class="card-type type-location">Kingdom</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Objects Tab -->
+            <div id="objects-content" class="tab-content hidden">
+                <div class="section-header">
+                    <h3 class="section-title">Objects</h3>
+                    <button class="add-btn">+ Add Object</button>
+                </div>
+                <div class="cards-grid">
+                    <div class="card">
+                        <div class="card-image">The One Ring</div>
+                        <div class="card-content">
+                            <h4 class="card-title">The One Ring</h4>
+                            <p class="card-description">A golden ring with the power to dominate all other Rings of Power.</p>
+                            <div class="card-footer">
+                                <span class="card-meta">Forged by Sauron in Mount Doom</span>
+                                <span class="card-type type-object">Magical Artifact</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-image">Andúril</div>
+                        <div class="card-content">
+                            <h4 class="card-title">Andúril</h4>
+                            <p class="card-description">The Flame of the West, sword of Aragorn, King of Gondor.</p>
+                            <div class="card-footer">
+                                <span class="card-meta">Reforged from Narsil</span>
+                                <span class="card-type type-object">Legendary Sword</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other tabs (simplified for demo) -->
+            <div id="lore-content" class="tab-content hidden">
+                <div class="section-header">
+                    <h3 class="section-title">Lore</h3>
+                    <button class="add-btn">+ Add Lore Entry</button>
+                </div>
+                <div class="detail-section">
+                    <h4>The War of the Ring</h4>
+                    <span class="tag theme">Historical Event</span>
+                    <p>The final conflict of the Third Age, uniting the Free Peoples against Sauron.</p>
+                </div>
+            </div>
+
+            <div id="magic-content" class="tab-content hidden">
+                <div class="section-header">
+                    <h3 class="section-title">Magic Systems</h3>
+                    <button class="add-btn">+ Add Magic System</button>
+                </div>
+                <div class="detail-section">
+                    <h4>The Power of the Rings</h4>
+                    <span class="tag theme">Artifact-Based Magic</span>
+                    <p>Source: Forged by Sauron in Mount Doom, tied to his essence.</p>
+                </div>
+            </div>
+
+            <div id="maps-content" class="tab-content hidden">
+                <div class="section-header">
+                    <h3 class="section-title">Maps</h3>
+                    <div>
+                        <button class="add-btn" style="margin-right: 8px;">🎨 Generate Map</button>
+                        <button class="add-btn">+ Upload Map</button>
+                    </div>
+                </div>
+                <div class="cards-grid">
+                    <div class="card">
+                        <div class="card-image">Map Preview</div>
+                        <div class="card-content">
+                            <h4 class="card-title">Middle-earth Map</h4>
+                            <div style="margin-top: 8px;">
+                                <button style="color: #2563eb; background: none; border: none; cursor: pointer; margin-right: 8px;">View Full Size</button>
+                                <button style="color: #16a34a; background: none; border: none; cursor: pointer;">Edit</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="visualization-content" class="tab-content hidden">
+                <div class="section-header">
+                    <h3 class="section-title">World Visualization</h3>
+                </div>
+                <div style="height: 400px; background: #f3f4f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #6b7280;">
+                    <div style="text-align: center;">
+                        <h4>ReactFlow Visualization</h4>
+                        <p>Interactive diagram showing relationships between:</p>
+                        <ul style="text-align: left; display: inline-block;">
+                            <li>World → Locations</li>
+                            <li>World → Magic Systems</li>
+                            <li>Locations → Characters</li>
+                            <li>Objects → Lore Events</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tabName) {
+            // Hide all tab contents
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => content.classList.add('hidden'));
+            
+            // Remove active class from all tabs
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            
+            // Show selected tab content
+            document.getElementById(tabName + '-content').classList.remove('hidden');
+            
+            // Add active class to clicked tab
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>

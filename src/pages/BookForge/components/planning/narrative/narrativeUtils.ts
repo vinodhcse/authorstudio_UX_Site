@@ -7,10 +7,10 @@ export const generateHierarchicalLayout = (nodes: NarrativeFlowNode[]): Narrativ
   
   // Enhanced configuration for better spacing and collision avoidance
   const config = {
-    levelHeight: 400,      // Increased vertical spacing between levels
-    nodeSpacing: 350,      // Increased horizontal spacing between siblings
-    arcSpacing: 500,       // Spacing for arc nodes from main tree
-    sceneOffset: 200,      // Additional spacing for scenes
+    levelHeight: 450,      // Increased vertical spacing between levels
+    nodeSpacing: 500,      // Much larger horizontal spacing between siblings to prevent overlap
+    arcSpacing: 600,       // Spacing for arc nodes from main tree
+    sceneOffset: 250,      // Additional spacing for scenes
     minNodeWidth: 320,     // Minimum node width for collision calculation
     collisionPadding: 50,  // Extra padding to prevent visual overlap
     arcStartX: 1200,       // Starting X position for arc columns
@@ -490,12 +490,39 @@ export const getVisibleNodes = (
   const ancestors = getNodeAncestors(selectedNodeId, allNodes);
   const descendants = getNodeDescendants(selectedNodeId, allNodes);
   
+  // Get the selected node to check its type
+  const selectedNode = allNodes.find(node => node.id === selectedNodeId);
+  
   // Create set of nodes to show: selected + ancestors + descendants
   const visibleNodeIds = new Set([
     selectedNodeId,
     ...ancestors,
     ...descendants
   ]);
+
+  // For chapters and scenes, also include linked arc nodes (character, location, object, lore arcs)
+  if (selectedNode && (selectedNode.data.type === 'chapter' || selectedNode.data.type === 'scene')) {
+    // Add linked nodes from the selected node
+    selectedNode.data.linkedNodeIds.forEach(linkedId => {
+      const linkedNode = allNodes.find(n => n.id === linkedId);
+      if (linkedNode && ['character-arc', 'location-arc', 'object-arc', 'lore-arc'].includes(linkedNode.data.type)) {
+        visibleNodeIds.add(linkedId);
+      }
+    });
+
+    // Also check descendants for linked nodes
+    descendants.forEach(descendantId => {
+      const descendantNode = allNodes.find(n => n.id === descendantId);
+      if (descendantNode && descendantNode.data.type === 'scene') {
+        descendantNode.data.linkedNodeIds.forEach(linkedId => {
+          const linkedNode = allNodes.find(n => n.id === linkedId);
+          if (linkedNode && ['character-arc', 'location-arc', 'object-arc', 'lore-arc'].includes(linkedNode.data.type)) {
+            visibleNodeIds.add(linkedId);
+          }
+        });
+      }
+    });
+  }
 
   // Filter nodes to only show visible ones
   const visibleNodes = allNodes.filter(node => visibleNodeIds.has(node.id));
@@ -517,6 +544,10 @@ export const getVisibleNodes = (
     else if (descendants.includes(node.id)) {
       // Only expand immediate children
       shouldBeExpanded = node.data.parentId === selectedNodeId;
+    }
+    // Arc nodes should be collapsed by default when linked
+    else if (['character-arc', 'location-arc', 'object-arc', 'lore-arc'].includes(node.data.type)) {
+      shouldBeExpanded = false;
     }
 
     return {
@@ -1015,7 +1046,11 @@ export const generateSampleNarrativeData = (): { nodes: NarrativeFlowNode[], edg
           description: 'Professor McGonagall watches the Dursleys all day, then meets Dumbledore to discuss Harry\'s placement',
           goal: 'Establish the gravity of Voldemort\'s defeat and show wizard world\'s concern for Harry',
           chapter: 'Chapter 1: The Boy Who Lived',
-          characters: ['Dumbledore', 'McGonagall'],
+          characters: ['char-001', 'char-002', 'char-003'],
+          povCharacterId: 'char-002',
+          locations: ['loc-001'],
+          objects: ['obj-001'],
+          lore: ['lore-001'],
           worlds: ['Privet Drive'],
           timelineEventIds: []
         }
@@ -1039,7 +1074,11 @@ export const generateSampleNarrativeData = (): { nodes: NarrativeFlowNode[], edg
           description: 'Hagrid arrives with baby Harry and the three professors leave him with the Dursleys',
           goal: 'Show Harry\'s tragic beginning and the sacrifice made for his protection',
           chapter: 'Chapter 1: The Boy Who Lived',
-          characters: ['Hagrid', 'baby Harry'],
+          characters: ['char-004', 'char-005'],
+          povCharacterId: 'char-004',
+          locations: ['loc-001'],
+          objects: ['obj-002', 'obj-003'],
+          lore: ['lore-002'],
           worlds: ['Privet Drive'],
           timelineEventIds: []
         }

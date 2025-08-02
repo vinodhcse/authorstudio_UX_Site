@@ -67,6 +67,10 @@ export interface SceneNodeData {
   goal: string;
   chapter: string;
   characters: string[];
+  povCharacterId?: string;
+  locations?: string[];
+  objects?: string[];
+  lore?: string[];
   worlds: string[];
   timelineEventIds: string[];
   ai?: AIAnalysis;
