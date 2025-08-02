@@ -44,7 +44,7 @@ const CharacterAvatar: React.FC<{
 
   return (
     <motion.div
-      className={`${sizeClasses[size]} rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg cursor-pointer ${className}`}
+      className={`${sizeClasses[size]} rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg border-2 border-white/20 cursor-pointer ${className}`}
       onClick={onClick}
       whileHover={{ scale: 1.1 }}
       whileTap={{ scale: 0.95 }}
@@ -83,10 +83,10 @@ const CharacterAvatarsGroup: React.FC<{
           <CharacterAvatar
             character={povCharacter}
             size="sm"
-            className="ring-2 ring-yellow-400 ring-offset-1"
+            className="ring-2 ring-yellow-400 ring-offset-2 ring-offset-gray-800"
             onClick={(e) => onCharacterClick?.(povCharacter.id, e)}
           />
-          <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full flex items-center justify-center">
+          <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full flex items-center justify-center shadow-md">
             <span className="text-xs text-black font-bold">P</span>
           </div>
         </div>
@@ -992,12 +992,12 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
   // Get tag color for timeline events
   const getTagColor = (tag: string) => {
     switch (tag.toLowerCase()) {
-      case 'past': return 'bg-amber-500/30 border-amber-300/30 text-amber-100';
-      case 'present': return 'bg-blue-500/30 border-blue-300/30 text-blue-100';
-      case 'future': return 'bg-green-500/30 border-green-300/30 text-green-100';
-      case 'flashback': return 'bg-purple-500/30 border-purple-300/30 text-purple-100';
-      case 'flashforward': return 'bg-pink-500/30 border-pink-300/30 text-pink-100';
-      default: return 'bg-gray-500/30 border-gray-300/30 text-gray-100';
+      case 'past': return 'bg-amber-100 border-amber-400 text-amber-900 shadow-md';
+      case 'present': return 'bg-blue-100 border-blue-400 text-blue-900 shadow-md';
+      case 'future': return 'bg-green-100 border-green-400 text-green-900 shadow-md';
+      case 'flashback': return 'bg-purple-100 border-purple-400 text-purple-900 shadow-md';
+      case 'flashforward': return 'bg-pink-100 border-pink-400 text-pink-900 shadow-md';
+      default: return 'bg-gray-100 border-gray-400 text-gray-900 shadow-md';
     }
   };
 
@@ -1243,7 +1243,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
                         e.stopPropagation();
                         console.log('Open timeline event modal for:', eventId);
                       }}
-                      className={`backdrop-blur-sm text-xs px-2 py-1 rounded-full border hover:brightness-125 transition-all ${getTagColor(event.tag)}`}
+                      className={`text-xs px-3 py-1.5 rounded-full border-2 hover:scale-105 transition-all font-medium ${getTagColor(event.tag)}`}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       title={`${event.name} (${event.tag})\n${event.note}`}
@@ -1522,12 +1522,12 @@ const ExpandedChapterNode: React.FC<BaseNodeProps & {
   // Get tag color for timeline events
   const getTagColor = (tag: string) => {
     switch (tag.toLowerCase()) {
-      case 'past': return 'bg-amber-500/30 border-amber-300/30 text-amber-100';
-      case 'present': return 'bg-blue-500/30 border-blue-300/30 text-blue-100';
-      case 'future': return 'bg-green-500/30 border-green-300/30 text-green-100';
-      case 'flashback': return 'bg-purple-500/30 border-purple-300/30 text-purple-100';
-      case 'flashforward': return 'bg-pink-500/30 border-pink-300/30 text-pink-100';
-      default: return 'bg-gray-500/30 border-gray-300/30 text-gray-100';
+      case 'past': return 'bg-amber-100 border-amber-400 text-amber-900 shadow-md';
+      case 'present': return 'bg-blue-100 border-blue-400 text-blue-900 shadow-md';
+      case 'future': return 'bg-green-100 border-green-400 text-green-900 shadow-md';
+      case 'flashback': return 'bg-purple-100 border-purple-400 text-purple-900 shadow-md';
+      case 'flashforward': return 'bg-pink-100 border-pink-400 text-pink-900 shadow-md';
+      default: return 'bg-gray-100 border-gray-400 text-gray-900 shadow-md';
     }
   };
 
@@ -1642,10 +1642,11 @@ const ExpandedChapterNode: React.FC<BaseNodeProps & {
                   {propagatedTimelineEventTags.map((tag: string) => (
                     <motion.div
                       key={tag}
-                      className={`backdrop-blur-sm text-xs px-2 py-1 rounded-full border ${getTagColor(tag)}`}
+                      className={`text-xs px-3 py-1.5 rounded-full border-2 font-medium ${getTagColor(tag)}`}
                       whileHover={{ scale: 1.05 }}
                       title={`Timeline events of type: ${tag}`}
                     >
+                      <span className="mr-1">⏱</span>
                       {tag}
                     </motion.div>
                   ))}

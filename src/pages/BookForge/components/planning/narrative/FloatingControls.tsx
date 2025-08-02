@@ -99,7 +99,7 @@ const FloatingControls: React.FC<FloatingControlsProps> = ({
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto"
+                className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-48"
               >
                 {options.map((option) => (
                   <label
@@ -131,12 +131,12 @@ const FloatingControls: React.FC<FloatingControlsProps> = ({
   };
 
   return (
-    <div className="fixed top-4 right-4 z-40 flex gap-2">
+    <div className="fixed top-20 right-4 z-30 flex gap-2">
       {/* View Controls Button */}
       <div className="relative">
         <motion.button
           onClick={() => setIsViewControlsOpen(!isViewControlsOpen)}
-          className="w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center"
+          className="w-12 h-12 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-blue-600 dark:text-blue-400 rounded-xl shadow-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
@@ -205,7 +205,7 @@ const FloatingControls: React.FC<FloatingControlsProps> = ({
       <div className="relative">
         <motion.button
           onClick={() => setIsQuickCreateOpen(!isQuickCreateOpen)}
-          className="w-12 h-12 bg-green-600 hover:bg-green-700 text-white rounded-full shadow-lg flex items-center justify-center"
+          className="w-12 h-12 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-green-600 dark:text-green-400 rounded-xl shadow-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
@@ -218,7 +218,7 @@ const FloatingControls: React.FC<FloatingControlsProps> = ({
               initial={{ opacity: 0, scale: 0.9, y: -20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: -20 }}
-              className="absolute top-14 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4 w-56"
+              className="absolute top-14 right-0 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 p-4 w-64 backdrop-blur-sm bg-opacity-95 dark:bg-opacity-95"
             >
               <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-3">
                 QUICK CREATE
@@ -257,7 +257,7 @@ const FloatingControls: React.FC<FloatingControlsProps> = ({
       <div className="relative">
         <motion.button
           onClick={() => setIsFiltersOpen(!isFiltersOpen)}
-          className="w-12 h-12 bg-purple-600 hover:bg-purple-700 text-white rounded-full shadow-lg flex items-center justify-center"
+          className="w-12 h-12 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-purple-600 dark:text-purple-400 rounded-xl shadow-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
@@ -270,7 +270,7 @@ const FloatingControls: React.FC<FloatingControlsProps> = ({
               initial={{ opacity: 0, scale: 0.9, y: -20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: -20 }}
-              className="absolute top-14 right-0 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-4 w-72 max-h-96 overflow-y-auto"
+              className="absolute top-14 right-0 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 p-5 w-80 backdrop-blur-sm bg-opacity-95 dark:bg-opacity-95"
             >
               <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-3">
                 FILTERS

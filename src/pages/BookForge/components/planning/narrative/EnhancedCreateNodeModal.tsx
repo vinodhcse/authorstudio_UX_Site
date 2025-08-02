@@ -414,32 +414,47 @@ const TimelineEventSelector: React.FC<TimelineEventSelectorProps> = ({
                   </button>
                 ) : (
                   <div className="p-3 space-y-3">
-                    <input
-                      type="text"
-                      placeholder="Event name..."
-                      value={newEvent.name}
-                      onChange={(e) => setNewEvent(prev => ({ ...prev, name: e.target.value }))}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                      autoFocus
-                    />
-                    <select
-                      value={newEvent.tag}
-                      onChange={(e) => setNewEvent(prev => ({ ...prev, tag: e.target.value }))}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                    >
-                      <option value="Past">Past</option>
-                      <option value="Present">Present</option>
-                      <option value="Future">Future</option>
-                      <option value="Flashback">Flashback</option>
-                      <option value="Flashforward">Flashforward</option>
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Note (optional)..."
-                      value={newEvent.note}
-                      onChange={(e) => setNewEvent(prev => ({ ...prev, note: e.target.value }))}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                    />
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Event Name *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Enter event name..."
+                        value={newEvent.name}
+                        onChange={(e) => setNewEvent(prev => ({ ...prev, name: e.target.value }))}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Event Tag
+                      </label>
+                      <select
+                        value={newEvent.tag}
+                        onChange={(e) => setNewEvent(prev => ({ ...prev, tag: e.target.value }))}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      >
+                        <option value="Past">Past</option>
+                        <option value="Present">Present</option>
+                        <option value="Future">Future</option>
+                        <option value="Flashback">Flashback</option>
+                        <option value="Flashforward">Flashforward</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Event Note
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Optional note about this event..."
+                        value={newEvent.note}
+                        onChange={(e) => setNewEvent(prev => ({ ...prev, note: e.target.value }))}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      />
+                    </div>
                     <div className="flex gap-2">
                       <button
                         type="button"
