@@ -33,6 +33,7 @@ import {
     LoreArcNodeComponent
 } from './narrative/NarrativeNodes';
 import { CreateNodeModal } from './narrative/CreateNodeModal';
+import { CharacterPopup } from './narrative/CharacterPopup';
 import { AISuggestions } from './narrative/AISuggestions';
 import { 
     generateSampleNarrativeData,
@@ -73,7 +74,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     statusFilter = 'all' 
 }) => {
     // URL state management for drill-down mode
-    const [searchParams, setSearchParams] = useSearchParams();
+    const [searchParams] = useSearchParams();
 
     // Narrative layout state
     const [narrativeNodes, setNarrativeNodes] = useState<NarrativeFlowNode[]>([]);
@@ -102,6 +103,17 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     });
     const [editingNode, setEditingNode] = useState<NarrativeNode | null>(null);
     const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([]);
+    const [characterPopup, setCharacterPopup] = useState<{
+        isVisible: boolean;
+        characterId: string;
+        nodeId: string;
+        position: { x: number; y: number };
+    }>({
+        isVisible: false,
+        characterId: '',
+        nodeId: '',
+        position: { x: 0, y: 0 }
+    });
 
     // ReactFlow hooks
     const [nodes, setNodes, defaultOnNodesChange] = useNodesState([]);
@@ -230,24 +242,6 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         }
     }, [narrativeNodes]);
 
-    // Double-click handler for drill-down mode with URL updates
-    const handleNodeDoubleClick = useCallback((nodeId: string) => {
-        const node = narrativeNodes.find(n => n.id === nodeId);
-        if (node) {
-            // Update URL parameter for drill-down mode
-            const newSearchParams = new URLSearchParams(searchParams);
-            newSearchParams.set('selectedNodeId', nodeId);
-            setSearchParams(newSearchParams);
-
-            // Update layout config for drill-down view
-            setLayoutConfig(prev => ({
-                ...prev,
-                selectedNode: nodeId,
-                viewMode: 'drill-down' // New mode for focused node view
-            }));
-        }
-    }, [narrativeNodes, searchParams, setSearchParams]);
-
     const handleNodeEdit = useCallback((nodeId: string) => {
         const node = narrativeNodes.find(n => n.id === nodeId);
         if (node) {
@@ -260,6 +254,21 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             }));
         }
     }, [narrativeNodes]);
+
+    const handleCharacterClick = useCallback((characterId: string, nodeId: string, event: React.MouseEvent) => {
+        // Get click position relative to the viewport
+        const position = {
+            x: event.clientX,
+            y: event.clientY
+        };
+        
+        setCharacterPopup({
+            isVisible: true,
+            characterId,
+            nodeId,
+            position
+        });
+    }, []);
 
     const handleAddChildNode = useCallback((parentId: string, nodeType: NarrativeNode['type']) => {
         setCreateNodeModal({
@@ -331,10 +340,12 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onExpand={handleExpandNode}
                 onCollapse={handleCollapseNode}
                 onClick={handleNodeClick}
-                onDoubleClick={handleNodeDoubleClick}
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onCharacterClick={handleCharacterClick}
+                expandedNodes={layoutConfig.expandedNodes}
+                allNodes={narrativeNodes}
             />
         ),
         act: (props: any) => (
@@ -343,10 +354,12 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onExpand={handleExpandNode}
                 onCollapse={handleCollapseNode}
                 onClick={handleNodeClick}
-                onDoubleClick={handleNodeDoubleClick}
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onCharacterClick={handleCharacterClick}
+                expandedNodes={layoutConfig.expandedNodes}
+                allNodes={narrativeNodes}
             />
         ),
         chapter: (props: any) => (
@@ -355,10 +368,12 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onExpand={handleExpandNode}
                 onCollapse={handleCollapseNode}
                 onClick={handleNodeClick}
-                onDoubleClick={handleNodeDoubleClick}
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onCharacterClick={handleCharacterClick}
+                expandedNodes={layoutConfig.expandedNodes}
+                allNodes={narrativeNodes}
             />
         ),
         scene: (props: any) => (
@@ -367,10 +382,12 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onExpand={handleExpandNode}
                 onCollapse={handleCollapseNode}
                 onClick={handleNodeClick}
-                onDoubleClick={handleNodeDoubleClick}
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onCharacterClick={handleCharacterClick}
+                expandedNodes={layoutConfig.expandedNodes}
+                allNodes={narrativeNodes}
             />
         ),
         'character-arc': (props: any) => (
@@ -379,10 +396,12 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onExpand={handleExpandNode}
                 onCollapse={handleCollapseNode}
                 onClick={handleNodeClick}
-                onDoubleClick={handleNodeDoubleClick}
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onCharacterClick={handleCharacterClick}
+                expandedNodes={layoutConfig.expandedNodes}
+                allNodes={narrativeNodes}
             />
         ),
         'location-arc': (props: any) => (
@@ -391,10 +410,12 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onExpand={handleExpandNode}
                 onCollapse={handleCollapseNode}
                 onClick={handleNodeClick}
-                onDoubleClick={handleNodeDoubleClick}
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onCharacterClick={handleCharacterClick}
+                expandedNodes={layoutConfig.expandedNodes}
+                allNodes={narrativeNodes}
             />
         ),
         'object-arc': (props: any) => (
@@ -403,10 +424,12 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onExpand={handleExpandNode}
                 onCollapse={handleCollapseNode}
                 onClick={handleNodeClick}
-                onDoubleClick={handleNodeDoubleClick}
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onCharacterClick={handleCharacterClick}
+                expandedNodes={layoutConfig.expandedNodes}
+                allNodes={narrativeNodes}
             />
         ),
         'lore-arc': (props: any) => (
@@ -415,13 +438,15 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 onExpand={handleExpandNode}
                 onCollapse={handleCollapseNode}
                 onClick={handleNodeClick}
-                onDoubleClick={handleNodeDoubleClick}
                 onEdit={handleNodeEdit}
                 onAddChild={handleAddChildNode}
                 onDelete={handleDeleteNode}
+                onCharacterClick={handleCharacterClick}
+                expandedNodes={layoutConfig.expandedNodes}
+                allNodes={narrativeNodes}
             />
         ),
-    }), [handleExpandNode, handleCollapseNode, handleNodeClick, handleNodeDoubleClick, handleNodeEdit, handleAddChildNode]);
+    }), [handleExpandNode, handleCollapseNode, handleNodeClick, handleNodeEdit, handleAddChildNode, handleCharacterClick, layoutConfig.expandedNodes, narrativeNodes]);
 
     const handleConnect = useCallback(
         (params: Connection) => {
@@ -876,6 +901,22 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                     </div>
                 )}
             </div>
+
+            {/* Character Details Popup */}
+            {characterPopup.isVisible && characterPopup.characterId && (
+                <CharacterPopup
+                    isVisible={characterPopup.isVisible}
+                    characterId={characterPopup.characterId}
+                    nodeId={characterPopup.nodeId}
+                    position={characterPopup.position}
+                    onClose={() => setCharacterPopup({ 
+                        isVisible: false, 
+                        characterId: '', 
+                        nodeId: '', 
+                        position: { x: 0, y: 0 } 
+                    })}
+                />
+            )}
 
             {/* Create/Edit Node Modal */}
             <CreateNodeModal

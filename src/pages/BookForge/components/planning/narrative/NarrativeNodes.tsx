@@ -16,13 +16,103 @@ interface BaseNodeProps {
   data: NarrativeNode;
   selected?: boolean;
   onClick: (id: string) => void;
-  onDoubleClick?: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onAddChild: (id: string, nodeType: string) => void;
   onExpand?: (id: string) => void;
   onCollapse?: (id: string) => void;
+  onCharacterClick?: (characterId: string, nodeId: string, event: React.MouseEvent) => void;
+  expandedNodes?: Set<string>;
+  allNodes?: NarrativeNode[];
 }
+
+// Character Avatar Component
+const CharacterAvatar: React.FC<{
+  character: any;
+  size?: 'sm' | 'md';
+  className?: string;
+  onClick?: (event: React.MouseEvent) => void;
+}> = ({ character, size = 'sm', className = '', onClick }) => {
+  const sizeClasses = {
+    sm: 'w-6 h-6 text-xs',
+    md: 'w-8 h-8 text-sm'
+  };
+
+  return (
+    <motion.div
+      className={`${sizeClasses[size]} rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg cursor-pointer ${className}`}
+      onClick={onClick}
+      whileHover={{ scale: 1.1 }}
+      whileTap={{ scale: 0.95 }}
+      title={character.name}
+    >
+      {character.name?.charAt(0)?.toUpperCase() || '?'}
+    </motion.div>
+  );
+};
+
+// Character Avatars Group Component
+const CharacterAvatarsGroup: React.FC<{
+  characters: any[];
+  povCharacterId?: string;
+  maxVisible?: number;
+  onCharacterClick?: (characterId: string, event: React.MouseEvent) => void;
+  className?: string;
+}> = ({ characters, povCharacterId, maxVisible = 2, onCharacterClick, className = '' }) => {
+  const [showAll, setShowAll] = useState(false);
+  
+  if (!characters || characters.length === 0) return null;
+
+  const visibleCharacters = showAll ? characters : characters.slice(0, maxVisible);
+  const remainingCount = characters.length - maxVisible;
+  const povCharacter = characters.find(char => char.id === povCharacterId);
+
+  return (
+    <div 
+      className={`flex items-center gap-1 ${className}`}
+      onMouseEnter={() => setShowAll(true)}
+      onMouseLeave={() => setShowAll(false)}
+    >
+      {/* POV Character - always shown first if exists */}
+      {povCharacter && (
+        <div className="relative">
+          <CharacterAvatar
+            character={povCharacter}
+            size="sm"
+            className="ring-2 ring-yellow-400 ring-offset-1"
+            onClick={(e) => onCharacterClick?.(povCharacter.id, e)}
+          />
+          <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full flex items-center justify-center">
+            <span className="text-xs text-black font-bold">P</span>
+          </div>
+        </div>
+      )}
+      
+      {/* Other Characters */}
+      {visibleCharacters
+        .filter(char => char.id !== povCharacterId)
+        .map((character, index) => (
+          <CharacterAvatar
+            key={character.id}
+            character={character}
+            size="sm"
+            className={index > 0 ? '-ml-2' : ''}
+            onClick={(e) => onCharacterClick?.(character.id, e)}
+          />
+        ))}
+      
+      {/* Remaining count indicator */}
+      {!showAll && remainingCount > 0 && (
+        <motion.div
+          className="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-white text-xs font-bold -ml-2"
+          whileHover={{ scale: 1.1 }}
+        >
+          +{remainingCount}
+        </motion.div>
+      )}
+    </div>
+  );
+};
 
 // Status Badge Component
 const StatusBadge: React.FC<{ status: NarrativeNode['status'] }> = ({ status }) => {
@@ -47,56 +137,67 @@ const StatusBadge: React.FC<{ status: NarrativeNode['status'] }> = ({ status }) 
 
 // Enhanced 3D Compact Node Component
 const CompactNode: React.FC<BaseNodeProps & { nodeType: string; color: string }> = ({ 
-  data, onClick, onDoubleClick, onEdit, onExpand, nodeType, color 
+  data, onClick, onEdit, onExpand, onCharacterClick, nodeType, color, allNodes = [] 
 }) => {
   const isMuted = data.isMuted || false;
+
+  // Get characters for this node and its children
+  const getNodeCharacters = (nodeData: any) => {
+    const characters = [];
+    
+    // Direct characters from node data
+    if (nodeData.characters) {
+      characters.push(...nodeData.characters);
+    }
+    
+    // For non-scene nodes, get characters from child scenes
+    if (data.type !== 'scene' && (data as any).childIds) {
+      (data as any).childIds.forEach((childId: string) => {
+        const childNode = allNodes.find(n => n.id === childId);
+        if (childNode && (childNode.data as any).characters) {
+          characters.push(...(childNode.data as any).characters);
+        }
+      });
+    }
+    
+    // Remove duplicates
+    return [...new Set(characters)].map(charId => ({
+      id: charId,
+      name: `Character ${charId.slice(-1)}` // Mock character names
+    }));
+  };
+
+  const nodeCharacters = getNodeCharacters(data.data);
+  const povCharacterId = (data.data as any).povCharacterId;
 
   return (
     <motion.div
       className={`relative cursor-pointer group ${isMuted ? 'opacity-30' : 'opacity-100'}`}
-      onClick={(e) => {
+      onDoubleClick={(e) => {
         e.stopPropagation();
-        if (onExpand) {
-          onExpand(data.id);
-        } else {
-          onClick(data.id);
-        }
-      }}
-      onDoubleClick={() => onDoubleClick?.(data.id)}
-      whileHover={{ 
-        scale: 1.08,
-        rotateY: 8,
-        rotateX: -4,
-        z: 50,
-        transition: { 
-          type: "spring", 
-          stiffness: 300, 
-          damping: 20,
-          duration: 0.4
-        }
+        // Add a small delay to ensure button clicks are processed first
+        setTimeout(() => {
+          if (onExpand) {
+            onExpand(data.id);
+          } else {
+            onClick(data.id);
+          }
+        }, 10);
       }}
       whileTap={{ 
         scale: 0.95,
-        rotateY: 0,
-        rotateX: 0,
         transition: { duration: 0.1 }
       }}
       initial={{ 
         opacity: isMuted ? 0.3 : 0.8, 
         scale: 0.95,
-        rotateX: 12,
         y: 15
       }}
       animate={{ 
         opacity: isMuted ? 0.3 : 1, 
         scale: isMuted ? 0.85 : 1,
-        rotateX: 0,
         y: 0,
         transition: { duration: 0.6, ease: "easeOut" }
-      }}
-      style={{
-        transformStyle: 'preserve-3d',
-        perspective: '1000px'
       }}
     >
       {/* Enhanced 3D card with glass morphism */}
@@ -121,13 +222,7 @@ const CompactNode: React.FC<BaseNodeProps & { nodeType: string; color: string }>
           `
         }}
       >
-        <motion.div
-          className="relative z-10"
-          whileHover={{ 
-            y: -2,
-            transition: { type: "spring", stiffness: 400 }
-          }}
-        >
+        <motion.div className="relative z-10">
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs font-bold text-white/95 uppercase tracking-widest drop-shadow-sm">
               {nodeType}
@@ -142,12 +237,40 @@ const CompactNode: React.FC<BaseNodeProps & { nodeType: string; color: string }>
           </div>
           
           <div className="text-white font-semibold text-sm mb-1 line-clamp-2 drop-shadow-sm">
-            {(data as any).title}
+            {(data.data as any).title}
           </div>
           
-          <div className="text-white/80 text-xs line-clamp-3 drop-shadow-sm">
-            {(data as any).description}
+          <div className="text-white/80 text-xs line-clamp-2 drop-shadow-sm mb-2">
+            {(data.data as any).description}
           </div>
+
+          {/* Character Avatars */}
+          {nodeCharacters.length > 0 && (
+            <div className="mb-2">
+              <CharacterAvatarsGroup
+                characters={nodeCharacters}
+                povCharacterId={povCharacterId}
+                maxVisible={2}
+                onCharacterClick={(charId, event) => onCharacterClick?.(charId, data.id, event)}
+                className="mb-1"
+              />
+            </div>
+          )}
+
+          {/* POV Character indicator if no characters shown */}
+          {povCharacterId && nodeCharacters.length === 0 && (
+            <div className="mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-white/70">POV:</span>
+                <CharacterAvatar
+                  character={{ id: povCharacterId, name: `Character ${povCharacterId.slice(-1)}` }}
+                  size="sm"
+                  className="ring-2 ring-yellow-400 ring-offset-1"
+                  onClick={(e) => onCharacterClick?.(povCharacterId, data.id, e)}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Show basic stats */}
           <div className="flex gap-2 text-xs text-white/70 mt-2">
@@ -163,9 +286,14 @@ const CompactNode: React.FC<BaseNodeProps & { nodeType: string; color: string }>
           <motion.button
             onClick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
               onEdit(data.id);
             }}
-            className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500/70 hover:bg-blue-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+            className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500/70 hover:bg-blue-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-20"
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
           >
@@ -173,26 +301,13 @@ const CompactNode: React.FC<BaseNodeProps & { nodeType: string; color: string }>
           </motion.button>
         </motion.div>
         
-        {/* Animated glow effect */}
+        {/* Animated glow effect - reduced */}
         <motion.div
-          className="absolute -inset-1 rounded-xl opacity-0 group-hover:opacity-50 transition-opacity duration-500"
+          className="absolute -inset-1 rounded-xl opacity-0 group-hover:opacity-30 transition-opacity duration-300"
           style={{
             background: `linear-gradient(45deg, ${color.replace('from-', '').replace('via-', '').replace('to-', '').split(' ').join(', ')})`,
-            filter: 'blur(12px)',
+            filter: 'blur(8px)',
             zIndex: -1
-          }}
-        />
-        
-        {/* Subtle shimmer effect */}
-        <motion.div
-          className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-30"
-          style={{
-            background: 'linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%)',
-            backgroundSize: '200% 200%'
-          }}
-          animate={{
-            backgroundPosition: ['0% 0%', '100% 100%'],
-            transition: { duration: 2, repeat: Infinity, ease: 'linear' }
           }}
         />
       </motion.div>
@@ -220,8 +335,8 @@ const ExpandedNode: React.FC<BaseNodeProps & {
   color: string; 
   icon: React.ComponentType<{ className?: string }>;
 }> = ({ 
-  data, onClick, onDoubleClick, onEdit, onDelete, onAddChild, onCollapse,
-  nodeType, color, icon: Icon 
+  data, onClick, onEdit, onDelete, onAddChild, onCollapse, onCharacterClick,
+  nodeType, color, icon: Icon, allNodes = []
 }) => {
   const [isHovering, setIsHovering] = useState(false);
   
@@ -229,53 +344,62 @@ const ExpandedNode: React.FC<BaseNodeProps & {
   const opacity = data.isMuted ? 0.4 : 1;
   const brightness = data.isMuted ? 0.6 : 1;
 
+  // Get characters for this node and its children
+  const getNodeCharacters = (nodeData: any) => {
+    const characters = [];
+    
+    // Direct characters from node data
+    if (nodeData.characters) {
+      characters.push(...nodeData.characters);
+    }
+    
+    // For non-scene nodes, get characters from child scenes
+    if (data.type !== 'scene' && (data as any).childIds) {
+      (data as any).childIds.forEach((childId: string) => {
+        const childNode = allNodes.find(n => n.id === childId);
+        if (childNode && (childNode.data as any).characters) {
+          characters.push(...(childNode.data as any).characters);
+        }
+      });
+    }
+    
+    // Remove duplicates
+    return [...new Set(characters)].map(charId => ({
+      id: charId,
+      name: `Character ${charId.slice(-1)}` // Mock character names
+    }));
+  };
+
+  const nodeCharacters = getNodeCharacters(data.data);
+  const povCharacterId = (data.data as any).povCharacterId;
+
   return (
     <motion.div
       className="relative cursor-pointer min-w-[280px] max-w-[320px] group"
       onHoverStart={() => setIsHovering(true)}
       onHoverEnd={() => setIsHovering(false)}
-      onClick={(e) => {
+      onDoubleClick={(e) => {
         e.stopPropagation();
-        onClick(data.id);
+        // Add a small delay to ensure button clicks are processed first
+        setTimeout(() => {
+          onClick(data.id);
+        }, 10);
       }}
-      onDoubleClick={() => onDoubleClick?.(data.id)}
       initial={{ 
         opacity: 0, 
         scale: 0.8, 
-        rotateY: -20, 
-        rotateX: 15,
         y: 30
       }}
       animate={{ 
         opacity, 
         scale: 1, 
-        rotateY: 0,
-        rotateX: 0,
         y: 0,
         filter: `brightness(${brightness})`,
         transition: { duration: 0.6, ease: "easeOut" }
       }}
-      whileHover={{ 
-        scale: 1.06,
-        rotateY: 6,
-        rotateX: -3,
-        z: 60,
-        transition: { 
-          type: "spring", 
-          stiffness: 250, 
-          damping: 25,
-          duration: 0.5
-        }
-      }}
       whileTap={{ 
         scale: 0.98,
-        rotateY: 0,
-        rotateX: 0,
         transition: { duration: 0.1 }
-      }}
-      style={{
-        transformStyle: 'preserve-3d',
-        perspective: '1200px'
       }}
     >
       {/* Enhanced 3D expanded card */}
@@ -300,13 +424,7 @@ const ExpandedNode: React.FC<BaseNodeProps & {
           `
         }}
       >
-        <motion.div
-          className="relative z-10"
-          whileHover={{ 
-            y: -3,
-            transition: { type: "spring", stiffness: 400 }
-          }}
-        >
+        <motion.div className="relative z-10">
           {/* Header with icon and node type */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -324,9 +442,14 @@ const ExpandedNode: React.FC<BaseNodeProps & {
                 <motion.button
                   onClick={(e) => {
                     e.stopPropagation();
+                    e.preventDefault();
                     onCollapse(data.id);
                   }}
-                  className="w-6 h-6 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
+                  className="w-6 h-6 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors z-20"
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   title="Collapse node"
@@ -339,13 +462,42 @@ const ExpandedNode: React.FC<BaseNodeProps & {
           
           {/* Title */}
           <h3 className="font-bold text-white text-lg mb-3 line-clamp-2 drop-shadow-sm">
-            {(data as any).title}
+            {(data.data as any).title}
           </h3>
           
           {/* Description */}
           <p className="text-white/90 text-sm line-clamp-4 leading-relaxed mb-4 drop-shadow-sm">
-            {(data as any).description}
+            {(data.data as any).description}
           </p>
+          
+          {/* Character Avatars Section */}
+          {(nodeCharacters.length > 0 || povCharacterId) && (
+            <div className="mb-4 p-3 bg-white/10 rounded-lg backdrop-blur-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-white/90">Characters</span>
+                {povCharacterId && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-white/70">POV:</span>
+                    <CharacterAvatar
+                      character={{ id: povCharacterId, name: `Character ${povCharacterId.slice(-1)}` }}
+                      size="sm"
+                      className="ring-2 ring-yellow-400 ring-offset-1"
+                      onClick={(e) => onCharacterClick?.(povCharacterId, data.id, e)}
+                    />
+                  </div>
+                )}
+              </div>
+              
+              {nodeCharacters.length > 0 && (
+                <CharacterAvatarsGroup
+                  characters={nodeCharacters}
+                  povCharacterId={povCharacterId}
+                  maxVisible={4}
+                  onCharacterClick={(charId, event) => onCharacterClick?.(charId, data.id, event)}
+                />
+              )}
+            </div>
+          )}
           
           {/* Stats */}
           <div className="flex gap-4 text-sm text-white/80">
@@ -364,12 +516,12 @@ const ExpandedNode: React.FC<BaseNodeProps & {
           </div>
         </motion.div>
         
-        {/* Animated glow effect */}
+        {/* Animated glow effect - reduced */}
         <motion.div
-          className="absolute -inset-2 rounded-2xl opacity-0 group-hover:opacity-40 transition-opacity duration-700"
+          className="absolute -inset-2 rounded-2xl opacity-0 group-hover:opacity-30 transition-opacity duration-500"
           style={{
             background: `linear-gradient(45deg, ${color.replace('from-', '').replace('via-', '').replace('to-', '').split(' ').join(', ')})`,
-            filter: 'blur(16px)',
+            filter: 'blur(12px)',
             zIndex: -1
           }}
         />
@@ -381,15 +533,24 @@ const ExpandedNode: React.FC<BaseNodeProps & {
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
-              className="absolute -top-2 -right-2 flex gap-1"
+              className="absolute -top-2 -right-2 flex gap-1 z-30"
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
             >
               <motion.button
                 onClick={(e) => {
                   e.stopPropagation();
+                  e.preventDefault();
                   onEdit(data.id);
                 }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
                 className="p-2 rounded-full bg-blue-500/30 hover:bg-blue-500/50 transition-colors backdrop-blur-sm"
-                whileHover={{ scale: 1.1, rotate: 10 }}
+                whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
               >
                 <PencilIcon className="w-4 h-4 text-white drop-shadow-sm" />
@@ -398,10 +559,15 @@ const ExpandedNode: React.FC<BaseNodeProps & {
               <motion.button
                 onClick={(e) => {
                   e.stopPropagation();
+                  e.preventDefault();
                   onAddChild(data.id, 'scene');
                 }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
                 className="p-2 rounded-full bg-green-500/30 hover:bg-green-500/50 transition-colors backdrop-blur-sm"
-                whileHover={{ scale: 1.1, rotate: -10 }}
+                whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
               >
                 <PlusIcon className="w-4 h-4 text-white drop-shadow-sm" />
@@ -410,10 +576,15 @@ const ExpandedNode: React.FC<BaseNodeProps & {
               <motion.button
                 onClick={(e) => {
                   e.stopPropagation();
+                  e.preventDefault();
                   onDelete(data.id);
                 }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
                 className="p-2 rounded-full bg-red-500/30 hover:bg-red-500/50 transition-colors backdrop-blur-sm"
-                whileHover={{ scale: 1.1, rotate: 10 }}
+                whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
               >
                 <TrashIcon className="w-4 h-4 text-white drop-shadow-sm" />
@@ -448,8 +619,8 @@ const ExpandedNode: React.FC<BaseNodeProps & {
 
 // Main node type components using the new design system
 export const OutlineNodeComponent: React.FC<BaseNodeProps> = (props) => {
-  const { data, selected } = props;
-  const isExpanded = selected || data.isExpanded;
+  const { data, selected, expandedNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
   
   const nodeConfig = {
     type: 'Outline',
@@ -478,8 +649,8 @@ export const OutlineNodeComponent: React.FC<BaseNodeProps> = (props) => {
 };
 
 export const ActNodeComponent: React.FC<BaseNodeProps> = (props) => {
-  const { data, selected } = props;
-  const isExpanded = selected || data.isExpanded;
+  const { data, selected, expandedNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
   
   const nodeConfig = {
     type: 'Act',
@@ -508,8 +679,8 @@ export const ActNodeComponent: React.FC<BaseNodeProps> = (props) => {
 };
 
 export const ChapterNodeComponent: React.FC<BaseNodeProps> = (props) => {
-  const { data, selected } = props;
-  const isExpanded = selected || data.isExpanded;
+  const { data, selected, expandedNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
   
   const nodeConfig = {
     type: 'Chapter',
@@ -538,8 +709,8 @@ export const ChapterNodeComponent: React.FC<BaseNodeProps> = (props) => {
 };
 
 export const SceneNodeComponent: React.FC<BaseNodeProps> = (props) => {
-  const { data, selected } = props;
-  const isExpanded = selected || data.isExpanded;
+  const { data, selected, expandedNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
   
   const nodeConfig = {
     type: 'Scene',
@@ -568,8 +739,8 @@ export const SceneNodeComponent: React.FC<BaseNodeProps> = (props) => {
 };
 
 export const CharacterArcNodeComponent: React.FC<BaseNodeProps> = (props) => {
-  const { data, selected } = props;
-  const isExpanded = selected || data.isExpanded;
+  const { data, selected, expandedNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
   
   const nodeConfig = {
     type: 'Character Arc',
@@ -598,8 +769,8 @@ export const CharacterArcNodeComponent: React.FC<BaseNodeProps> = (props) => {
 };
 
 export const LocationArcNodeComponent: React.FC<BaseNodeProps> = (props) => {
-  const { data, selected } = props;
-  const isExpanded = selected || data.isExpanded;
+  const { data, selected, expandedNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
   
   const nodeConfig = {
     type: 'Location Arc',
@@ -628,8 +799,8 @@ export const LocationArcNodeComponent: React.FC<BaseNodeProps> = (props) => {
 };
 
 export const ObjectArcNodeComponent: React.FC<BaseNodeProps> = (props) => {
-  const { data, selected } = props;
-  const isExpanded = selected || data.isExpanded;
+  const { data, selected, expandedNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
   
   const nodeConfig = {
     type: 'Object Arc',
@@ -658,8 +829,8 @@ export const ObjectArcNodeComponent: React.FC<BaseNodeProps> = (props) => {
 };
 
 export const LoreArcNodeComponent: React.FC<BaseNodeProps> = (props) => {
-  const { data, selected } = props;
-  const isExpanded = selected || data.isExpanded;
+  const { data, selected, expandedNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
   
   const nodeConfig = {
     type: 'Lore Arc',
