@@ -464,68 +464,68 @@ export const getVisibleNodes = (
   allNodes: NarrativeFlowNode[], 
   selectedNodeId: string | null = null
 ): NarrativeFlowNode[] => {
-  // Always show all nodes but control their expanded/collapsed states
-  return allNodes.map(node => {
-    let shouldBeExpanded = false;
-    let isSelectedOrRelated = false;
-
-    if (selectedNodeId) {
-      const selectedNode = allNodes.find(n => n.id === selectedNodeId);
+  if (!selectedNodeId) {
+    // No selection - show all nodes with default expansion logic
+    return allNodes.map(node => {
+      let shouldBeExpanded = false;
       
-      if (selectedNode) {
-        // Current node is selected
-        if (node.id === selectedNodeId) {
-          shouldBeExpanded = true;
-          isSelectedOrRelated = true;
-        }
-        // Node is parent of selected
-        else if (selectedNode.data.parentId === node.id) {
-          shouldBeExpanded = true;
-          isSelectedOrRelated = true;
-        }
-        // Node is child of selected
-        else if (node.data.parentId === selectedNodeId) {
-          shouldBeExpanded = true;
-          isSelectedOrRelated = true;
-        }
-        // Node is linked to selected
-        else if (
-          selectedNode.data.linkedNodeIds.includes(node.id) || 
-          node.data.linkedNodeIds.includes(selectedNodeId)
-        ) {
-          shouldBeExpanded = true;
-          isSelectedOrRelated = true;
-        }
-        // Node is in the ancestor chain of selected
-        else {
-          let currentNode = selectedNode;
-          while (currentNode.data.parentId) {
-            if (currentNode.data.parentId === node.id) {
-              shouldBeExpanded = true;
-              isSelectedOrRelated = true;
-              break;
-            }
-            const parentNode = allNodes.find(n => n.id === currentNode.data.parentId);
-            if (!parentNode) break;
-            currentNode = parentNode;
-          }
-        }
-      }
-    } else {
-      // No selection - expand outline and acts by default
-      if (node.type === 'outline' || node.type === 'act') {
+      // Expand outline and acts by default
+      if (node.data.type === 'outline' || node.data.type === 'act') {
         shouldBeExpanded = true;
-        isSelectedOrRelated = true;
       }
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          isExpanded: shouldBeExpanded,
+          isMuted: false,
+          isSelectedOrRelated: true
+        }
+      };
+    });
+  }
+
+  // Get ancestors and descendants of selected node
+  const ancestors = getNodeAncestors(selectedNodeId, allNodes);
+  const descendants = getNodeDescendants(selectedNodeId, allNodes);
+  
+  // Create set of nodes to show: selected + ancestors + descendants
+  const visibleNodeIds = new Set([
+    selectedNodeId,
+    ...ancestors,
+    ...descendants
+  ]);
+
+  // Filter nodes to only show visible ones
+  const visibleNodes = allNodes.filter(node => visibleNodeIds.has(node.id));
+
+  // Apply expansion and muting logic
+  return visibleNodes.map(node => {
+    let shouldBeExpanded = false;
+    let isSelectedOrRelated = true;
+
+    // Current node is selected (should be expanded)
+    if (node.id === selectedNodeId) {
+      shouldBeExpanded = true;
+    }
+    // Node is ancestor of selected (should be expanded to show path)
+    else if (ancestors.includes(node.id)) {
+      shouldBeExpanded = true;
+    }
+    // Node is descendant of selected (children expanded, grandchildren collapsed)
+    else if (descendants.includes(node.id)) {
+      // Only expand immediate children
+      shouldBeExpanded = node.data.parentId === selectedNodeId;
     }
 
-    // Return node with updated expansion state and relationship flag
     return {
       ...node,
       data: {
         ...node.data,
         isExpanded: shouldBeExpanded,
-        isSelectedOrRelated // This will be used for visual styling
+        isMuted: false,
+        isSelectedOrRelated
       }
     };
   });

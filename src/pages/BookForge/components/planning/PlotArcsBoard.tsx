@@ -35,6 +35,7 @@ import {
 import { CreateNodeModal } from './narrative/CreateNodeModal';
 import { CharacterPopup } from './narrative/CharacterPopup';
 import { AISuggestions } from './narrative/AISuggestions';
+import NarrativeBreadcrumb from './narrative/NarrativeBreadcrumb';
 import { 
     generateSampleNarrativeData,
     generateHierarchicalLayout,
@@ -278,6 +279,28 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         // Reload the page to re-initialize with the new root node
         window.location.reload();
     }, [navigate]);
+
+    // Breadcrumb navigation handlers
+    const handleBreadcrumbNavigate = useCallback((nodeId: string | null) => {
+        if (nodeId) {
+            // Navigate to specific node
+            const params = new URLSearchParams(window.location.search);
+            params.set('selectedNodeId', nodeId);
+            navigate(`?${params.toString()}`);
+        } else {
+            // Navigate to overview (remove selectedNodeId)
+            const params = new URLSearchParams(window.location.search);
+            params.delete('selectedNodeId');
+            const newSearch = params.toString();
+            navigate(newSearch ? `?${newSearch}` : window.location.pathname);
+        }
+        window.location.reload();
+    }, [navigate]);
+
+    const handleGoBack = useCallback(() => {
+        // For now, go back to overview. Could be enhanced to go to parent node
+        handleBreadcrumbNavigate(null);
+    }, [handleBreadcrumbNavigate]);
 
     const handleAddChildNode = useCallback((parentId: string, nodeType: NarrativeNode['type']) => {
         setCreateNodeModal({
@@ -904,6 +927,14 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
 
     return (
         <div className="w-full h-full flex flex-col bg-gray-50 dark:bg-gray-900">
+            {/* Breadcrumb Navigation */}
+            <NarrativeBreadcrumb
+                selectedNodeId={layoutConfig.selectedNode}
+                allNodes={narrativeNodes}
+                onNavigateToNode={handleBreadcrumbNavigate}
+                onGoBack={handleGoBack}
+            />
+            
             {/* Content */}
             <div className="flex-1 min-h-0">
                 {viewMode === 'board' ? (
