@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Book, Version, Theme } from '../../../types';
 import { SunIcon, MoonIcon, ChevronDownIcon, TrashIcon, UserIcon, MagnifyingGlassIcon, Squares2X2Icon, GlobeAltIcon, PencilIcon, CogIcon, ComputerDesktopIcon, Bars3BottomLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import ChapterSettingsModal from './ChapterSettingsModal';
@@ -262,6 +262,9 @@ const PlanningHeader: React.FC<{
     searchQuery: string;
     onSearchChange: (query: string) => void;
 }> = ({ activePlanningTab, searchQuery, onSearchChange }) => {
+    const navigate = useNavigate();
+    const location = useLocation();
+    
     // Only show layout controls for Plot Arcs
     if (activePlanningTab === 'Plot Arcs') {
         const [isLayoutOpen, setIsLayoutOpen] = useState(false);
@@ -312,16 +315,20 @@ const PlanningHeader: React.FC<{
         ];
 
         // Get current layout from URL params
-        const currentLayout = new URLSearchParams(window.location.search).get('layout') || 'narrative';
+        const currentLayout = new URLSearchParams(location.search).get('layout') || 'narrative';
         const currentLayoutItem = layoutOptions
             .flatMap(category => category.items)
             .find(item => item.id === currentLayout) || layoutOptions[0].items[0];
 
         // Handle layout change by updating URL params
         const handleLayoutChange = (layoutId: string) => {
-            const params = new URLSearchParams(window.location.search);
+            const params = new URLSearchParams(location.search);
             params.set('layout', layoutId);
-            window.history.pushState({}, '', `?${params.toString()}`);
+            navigate({
+                pathname: location.pathname,
+                search: params.toString(),
+                hash: location.hash
+            }, { replace: true });
             setIsLayoutOpen(false);
         };
 

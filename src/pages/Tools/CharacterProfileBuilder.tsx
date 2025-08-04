@@ -1,6 +1,6 @@
 import React, { useState, useContext, createContext, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Book, Theme } from '../../types';
 import { 
   PersonIcon, 
@@ -273,6 +273,7 @@ const AIHelperBar: React.FC<{
 
 const CharacterProfileBuilder: React.FC<CharacterProfileBuilderProps> = ({ books, theme, setTheme }) => {
   const { bookId } = useParams();
+  const navigate = useNavigate();
   
   const [activeTab, setActiveTab] = useState('identity');
   const [profile, setProfile] = useState<CharacterProfile>(initialProfile);
@@ -2466,6 +2467,7 @@ const FeatsTab: React.FC = () => {
 };
 
 const SummaryTab: React.FC = () => {
+  const navigate = useNavigate();
   const { profile, updateProfile } = useContext(CharacterProfileContext);
   const [aiSummary, setAiSummary] = useState('');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -2666,7 +2668,7 @@ const SummaryTab: React.FC = () => {
         </motion.button>
 
         <motion.button
-          onClick={() => window.history.back()}
+          onClick={() => navigate(-1)}
           className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}

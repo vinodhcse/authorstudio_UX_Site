@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import ReactFlow, {
     Node,
     Edge,
@@ -48,6 +48,9 @@ import {
     getNodeAncestors,
     getNodeDescendants
 } from './narrative/narrativeUtils';
+
+// Import specialized layout components
+import CharacterScreenTimeLayout from './characterScreentime';
 import { 
     NarrativeFlowNode, 
     NarrativeEdge, 
@@ -75,6 +78,8 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
 }) => {
     // URL state management for drill-down mode and layout
     const [searchParams] = useSearchParams();
+    const navigate = useNavigate();
+    const location = useLocation();
     
     // Get current layout from URL or default to 'narrative'
     const currentLayout = searchParams.get('layout') || 'narrative';
@@ -82,16 +87,19 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     // Layout change handler
     const handleLayoutChange = useCallback((layoutId: string) => {
         const params = new URLSearchParams(searchParams);
+        console.log('searchParams before:', params.toString(), 'searchParams', searchParams);
         params.set('layout', layoutId);
         
-        // Use history.pushState to preserve the full URL path and all params
-        const currentPath = window.location.pathname;
-        const newSearch = params.toString();
-        window.history.pushState({}, '', `${currentPath}?${newSearch}`);
+        // Use navigate to preserve the full URL path and all params
+        navigate({
+            pathname: location.pathname,
+            search: params.toString(),
+            hash: location.hash
+        }, { replace: true });
         
         // Trigger a state update or re-render if needed
         window.dispatchEvent(new PopStateEvent('popstate'));
-    }, [searchParams]);
+    }, [searchParams, navigate, location]);
 
     // Narrative layout state
     const [narrativeNodes, setNarrativeNodes] = useState<NarrativeFlowNode[]>([]);
@@ -332,25 +340,30 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
 
     const handleNodeSelect = useCallback((nodeId: string) => {
         // Update URL without page reload
-        const params = new URLSearchParams(window.location.search);
+        const params = new URLSearchParams(location.search);
         params.set('selectedNodeId', nodeId);
         params.set('mode', 'Planning');
         params.set('tab', 'PlotArcs');
         
-        // Use history.pushState instead of navigate to avoid full reload
-        window.history.pushState({}, '', `?${params.toString()}`);
+        // Use navigate instead of history.pushState to avoid full reload
+        navigate({
+            pathname: location.pathname,
+            search: params.toString(),
+            hash: location.hash
+        }, { replace: true });
         
         // Update the layout config to trigger re-render with new selected node
         setLayoutConfig(prev => ({
             ...prev,
             selectedNode: nodeId
         }));
-    }, []);
+    }, [navigate, location]);
 
     // Breadcrumb navigation handlers
     const handleBreadcrumbNavigate = useCallback((nodeId: string | null) => {
-        const params = new URLSearchParams(window.location.search);
-        
+        const params = new URLSearchParams(location.search);
+        console.log('handleBreadcrumbNavigate - nodeId:', nodeId);
+        console.log('handleBreadcrumbNavigate - current search params:', params.toString());
         if (nodeId) {
             // Navigate to specific node - only update node-related params
             params.set('selectedNodeId', nodeId);
@@ -362,17 +375,19 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             params.delete('selectedNodeId');
         }
         
-        // Preserve existing book, version, and layout params
-        const newSearch = params.toString();
-        const currentPath = window.location.pathname;
-        window.history.pushState({}, '', newSearch ? `${currentPath}?${newSearch}` : currentPath);
+        // Use navigate to preserve existing book, version, and layout params
+        navigate({
+            pathname: location.pathname,
+            search: params.toString(),
+            hash: location.hash
+        }, { replace: true });
         
         // Update the layout config
         setLayoutConfig(prev => ({
             ...prev,
             selectedNode: nodeId
         }));
-    }, []);
+    }, [navigate, location]);
 
     const handleGoBack = useCallback(() => {
         // For now, go back to overview. Could be enhanced to go to parent node
@@ -942,8 +957,16 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             
             {/* Content */}
             <div className="flex-1 min-h-0">
-                {/* Only show narrative layout for now, other layouts will be implemented later */}
-                {currentLayout === 'narrative' && viewMode === 'board' ? (
+                {/* Character Screen Time Layout */}
+                {currentLayout === 'character-screentime' ? (
+                    <CharacterScreenTimeLayout 
+                        narrativeNodes={narrativeNodes}
+                        narrativeEdges={narrativeEdges}
+                        onNodeSelect={handleNodeSelect}
+                        onCharacterClick={handleCharacterClick}
+                    />
+                ) : /* Narrative layout */
+                currentLayout === 'narrative' && viewMode === 'board' ? (
                     <ReactFlowProvider>
                         <div className="w-full h-full">
                             {renderBoardView()}
