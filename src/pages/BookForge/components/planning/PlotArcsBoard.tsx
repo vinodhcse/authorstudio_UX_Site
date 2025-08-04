@@ -230,12 +230,14 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         const selectedNodeDescendants = layoutConfig.selectedNode ? 
             getNodeDescendants(layoutConfig.selectedNode, layoutNodes) : [];
             
-        const reactFlowEdges: Edge[] = generateEdges(
+        const { edges: narrativeEdges, hubNodes } = generateEdges(
             layoutNodes, 
             layoutConfig.selectedNode || undefined,
             selectedNodeAncestors,
             selectedNodeDescendants
-        ).map(narrativeEdge => ({
+        );
+        
+        const reactFlowEdges: Edge[] = narrativeEdges.map(narrativeEdge => ({
             id: narrativeEdge.id,
             source: narrativeEdge.source,
             target: narrativeEdge.target,
@@ -243,6 +245,18 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             style: narrativeEdge.style,
             animated: narrativeEdge.animated
         }));
+
+        // Include hub nodes with regular nodes for ReactFlow
+        const allReactFlowNodes: Node[] = [
+            ...reactFlowNodes,
+            ...hubNodes.map(hubNode => ({
+                id: hubNode.id,
+                type: 'default',
+                position: hubNode.position,
+                data: hubNode.data,
+                style: hubNode.style
+            }))
+        ];
 
         console.log('Generated edges:', reactFlowEdges.length, reactFlowEdges);
         console.log('Layout nodes with relationships:', layoutNodes.map(n => ({
@@ -252,7 +266,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             linkedNodeIds: n.data.linkedNodeIds
         })));
 
-        setNodes(reactFlowNodes);
+        setNodes(allReactFlowNodes);
         setEdges(reactFlowEdges);
     }, [narrativeNodes, narrativeEdges, layoutConfig, searchQuery, statusFilter, setNodes, setEdges]);
 

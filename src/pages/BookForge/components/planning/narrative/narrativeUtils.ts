@@ -179,7 +179,7 @@ export const generateEdges = (
   selectedNodeId?: string,
   selectedNodeAncestors: string[] = [],
   selectedNodeDescendants: string[] = []
-): NarrativeEdge[] => {
+): { edges: NarrativeEdge[], hubNodes: NarrativeFlowNode[] } => {
   const edges: NarrativeEdge[] = [];
   const nodeMap = new Map(nodes.map(node => [node.id, node]));
 
@@ -195,31 +195,21 @@ export const generateEdges = (
     return isAncestorPath || isDescendantPath;
   };
 
-  // Track nodes with multiple incoming connections for bundling
-  const incomingConnections = new Map<string, string[]>();
+  // Track ONLY linked incoming connections for hub creation
+  const incomingLinkedConnections = new Map<string, string[]>();
   
-  // Collect all incoming connections
+  // Collect only linked connections (not parent-child)
   nodes.forEach(node => {
-    // Parent-child connections
-    node.data.childIds.forEach(childId => {
-      if (!incomingConnections.has(childId)) {
-        incomingConnections.set(childId, []);
-      }
-      incomingConnections.get(childId)!.push(node.id);
-    });
-
-    // Linked connections  
     node.data.linkedNodeIds.forEach(linkedId => {
-      if (!incomingConnections.has(linkedId)) {
-        incomingConnections.set(linkedId, []);
+      if (!incomingLinkedConnections.has(linkedId)) {
+        incomingLinkedConnections.set(linkedId, []);
       }
-      incomingConnections.get(linkedId)!.push(node.id);
+      incomingLinkedConnections.get(linkedId)!.push(node.id);
     });
   });
 
   // Helper function to get edge styling
   const getEdgeStyle = (
-    sourceNode: NarrativeFlowNode,
     targetNode: NarrativeFlowNode,
     isHighlighted: boolean,
     relationship: 'child' | 'linked' = 'child'
@@ -275,29 +265,54 @@ export const generateEdges = (
     };
   };
 
+  // Create hub nodes for targets with multiple linked connections (>1 source)
+  const hubNodes = new Map<string, NarrativeFlowNode>();
+  const nodesWithHubs = [...nodes];
+  
+  incomingLinkedConnections.forEach((sourceIds, targetId) => {
+    if (sourceIds.length > 1) {
+      console.log(`Target ${targetId} has ${sourceIds.length} linked sources:`, sourceIds);
+      
+      const targetNode = nodeMap.get(targetId);
+      if (!targetNode) return;
+      
+      // Create hub node positioned between sources and target
+      const sourceNodes = sourceIds.map(id => nodeMap.get(id)).filter(Boolean) as NarrativeFlowNode[];
+      const avgSourceX = sourceNodes.reduce((sum, node) => sum + node.position.x, 0) / sourceNodes.length;
+      const avgSourceY = sourceNodes.reduce((sum, node) => sum + node.position.y, 0) / sourceNodes.length;
+      
+      const hubId = `hub-${targetId}`;
+      const hubNode: NarrativeFlowNode = {
+        id: hubId,
+        type: 'default', // Use default type to avoid NarrativeNodes component
+        position: {
+          x: avgSourceX + (targetNode.position.x - avgSourceX) * 0.7,
+          y: avgSourceY + (targetNode.position.y - avgSourceY) * 0.7
+        },
+        data: {
+          isHub: true
+        } as any,
+        style: {
+          opacity: 0,
+          pointerEvents: 'none',
+          width: 1,
+          height: 1
+        }
+      };
+      
+      hubNodes.set(hubId, hubNode);
+      nodesWithHubs.push(hubNode);
+    }
+  });
+
   // Generate edges with smart bundling
   nodes.forEach(node => {
-    // Parent-child edges
+    // Parent-child edges (no bundling for these)
     node.data.childIds.forEach(childId => {
       const targetNode = nodeMap.get(childId);
       if (!targetNode) return;
 
-      const sources = incomingConnections.get(childId) || [];
-      const shouldBundle = sources.length > 2; // Bundle if more than 2 sources
-
-      let edgeStyle = getEdgeStyle(node, targetNode, isEdgeHighlighted(node.id, childId));
-      
-      // Apply bundling logic
-      if (shouldBundle) {
-        const sourceIndex = sources.indexOf(node.id);
-        edgeStyle = {
-          ...edgeStyle,
-          style: {
-            ...edgeStyle.style,
-            strokeDasharray: sourceIndex % 2 === 0 ? '6,3' : '3,6', // Alternate dash patterns
-          }
-        };
-      }
+      const edgeStyle = getEdgeStyle(targetNode, isEdgeHighlighted(node.id, childId));
 
       edges.push({
         id: `${node.id}-${childId}`,
@@ -309,51 +324,81 @@ export const generateEdges = (
         ...edgeStyle,
         data: {
           relationship: 'child',
-          bundled: shouldBundle,
-          bundleGroup: shouldBundle ? `bundle-${childId}` : undefined
+          bundled: false
         }
       });
     });
 
-    // Linked edges
+    // Linked edges with hub bundling
     node.data.linkedNodeIds.forEach(linkedId => {
       const targetNode = nodeMap.get(linkedId);
       if (!targetNode) return;
 
-      const sources = incomingConnections.get(linkedId) || [];
-      const shouldBundle = sources.length > 2;
+      const linkedSources = incomingLinkedConnections.get(linkedId) || [];
+      const shouldBundle = linkedSources.length > 1;
+      const hubId = `hub-${linkedId}`;
 
-      let edgeStyle = getEdgeStyle(node, targetNode, isEdgeHighlighted(node.id, linkedId), 'linked');
-      
-      if (shouldBundle) {
-        const sourceIndex = sources.indexOf(node.id);
-        edgeStyle = {
-          ...edgeStyle,
-          style: {
-            ...edgeStyle.style,
-            strokeDasharray: `${4 + sourceIndex},${ 2 + sourceIndex}`, // Varied dash patterns
+      if (shouldBundle && hubNodes.has(hubId)) {
+        // Create edge from source to hub
+        const edgeToHub: NarrativeEdge = {
+          id: `${node.id}-to-hub-${linkedId}`,
+          source: node.id,
+          target: hubId,
+          type: 'smoothstep',
+          sourceHandle: 'right',
+          targetHandle: 'left',
+          ...getEdgeStyle(targetNode, isEdgeHighlighted(node.id, linkedId), 'linked'),
+          data: {
+            relationship: 'linked' as const,
+            bundled: true,
+            bundleGroup: `bundle-${linkedId}`
           }
         };
-      }
-
-      edges.push({
-        id: `${node.id}-link-${linkedId}`,
-        source: node.id,
-        target: linkedId,
-        type: 'smoothstep',
-        sourceHandle: 'right',
-        targetHandle: 'left',
-        ...edgeStyle,
-        data: {
-          relationship: 'linked',
-          bundled: shouldBundle,
-          bundleGroup: shouldBundle ? `bundle-${linkedId}` : undefined
+        
+        edges.push(edgeToHub);
+        
+        // Create edge from hub to target (only once)
+        const hubToTargetId = `hub-${linkedId}-to-${linkedId}`;
+        if (!edges.find(e => e.id === hubToTargetId)) {
+          const edgeFromHub: NarrativeEdge = {
+            id: hubToTargetId,
+            source: hubId,
+            target: linkedId,
+            type: 'smoothstep',
+            sourceHandle: 'right',
+            targetHandle: 'left',
+            ...getEdgeStyle(targetNode, isEdgeHighlighted(hubId, linkedId), 'linked'),
+            data: {
+              relationship: 'linked' as const,
+              bundled: true,
+              bundleGroup: `bundle-${linkedId}`
+            }
+          };
+          
+          edges.push(edgeFromHub);
         }
-      });
+      } else {
+        // Direct edge without bundling
+        const edgeStyle = getEdgeStyle(targetNode, isEdgeHighlighted(node.id, linkedId), 'linked');
+
+        edges.push({
+          id: `${node.id}-link-${linkedId}`,
+          source: node.id,
+          target: linkedId,
+          type: 'smoothstep',
+          sourceHandle: 'right',
+          targetHandle: 'left',
+          ...edgeStyle,
+          data: {
+            relationship: 'linked',
+            bundled: false
+          }
+        });
+      }
     });
   });
 
-  return edges;
+  return { edges, hubNodes: Array.from(hubNodes.values()) };
 };
 
 // Get all ancestors of a node (walking up the parent chain)
@@ -1224,7 +1269,7 @@ export const generateSampleNarrativeData = (): { nodes: NarrativeFlowNode[], edg
     }
   ];
 
-  const edges = generateEdges(sampleNodes);
+  const { edges } = generateEdges(sampleNodes);
   
   return { nodes: sampleNodes, edges };
 };

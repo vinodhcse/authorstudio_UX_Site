@@ -408,14 +408,14 @@ const TimelineEventSelector: React.FC<TimelineEventSelectorProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowCreateForm(true)}
-                    className="w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-600 text-sm text-blue-600 dark:text-blue-400 font-medium"
+                    className="w-full px-4 py-3 text-left hover:bg-orange-50 dark:hover:bg-orange-900/30 text-sm text-orange-600 dark:text-orange-400 font-medium border-t border-orange-200 dark:border-orange-700/50 transition-colors"
                   >
                     + Create new timeline event
                   </button>
                 ) : (
-                  <div className="p-3 space-y-3">
+                  <div className="p-4 space-y-4 bg-gradient-to-br from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 rounded-lg border border-orange-200 dark:border-orange-700/50">
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label className="block text-xs font-medium text-orange-800 dark:text-orange-200 mb-1">
                         Event Name *
                       </label>
                       <input
@@ -423,18 +423,18 @@ const TimelineEventSelector: React.FC<TimelineEventSelectorProps> = ({
                         placeholder="Enter event name..."
                         value={newEvent.name}
                         onChange={(e) => setNewEvent(prev => ({ ...prev, name: e.target.value }))}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        className="w-full px-3 py-2 text-sm border border-orange-300 dark:border-orange-600 rounded-md bg-white/90 dark:bg-orange-900/30 text-orange-900 dark:text-orange-100 placeholder-orange-600 dark:placeholder-orange-400 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                         autoFocus
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label className="block text-xs font-medium text-orange-800 dark:text-orange-200 mb-1">
                         Event Tag
                       </label>
                       <select
                         value={newEvent.tag}
                         onChange={(e) => setNewEvent(prev => ({ ...prev, tag: e.target.value }))}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        className="w-full px-3 py-2 text-sm border border-orange-300 dark:border-orange-600 rounded-md bg-white/90 dark:bg-orange-900/30 text-orange-900 dark:text-orange-100 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                       >
                         <option value="Past">Past</option>
                         <option value="Present">Present</option>
@@ -444,7 +444,7 @@ const TimelineEventSelector: React.FC<TimelineEventSelectorProps> = ({
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <label className="block text-xs font-medium text-orange-800 dark:text-orange-200 mb-1">
                         Event Note
                       </label>
                       <input
@@ -452,17 +452,17 @@ const TimelineEventSelector: React.FC<TimelineEventSelectorProps> = ({
                         placeholder="Optional note about this event..."
                         value={newEvent.note}
                         onChange={(e) => setNewEvent(prev => ({ ...prev, note: e.target.value }))}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        className="w-full px-3 py-2 text-sm border border-orange-300 dark:border-orange-600 rounded-md bg-white/90 dark:bg-orange-900/30 text-orange-900 dark:text-orange-100 placeholder-orange-600 dark:placeholder-orange-400 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                       />
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 pt-2">
                       <button
                         type="button"
                         onClick={handleCreateEvent}
                         disabled={!newEvent.name.trim()}
-                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 text-sm bg-orange-600 hover:bg-orange-700 text-white rounded-md font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
-                        Create
+                        Create Event
                       </button>
                       <button
                         type="button"
@@ -470,7 +470,7 @@ const TimelineEventSelector: React.FC<TimelineEventSelectorProps> = ({
                           setShowCreateForm(false);
                           setNewEvent({ name: '', tag: 'Present', note: '' });
                         }}
-                        className="px-3 py-1 text-sm bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-400 dark:hover:bg-gray-500"
+                        className="px-4 py-2 text-sm bg-white/80 dark:bg-orange-800/50 text-orange-800 dark:text-orange-200 border border-orange-300 dark:border-orange-600 rounded-md hover:bg-orange-100 dark:hover:bg-orange-800/70 transition-colors"
                       >
                         Cancel
                       </button>
