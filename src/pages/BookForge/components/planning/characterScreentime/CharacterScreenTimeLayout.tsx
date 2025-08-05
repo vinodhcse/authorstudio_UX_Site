@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     ChevronDownIcon, 
     ChevronRightIcon, 
-    FunnelIcon
+    FunnelIcon,
+    ChevronLeftIcon
 } from '@heroicons/react/24/outline';
 import ChargingBarIndicator from './ChargingBarIndicator';
 import { 
@@ -197,6 +198,12 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
     });
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedNode, setSelectedNode] = useState<NarrativeNode | null>(null);
+    
+    // Carousel state and refs for scroll synchronization
+    const [currentScrollPosition, setCurrentScrollPosition] = useState(0);
+    const headerScrollRef = useRef<HTMLDivElement>(null);
+    const contentScrollRef = useRef<HTMLDivElement>(null);
+    const characterColumnWidth = 128; // 32 * 4 (w-32 in Tailwind)
 
     // Extract available characters from the narrative data
     const availableCharacters = useMemo(() => {
@@ -239,6 +246,79 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
             [groupType]: !prev[groupType]
         }));
     }, []);
+
+    // Carousel navigation functions
+    const scrollToPosition = useCallback((position: number) => {
+        if (headerScrollRef.current && contentScrollRef.current) {
+            headerScrollRef.current.scrollLeft = position;
+            contentScrollRef.current.scrollLeft = position;
+            setCurrentScrollPosition(position);
+        }
+    }, []);
+
+    const scrollLeft = useCallback(() => {
+        const newPosition = Math.max(0, currentScrollPosition - characterColumnWidth * 3);
+        scrollToPosition(newPosition);
+    }, [currentScrollPosition, characterColumnWidth, scrollToPosition]);
+
+    const scrollRight = useCallback(() => {
+        // Use a simple calculation based on visible characters only
+        const totalVisibleWidth = visibleCharacters.length * characterColumnWidth;
+        const containerWidth = headerScrollRef.current?.clientWidth || 0;
+        const maxScroll = Math.max(0, totalVisibleWidth - containerWidth);
+        const newPosition = Math.min(maxScroll, currentScrollPosition + characterColumnWidth * 3);
+        scrollToPosition(newPosition);
+    }, [currentScrollPosition, visibleCharacters.length, characterColumnWidth, scrollToPosition]);
+
+    // Synchronize scroll between header and content
+    const handleHeaderScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+        const scrollLeft = e.currentTarget.scrollLeft;
+        if (contentScrollRef.current) {
+            contentScrollRef.current.scrollLeft = scrollLeft;
+        }
+        setCurrentScrollPosition(scrollLeft);
+    }, []);
+
+    const handleContentScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+        const scrollLeft = e.currentTarget.scrollLeft;
+        if (headerScrollRef.current) {
+            headerScrollRef.current.scrollLeft = scrollLeft;
+        }
+        setCurrentScrollPosition(scrollLeft);
+    }, []);
+
+    // Recursive function to render character columns for hierarchy
+    const renderCharacterColumns = useCallback((nodes: NarrativeFlowNode[], character: Character, level: number = 0): React.ReactElement[] => {
+        return nodes.map(node => {
+            const nodeData = node.data;
+            const hasChildren = nodeData.childIds && nodeData.childIds.length > 0;
+            const isExpanded = expandedNodes.has(node.id);
+            const childNodes = hasChildren ? narrativeNodes.filter(n => 
+                nodeData.childIds.includes(n.id) && 
+                ['act', 'chapter', 'scene'].includes(n.data.type)
+            ) : [];
+
+            return (
+                <React.Fragment key={node.id}>
+                    <div className="border-b border-gray-200 dark:border-gray-700 h-20 p-1">
+                        <ChargingBarIndicator
+                            percentage={analyzeCharacterPresence(nodeData, character.id, narrativeNodes).percentage}
+                            characterColor={character.color}
+                            characterName={character.name}
+                            plotNode={(nodeData.data as any)?.title || nodeData.type}
+                            tier={analyzeCharacterPresence(nodeData, character.id, narrativeNodes).tier}
+                        />
+                    </div>
+                    
+                    {isExpanded && childNodes.length > 0 && (
+                        <AnimatePresence>
+                            {renderCharacterColumns(childNodes, character, level + 1)}
+                        </AnimatePresence>
+                    )}
+                </React.Fragment>
+            );
+        });
+    }, [narrativeNodes, expandedNodes]);
 
     // Recursive function to render hierarchy
     const renderNodeRows = useCallback((nodes: NarrativeFlowNode[], level: number = 0): React.ReactElement[] => {
@@ -403,7 +483,7 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                             Character Screen Time Matrix
                         </h2>
                         <span className="text-sm text-gray-500 dark:text-gray-400">
-                            {narrativeNodes.length} nodes • {availableCharacters.length} characters
+                            {narrativeNodes.length} nodes • {availableCharacters.length} characters • {visibleCharacters.length} visible • Scroll: {currentScrollPosition}px
                         </span>
                     </div>
                     
@@ -511,116 +591,111 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                 </div>
             </div>
 
-            {/* Character Groups Headers */}
-            <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                <div className="flex">
-                    {/* Fixed first column header */}
-                    <div className="w-80 min-w-80 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4">
-                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                            Narrative Structure
-                        </span>
-                    </div>
-                    
-                    {/* Character group headers */}
-                    <div className="flex-1 overflow-x-auto">
-                        <div className="flex">
-                            {Object.entries(groupedCharacters).map(([groupType, characters]) => {
-                                const groupCharacters = characters.filter(char => {
-                                    if (searchTerm) {
-                                        return char.name.toLowerCase().includes(searchTerm.toLowerCase());
-                                    }
-                                    return true;
-                                });
-                                
-                                if (groupCharacters.length === 0) return null;
-                                
-                                return (
-                                    <React.Fragment key={groupType}>
-                                        {/* Group header button */}
-                                        <button
-                                            onClick={() => toggleCharacterGroup(groupType)}
-                                            className="h-12 px-4 border-r border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 capitalize"
-                                            style={{ width: `${groupCharacters.length * 128}px` }}
-                                        >
-                                            <motion.div
-                                                animate={{ rotate: characterGroups[groupType] ? 90 : 0 }}
-                                                transition={{ duration: 0.2 }}
+            {/* Header row with fixed first column and scrollable character headers */}
+            <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex relative">
+                {/* Fixed first column header */}
+                <div className="w-80 min-w-80 bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 flex-shrink-0">
+                    <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                        Narrative Structure
+                    </span>
+                </div>
+                
+                {/* Character headers container */}
+                <div className="flex-1">
+                    {/* Scrollable character headers */}
+                    <div 
+                        ref={headerScrollRef}
+                        className="overflow-x-auto no-scrollbar"
+                        onScroll={handleHeaderScroll}
+                    >
+                        <div className="flex-shrink-0">
+                            {/* Individual character headers only - simplified structure */}
+                            <div className="flex">
+                                {visibleCharacters.map((character) => (
+                                    <AnimatePresence key={character.id}>
+                                        {characterGroups[character.type] && (
+                                            <motion.div 
+                                                className="w-32 min-w-32 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 text-center relative"
+                                                initial={{ opacity: 0, width: 0 }}
+                                                animate={{ opacity: 1, width: 128 }}
+                                                exit={{ opacity: 0, width: 0 }}
                                             >
-                                                <ChevronRightIcon className="w-4 h-4" />
+                                                {/* Group indicator stripe */}
+                                                <div 
+                                                    className={`absolute top-0 left-0 right-0 h-1 ${
+                                                        character.type === 'primary' ? 'bg-blue-500' : 
+                                                        character.type === 'secondary' ? 'bg-green-500' : 'bg-yellow-500'
+                                                    }`}
+                                                />
+                                                <div 
+                                                    className="w-3 h-3 rounded-full mx-auto mb-1"
+                                                    style={{ backgroundColor: character.color }}
+                                                />
+                                                <div className="text-xs font-medium text-gray-900 dark:text-white truncate">
+                                                    {character.name}
+                                                </div>
+                                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                                    {character.type}
+                                                </div>
                                             </motion.div>
-                                            {groupType} Characters ({groupCharacters.length})
-                                        </button>
-                                    </React.Fragment>
-                                );
-                            })}
-                        </div>
-                        
-                        {/* Individual character headers */}
-                        <div className="flex">
-                            {visibleCharacters.map((character) => (
-                                <AnimatePresence key={character.id}>
-                                    {characterGroups[character.type] && (
-                                        <motion.div 
-                                            className="w-32 min-w-32 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 text-center"
-                                            initial={{ opacity: 0, width: 0 }}
-                                            animate={{ opacity: 1, width: 128 }}
-                                            exit={{ opacity: 0, width: 0 }}
-                                        >
-                                            <div 
-                                                className="w-3 h-3 rounded-full mx-auto mb-1"
-                                                style={{ backgroundColor: character.color }}
-                                            />
-                                            <div className="text-xs font-medium text-gray-900 dark:text-white truncate">
-                                                {character.name}
-                                            </div>
-                                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                {character.type}
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            ))}
+                                        )}
+                                    </AnimatePresence>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>
+                
+                {/* Overlay carousel buttons - positioned over the entire header row */}
+                <button
+                    onClick={scrollLeft}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 z-30 w-8 h-8 bg-blue-500 hover:bg-blue-600 rounded-full shadow-lg flex items-center justify-center text-white transition-all opacity-80 hover:opacity-100"
+                    title="Scroll Left"
+                >
+                    <ChevronLeftIcon className="w-4 h-4" />
+                </button>
+                
+                <button
+                    onClick={scrollRight}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 z-30 w-8 h-8 bg-blue-500 hover:bg-blue-600 rounded-full shadow-lg flex items-center justify-center text-white transition-all opacity-80 hover:opacity-100"
+                    title="Scroll Right"
+                >
+                    <ChevronRightIcon className="w-4 h-4" />
+                </button>
             </div>
 
-            {/* Matrix Content with vertical scroll */}
-            <div className="flex-1 overflow-y-auto max-h-[600px]">
-                <div className="h-full">
+            {/* Matrix content with fixed first column and scrollable character columns */}
+            <div className="flex flex-1 overflow-y-auto max-h-[600px]">
+                {/* Fixed first column - narrative structure */}
+                <div className="w-80 min-w-80 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex-shrink-0">
                     {rootNodes.map((node) => {
-                        const nodeData = node.data;
-                        const hasChildren = nodeData.childIds && nodeData.childIds.length > 0;
-                        const isExpanded = expandedNodes.has(node.id);
-                        const childNodes = hasChildren ? narrativeNodes.filter(n => 
-                            nodeData.childIds.includes(n.id) && 
-                            ['act', 'chapter', 'scene'].includes(n.data.type)
-                        ) : [];
+                            const nodeData = node.data;
+                            const hasChildren = nodeData.childIds && nodeData.childIds.length > 0;
+                            const isExpanded = expandedNodes.has(node.id);
+                            const childNodes = hasChildren ? narrativeNodes.filter(n => 
+                                nodeData.childIds.includes(n.id) && 
+                                ['act', 'chapter', 'scene'].includes(n.data.type)
+                            ) : [];
 
-                        const handleNodeClick = () => {
-                            if (hasChildren) {
-                                setExpandedNodes(prev => {
-                                    const newSet = new Set(prev);
-                                    if (isExpanded) {
-                                        newSet.delete(node.id);
-                                    } else {
-                                        newSet.add(node.id);
-                                    }
-                                    return newSet;
-                                });
-                            }
-                            onNodeSelect?.(node.id);
-                        };
+                            const handleNodeClick = () => {
+                                if (hasChildren) {
+                                    setExpandedNodes(prev => {
+                                        const newSet = new Set(prev);
+                                        if (isExpanded) {
+                                            newSet.delete(node.id);
+                                        } else {
+                                            newSet.add(node.id);
+                                        }
+                                        return newSet;
+                                    });
+                                }
+                                onNodeSelect?.(node.id);
+                            };
 
-                        return (
-                            <React.Fragment key={node.id}>
-                                <div className="flex border-b border-gray-200 dark:border-gray-700">
-                                    {/* First column - narrative structure */}
-                                    <div 
-                                        className="w-80 min-w-80 border-r border-gray-200 dark:border-gray-700 p-4 cursor-pointer bg-white dark:bg-gray-900"
-                                        onClick={handleNodeClick}
-                                    >
-                                        <div className="flex items-center gap-2">
+                            return (
+                                <React.Fragment key={node.id}>
+                                    <div className="border-b border-gray-200 dark:border-gray-700 p-4 cursor-pointer h-20 flex items-center" onClick={handleNodeClick}>
+                                        <div className="flex items-center gap-2 w-full">
                                             {hasChildren && (
                                                 <motion.div
                                                     animate={{ rotate: isExpanded ? 90 : 0 }}
@@ -641,70 +716,42 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                                         </div>
                                     </div>
                                     
-                                    {/* Character columns */}
-                                    <div className="flex-1 overflow-x-auto">
-                                        <div className="flex">
-                                            {visibleCharacters.map(character => {
-                                                const presence = analyzeCharacterPresence(nodeData, character.id, narrativeNodes);
-                                                
+                                    {isExpanded && childNodes.length > 0 && (
+                                        <AnimatePresence>
+                                            {childNodes.map(childNode => {
+                                                const childNodeData = childNode.data;
+                                                const childHasChildren = childNodeData.childIds && childNodeData.childIds.length > 0;
+                                                const childIsExpanded = expandedNodes.has(childNode.id);
+                                                const grandChildNodes = childHasChildren ? narrativeNodes.filter(n => 
+                                                    childNodeData.childIds.includes(n.id) && 
+                                                    ['scene'].includes(n.data.type)
+                                                ) : [];
+
+                                                const handleChildClick = () => {
+                                                    if (childHasChildren) {
+                                                        setExpandedNodes(prev => {
+                                                            const newSet = new Set(prev);
+                                                            if (childIsExpanded) {
+                                                                newSet.delete(childNode.id);
+                                                            } else {
+                                                                newSet.add(childNode.id);
+                                                            }
+                                                            return newSet;
+                                                        });
+                                                    }
+                                                    onNodeSelect?.(childNode.id);
+                                                };
+
                                                 return (
-                                                    <div 
-                                                        key={`${node.id}-${character.id}`} 
-                                                        className="w-32 min-w-32 h-20 border-r border-gray-200 dark:border-gray-700 p-1"
-                                                    >
-                                                        <ChargingBarIndicator
-                                                            percentage={presence.percentage}
-                                                            characterColor={character.color}
-                                                            characterName={character.name}
-                                                            plotNode={(nodeData.data as any)?.title || nodeData.type}
-                                                            tier={presence.tier}
-                                                        />
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                {isExpanded && childNodes.length > 0 && (
-                                    <AnimatePresence>
-                                        {childNodes.map(childNode => {
-                                            const childNodeData = childNode.data;
-                                            const childHasChildren = childNodeData.childIds && childNodeData.childIds.length > 0;
-                                            const childIsExpanded = expandedNodes.has(childNode.id);
-                                            const grandChildNodes = childHasChildren ? narrativeNodes.filter(n => 
-                                                childNodeData.childIds.includes(n.id) && 
-                                                ['scene'].includes(n.data.type)
-                                            ) : [];
-
-                                            const handleChildClick = () => {
-                                                if (childHasChildren) {
-                                                    setExpandedNodes(prev => {
-                                                        const newSet = new Set(prev);
-                                                        if (childIsExpanded) {
-                                                            newSet.delete(childNode.id);
-                                                        } else {
-                                                            newSet.add(childNode.id);
-                                                        }
-                                                        return newSet;
-                                                    });
-                                                }
-                                                onNodeSelect?.(childNode.id);
-                                            };
-
-                                            return (
-                                                <React.Fragment key={childNode.id}>
-                                                    <motion.div 
-                                                        initial={{ opacity: 0, height: 0 }}
-                                                        animate={{ opacity: 1, height: 'auto' }}
-                                                        exit={{ opacity: 0, height: 0 }}
-                                                        className="flex border-b border-gray-200 dark:border-gray-700"
-                                                    >
-                                                        <div 
-                                                            className="w-80 min-w-80 border-r border-gray-200 dark:border-gray-700 p-4 pl-8 bg-gray-50 dark:bg-gray-800 cursor-pointer"
+                                                    <React.Fragment key={childNode.id}>
+                                                        <motion.div 
+                                                            initial={{ opacity: 0, height: 0 }}
+                                                            animate={{ opacity: 1, height: 'auto' }}
+                                                            exit={{ opacity: 0, height: 0 }}
+                                                            className="border-b border-gray-200 dark:border-gray-700 p-4 pl-8 bg-gray-50 dark:bg-gray-800 cursor-pointer h-20 flex items-center"
                                                             onClick={handleChildClick}
                                                         >
-                                                            <div className="flex items-center gap-2">
+                                                            <div className="flex items-center gap-2 w-full">
                                                                 {childHasChildren && (
                                                                     <motion.div
                                                                         animate={{ rotate: childIsExpanded ? 90 : 0 }}
@@ -723,47 +770,23 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                        <div className="flex-1 overflow-x-auto">
-                                                            <div className="flex">
-                                                                {visibleCharacters.map(character => {
-                                                                    const presence = analyzeCharacterPresence(childNodeData, character.id, narrativeNodes);
+                                                        </motion.div>
+
+                                                        {/* Scenes level (grandchildren) */}
+                                                        {childIsExpanded && grandChildNodes.length > 0 && (
+                                                            <AnimatePresence>
+                                                                {grandChildNodes.map(sceneNode => {
+                                                                    const sceneNodeData = sceneNode.data;
                                                                     
                                                                     return (
-                                                                        <div 
-                                                                            key={`${childNode.id}-${character.id}`} 
-                                                                            className="w-32 min-w-32 h-20 border-r border-gray-200 dark:border-gray-700 p-1"
+                                                                        <motion.div 
+                                                                            key={sceneNode.id}
+                                                                            initial={{ opacity: 0, height: 0 }}
+                                                                            animate={{ opacity: 1, height: 'auto' }}
+                                                                            exit={{ opacity: 0, height: 0 }}
+                                                                            className="border-b border-gray-200 dark:border-gray-700 p-4 pl-12 bg-gray-100 dark:bg-gray-750 h-20 flex items-center"
                                                                         >
-                                                                            <ChargingBarIndicator
-                                                                                percentage={presence.percentage}
-                                                                                characterColor={character.color}
-                                                                                characterName={character.name}
-                                                                                plotNode={(childNodeData.data as any)?.title || childNodeData.type}
-                                                                                tier={presence.tier}
-                                                                            />
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        </div>
-                                                    </motion.div>
-
-                                                    {/* Scenes level (grandchildren) */}
-                                                    {childIsExpanded && grandChildNodes.length > 0 && (
-                                                        <AnimatePresence>
-                                                            {grandChildNodes.map(sceneNode => {
-                                                                const sceneNodeData = sceneNode.data;
-                                                                
-                                                                return (
-                                                                    <motion.div 
-                                                                        key={sceneNode.id}
-                                                                        initial={{ opacity: 0, height: 0 }}
-                                                                        animate={{ opacity: 1, height: 'auto' }}
-                                                                        exit={{ opacity: 0, height: 0 }}
-                                                                        className="flex border-b border-gray-200 dark:border-gray-700"
-                                                                    >
-                                                                        <div className="w-80 min-w-80 border-r border-gray-200 dark:border-gray-700 p-4 pl-12 bg-gray-100 dark:bg-gray-750">
-                                                                            <div className="flex items-center gap-2">
+                                                                            <div className="flex items-center gap-2 w-full">
                                                                                 <div className="w-4" />
                                                                                 <div className="flex-1">
                                                                                     <div className="font-medium text-gray-900 dark:text-white text-sm">
@@ -779,42 +802,46 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                                                                                     </div>
                                                                                 </div>
                                                                             </div>
-                                                                        </div>
-                                                                        <div className="flex-1 overflow-x-auto">
-                                                                            <div className="flex">
-                                                                                {visibleCharacters.map(character => {
-                                                                                    const presence = analyzeCharacterPresence(sceneNodeData, character.id, narrativeNodes);
-                                                                                    
-                                                                                    return (
-                                                                                        <div 
-                                                                                            key={`${sceneNode.id}-${character.id}`} 
-                                                                                            className="w-32 min-w-32 h-20 border-r border-gray-200 dark:border-gray-700 p-1"
-                                                                                        >
-                                                                                            <ChargingBarIndicator
-                                                                                                percentage={presence.percentage}
-                                                                                                characterColor={character.color}
-                                                                                                characterName={character.name}
-                                                                                                plotNode={(sceneNodeData.data as any)?.title || sceneNodeData.type}
-                                                                                                tier={presence.tier}
-                                                                                            />
-                                                                                        </div>
-                                                                                    );
-                                                                                })}
-                                                                            </div>
-                                                                        </div>
-                                                                    </motion.div>
-                                                                );
-                                                            })}
-                                                        </AnimatePresence>
-                                                    )}
-                                                </React.Fragment>
-                                            );
-                                        })}
-                                    </AnimatePresence>
-                                )}
-                            </React.Fragment>
-                        );
-                    })}
+                                                                        </motion.div>
+                                                                    );
+                                                                })}
+                                                            </AnimatePresence>
+                                                        )}
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </AnimatePresence>
+                                    )}
+                                </React.Fragment>
+                            );
+                        })}
+                </div>
+
+                {/* Character columns - synchronized with headers above */}
+                <div 
+                    ref={contentScrollRef}
+                    className="flex-1 overflow-x-auto no-scrollbar"
+                    onScroll={handleContentScroll}
+                >
+                    <div className="flex-shrink-0">
+                        {/* Individual character columns only - matching simplified header structure */}
+                        <div className="flex">
+                            {visibleCharacters.map(character => (
+                                <AnimatePresence key={character.id}>
+                                    {characterGroups[character.type] && (
+                                        <motion.div 
+                                            className="w-32 min-w-32 border-r border-gray-200 dark:border-gray-700"
+                                            initial={{ opacity: 0, width: 0 }}
+                                            animate={{ opacity: 1, width: 128 }}
+                                            exit={{ opacity: 0, width: 0 }}
+                                        >
+                                            {renderCharacterColumns(rootNodes, character)}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </div>
 
