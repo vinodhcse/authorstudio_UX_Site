@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     ChevronDownIcon, 
@@ -255,6 +255,13 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
             setCurrentScrollPosition(position);
         }
     }, []);
+
+    useEffect(() => {
+        if (headerScrollRef.current && contentScrollRef.current) {
+            headerScrollRef.current.scrollLeft = currentScrollPosition;
+            contentScrollRef.current.scrollLeft = currentScrollPosition;
+        }
+    },[currentScrollPosition])
 
     const scrollLeft = useCallback(() => {
         const newPosition = Math.max(0, currentScrollPosition - characterColumnWidth * 3);
@@ -601,12 +608,12 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                 </div>
                 
                 {/* Character headers container */}
-                <div className="flex-1">
+                <div ref={headerScrollRef}
+                        className="flex-1 overflow-x-auto no-scrollbar"
+                        onScroll={handleHeaderScroll}>
                     {/* Scrollable character headers */}
                     <div 
-                        ref={headerScrollRef}
-                        className="overflow-x-auto no-scrollbar"
-                        onScroll={handleHeaderScroll}
+                        
                     >
                         <div className="flex-shrink-0">
                             {/* Individual character headers only - simplified structure */}
