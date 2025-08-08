@@ -191,11 +191,9 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
 }) => {
     const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
     const [showCharacterFilter, setShowCharacterFilter] = useState(false);
-    const [characterGroups, setCharacterGroups] = useState<Record<string, boolean>>({
-        primary: true,
-        secondary: true,
-        tertiary: true
-    });
+    const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>(
+        demoCharacters.map(char => char.id) // Start with all characters selected
+    );
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedNode, setSelectedNode] = useState<NarrativeNode | null>(null);
     
@@ -210,58 +208,89 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
         return extractCharactersFromNodes(narrativeNodes);
     }, [narrativeNodes]);
 
-    // Group characters by type
-    const groupedCharacters = useMemo(() => {
-        const groups: Record<string, Character[]> = {
-            primary: availableCharacters.filter(c => c.type === 'primary'),
-            secondary: availableCharacters.filter(c => c.type === 'secondary'),
-            tertiary: availableCharacters.filter(c => c.type === 'tertiary')
-        };
-        return groups;
-    }, [availableCharacters]);
-
-    // Get visible characters based on expanded groups and search filter
+    // Get visible characters based on selected character IDs
     const visibleCharacters = useMemo(() => {
-        let characters: Character[] = [];
-        
-        Object.entries(groupedCharacters).forEach(([groupType, groupCharacters]) => {
-            if (characterGroups[groupType]) {
-                characters = [...characters, ...groupCharacters];
-            }
-        });
+        return availableCharacters.filter(char => 
+            selectedCharacterIds.includes(char.id)
+        );
+    }, [availableCharacters, selectedCharacterIds]);
 
-        if (searchTerm) {
-            characters = characters.filter(char => 
-                char.name.toLowerCase().includes(searchTerm.toLowerCase())
-            );
-        }
-
-        return characters;
-    }, [groupedCharacters, characterGroups, searchTerm]);
-
-    // Toggle character group expansion
-    const toggleCharacterGroup = useCallback((groupType: string) => {
-        setCharacterGroups(prev => ({
-            ...prev,
-            [groupType]: !prev[groupType]
-        }));
+    // Add handler for character selection
+    const handleCharacterToggle = useCallback((characterId: string) => {
+        setSelectedCharacterIds(prev => 
+            prev.includes(characterId)
+                ? prev.filter(id => id !== characterId)
+                : [...prev, characterId]
+        );
     }, []);
 
-    // Carousel navigation functions
-    const scrollToPosition = useCallback((position: number) => {
+    // Filter available characters for search dropdown
+    const filteredCharacters = useMemo(() => {
+        if (!searchTerm) return [];
+        return availableCharacters.filter(char => 
+            char.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+            !selectedCharacterIds.includes(char.id)
+        );
+    }, [availableCharacters, searchTerm, selectedCharacterIds]);
+
+    // Carousel navigation functions with smooth animation
+    const scrollToPosition = useCallback((targetPosition: number) => {
         if (headerScrollRef.current && contentScrollRef.current) {
-            headerScrollRef.current.scrollLeft = position;
-            contentScrollRef.current.scrollLeft = position;
-            setCurrentScrollPosition(position);
+            // Use smooth scrolling for animated transitions
+            headerScrollRef.current.scrollTo({
+                left: targetPosition,
+                behavior: 'smooth'
+            });
+            contentScrollRef.current.scrollTo({
+                left: targetPosition,
+                behavior: 'smooth'
+            });
+            console.log(`Scrolled to position: ${targetPosition}`); 
+            setCurrentScrollPosition(targetPosition);
         }
     }, []);
 
+    // Animate scroll position changes with smooth transitions
     useEffect(() => {
         if (headerScrollRef.current && contentScrollRef.current) {
-            headerScrollRef.current.scrollLeft = currentScrollPosition;
-            contentScrollRef.current.scrollLeft = currentScrollPosition;
+            const headerElement = headerScrollRef.current;
+            const contentElement = contentScrollRef.current;
+            const startPosition = headerElement.scrollLeft;
+            const targetPosition = currentScrollPosition;
+            const distance = targetPosition - startPosition;
+            
+            // If the distance is small or zero, skip animation
+            if (Math.abs(distance) < 5) {
+                headerElement.scrollLeft = targetPosition;
+                contentElement.scrollLeft = targetPosition;
+                return;
+            }
+            
+            // Create smooth animation using requestAnimationFrame with slower speed
+            const duration = 1200; // 1.2 seconds for very visible animation
+            const startTime = performance.now();
+            
+            const animateScroll = (currentTime: number) => {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // Easing function for smooth animation (ease-in-out for more visible motion)
+                const easeInOut = progress < 0.5 
+                    ? 4 * progress * progress * progress 
+                    : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+                const currentPosition = startPosition + (distance * easeInOut);
+                
+                headerElement.scrollLeft = currentPosition;
+                contentElement.scrollLeft = currentPosition;
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animateScroll);
+                }
+            };
+            
+            requestAnimationFrame(animateScroll);
         }
-    },[currentScrollPosition])
+    }, [currentScrollPosition])
 
     const scrollLeft = useCallback(() => {
         const newPosition = Math.max(0, currentScrollPosition - characterColumnWidth * 3);
@@ -277,10 +306,10 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
         scrollToPosition(newPosition);
     }, [currentScrollPosition, visibleCharacters.length, characterColumnWidth, scrollToPosition]);
 
-    // Synchronize scroll between header and content
+    // Synchronize scroll between header and content (for manual scrolling)
     const handleHeaderScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
         const scrollLeft = e.currentTarget.scrollLeft;
-        if (contentScrollRef.current) {
+        if (contentScrollRef.current && contentScrollRef.current.scrollLeft !== scrollLeft) {
             contentScrollRef.current.scrollLeft = scrollLeft;
         }
         setCurrentScrollPosition(scrollLeft);
@@ -288,7 +317,7 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
 
     const handleContentScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
         const scrollLeft = e.currentTarget.scrollLeft;
-        if (headerScrollRef.current) {
+        if (headerScrollRef.current && headerScrollRef.current.scrollLeft !== scrollLeft) {
             headerScrollRef.current.scrollLeft = scrollLeft;
         }
         setCurrentScrollPosition(scrollLeft);
@@ -501,7 +530,7 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                             className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                         >
                             <FunnelIcon className="w-4 h-4" />
-                            Filter Characters
+                            Select Characters ({visibleCharacters.length})
                             <ChevronDownIcon className={`w-4 h-4 transition-transform ${showCharacterFilter ? 'rotate-180' : ''}`} />
                         </button>
                         
@@ -511,84 +540,168 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                                     initial={{ opacity: 0, y: -10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -10 }}
-                                    className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-20"
+                                    className="absolute right-0 top-full mt-2 w-96 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-20"
                                 >
                                     <div className="p-4 space-y-4">
                                         {/* Search Characters */}
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                                Search Characters
+                                                Add Characters
                                             </label>
                                             <div className="relative">
                                                 <input
                                                     type="text"
                                                     value={searchTerm}
                                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                                    placeholder="Type character name..."
+                                                    placeholder="Type to search for characters..."
                                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                 />
                                                 
-                                                {/* Character suggestions dropdown */}
-                                                {searchTerm && (
+                                                {/* Search Results Dropdown */}
+                                                {searchTerm && filteredCharacters.length > 0 && (
                                                     <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-40 overflow-y-auto z-30">
-                                                        {availableCharacters
-                                                            .filter(char => 
+                                                        {filteredCharacters.map(character => (
+                                                            <button
+                                                                key={character.id}
+                                                                onClick={() => {
+                                                                    handleCharacterToggle(character.id);
+                                                                    setSearchTerm('');
+                                                                }}
+                                                                className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-white flex items-center gap-2"
+                                                            >
+                                                                <div 
+                                                                    className="w-3 h-3 rounded-full flex-shrink-0"
+                                                                    style={{ backgroundColor: character.color }}
+                                                                />
+                                                                <span className="flex-1">{character.name}</span>
+                                                                <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-600 px-2 py-1 rounded">
+                                                                    {character.type}
+                                                                </span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* No results message */}
+                                                {searchTerm && filteredCharacters.length === 0 && (
+                                                    <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg p-3 z-30">
+                                                        <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+                                                            {availableCharacters.filter(char => 
                                                                 char.name.toLowerCase().includes(searchTerm.toLowerCase())
-                                                            )
-                                                            .map(character => (
-                                                                <button
-                                                                    key={character.id}
-                                                                    onClick={() => setSearchTerm(character.name)}
-                                                                    className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-900 dark:text-white flex items-center gap-2"
-                                                                >
-                                                                    <div 
-                                                                        className="w-2 h-2 rounded-full"
-                                                                        style={{ backgroundColor: character.color }}
-                                                                    />
-                                                                    {character.name}
-                                                                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">
-                                                                        {character.type}
-                                                                    </span>
-                                                                </button>
-                                                            ))
-                                                        }
+                                                            ).length === 0 
+                                                                ? 'No characters found'
+                                                                : 'All matching characters are already selected'
+                                                            }
+                                                        </p>
                                                     </div>
                                                 )}
                                             </div>
                                         </div>
-                                        
-                                        {/* Character Groups */}
+
+                                        {/* Selected Characters */}
+                                        <div>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                                    Selected Characters ({selectedCharacterIds.length})
+                                                </label>
+                                                {selectedCharacterIds.length > 0 && (
+                                                    <button
+                                                        onClick={() => setSelectedCharacterIds([])}
+                                                        className="text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+                                                    >
+                                                        Clear All
+                                                    </button>
+                                                )}
+                                            </div>
+                                            
+                                            {selectedCharacterIds.length === 0 ? (
+                                                <div className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center border border-dashed border-gray-300 dark:border-gray-600 rounded-md">
+                                                    No characters selected. Search above to add characters.
+                                                </div>
+                                            ) : (
+                                                <div className="max-h-48 overflow-y-auto space-y-1 border border-gray-200 dark:border-gray-600 rounded-md p-2">
+                                                    {selectedCharacterIds.map(characterId => {
+                                                        const character = availableCharacters.find(c => c.id === characterId);
+                                                        if (!character) return null;
+                                                        
+                                                        return (
+                                                            <div
+                                                                key={character.id}
+                                                                className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-600 rounded-md group"
+                                                            >
+                                                                <div 
+                                                                    className="w-3 h-3 rounded-full flex-shrink-0"
+                                                                    style={{ backgroundColor: character.color }}
+                                                                />
+                                                                <span className="flex-1 text-sm text-gray-900 dark:text-white">
+                                                                    {character.name}
+                                                                </span>
+                                                                <span className="text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-700 px-2 py-1 rounded">
+                                                                    {character.type}
+                                                                </span>
+                                                                <button
+                                                                    onClick={() => handleCharacterToggle(character.id)}
+                                                                    className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-all p-1 rounded"
+                                                                    title="Remove character"
+                                                                >
+                                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Quick Filter Buttons */}
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                                Character Groups
+                                                Quick Filters
                                             </label>
-                                            <div className="space-y-2">
-                                                {Object.entries(groupedCharacters).map(([groupType, characters]) => (
-                                                    <div key={groupType} className="flex items-center justify-between">
-                                                        <label className="flex items-center gap-2 cursor-pointer">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={characterGroups[groupType]}
-                                                                onChange={() => toggleCharacterGroup(groupType)}
-                                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                                            />
-                                                            <span className="text-sm text-gray-700 dark:text-gray-300 capitalize font-medium">
-                                                                {groupType} Characters
-                                                            </span>
-                                                        </label>
-                                                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                                                            {characters.length}
-                                                        </span>
-                                                    </div>
-                                                ))}
+                                            <div className="flex flex-wrap gap-2">
+                                                <button
+                                                    onClick={() => setSelectedCharacterIds(availableCharacters.map(c => c.id))}
+                                                    className="px-3 py-1 text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-md hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                                                >
+                                                    Select All
+                                                </button>
+                                                <button
+                                                    onClick={() => setSelectedCharacterIds(
+                                                        availableCharacters.filter(c => c.type === 'primary').map(c => c.id)
+                                                    )}
+                                                    className="px-3 py-1 text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-md hover:bg-green-200 dark:hover:bg-green-800 transition-colors"
+                                                >
+                                                    Primary Only
+                                                </button>
+                                                <button
+                                                    onClick={() => setSelectedCharacterIds(
+                                                        availableCharacters.filter(c => c.type === 'secondary').map(c => c.id)
+                                                    )}
+                                                    className="px-3 py-1 text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 rounded-md hover:bg-yellow-200 dark:hover:bg-yellow-800 transition-colors"
+                                                >
+                                                    Secondary Only
+                                                </button>
+                                                <button
+                                                    onClick={() => setSelectedCharacterIds(
+                                                        availableCharacters.filter(c => c.type !== 'tertiary').map(c => c.id)
+                                                    )}
+                                                    className="px-3 py-1 text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-md hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors"
+                                                >
+                                                    Main Characters
+                                                </button>
                                             </div>
                                         </div>
-                                        
-                                        {/* Filter Summary */}
-                                        <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
-                                            <div className="text-sm text-gray-600 dark:text-gray-400">
-                                                Showing {visibleCharacters.length} of {availableCharacters.length} characters
-                                            </div>
+
+                                        {/* Apply/Close Buttons */}
+                                        <div className="flex justify-end gap-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                                            <button
+                                                onClick={() => setShowCharacterFilter(false)}
+                                                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded-md hover:bg-gray-50 dark:hover:bg-gray-500 transition-colors"
+                                            >
+                                                Close
+                                            </button>
                                         </div>
                                     </div>
                                 </motion.div>
@@ -620,13 +733,12 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                             <div className="flex">
                                 {visibleCharacters.map((character) => (
                                     <AnimatePresence key={character.id}>
-                                        {characterGroups[character.type] && (
-                                            <motion.div 
-                                                className="w-32 min-w-32 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 text-center relative"
-                                                initial={{ opacity: 0, width: 0 }}
-                                                animate={{ opacity: 1, width: 128 }}
-                                                exit={{ opacity: 0, width: 0 }}
-                                            >
+                                        <motion.div 
+                                            className="w-32 min-w-32 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 text-center relative"
+                                            initial={{ opacity: 0, width: 0 }}
+                                            animate={{ opacity: 1, width: 128 }}
+                                            exit={{ opacity: 0, width: 0 }}
+                                        >
                                                 {/* Group indicator stripe */}
                                                 <div 
                                                     className={`absolute top-0 left-0 right-0 h-1 ${
@@ -645,7 +757,6 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                                                     {character.type}
                                                 </div>
                                             </motion.div>
-                                        )}
                                     </AnimatePresence>
                                 ))}
                             </div>
@@ -835,16 +946,14 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                         <div className="flex">
                             {visibleCharacters.map(character => (
                                 <AnimatePresence key={character.id}>
-                                    {characterGroups[character.type] && (
-                                        <motion.div 
-                                            className="w-32 min-w-32 border-r border-gray-200 dark:border-gray-700"
-                                            initial={{ opacity: 0, width: 0 }}
-                                            animate={{ opacity: 1, width: 128 }}
-                                            exit={{ opacity: 0, width: 0 }}
-                                        >
-                                            {renderCharacterColumns(rootNodes, character)}
-                                        </motion.div>
-                                    )}
+                                    <motion.div 
+                                        className="w-32 min-w-32 border-r border-gray-200 dark:border-gray-700"
+                                        initial={{ opacity: 0, width: 0 }}
+                                        animate={{ opacity: 1, width: 128 }}
+                                        exit={{ opacity: 0, width: 0 }}
+                                    >
+                                        {renderCharacterColumns(rootNodes, character)}
+                                    </motion.div>
                                 </AnimatePresence>
                             ))}
                         </div>
