@@ -265,10 +265,29 @@ const PlanningHeader: React.FC<{
     const navigate = useNavigate();
     const location = useLocation();
     
+    // Always declare hooks at the top level
+    const [isLayoutOpen, setIsLayoutOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+    
+    // Handle click outside for layout dropdown - only active when Plot Arcs tab is selected
+    useEffect(() => {
+        if (activePlanningTab !== 'Plot Arcs') {
+            setIsLayoutOpen(false); // Reset dropdown state when not on Plot Arcs
+            return;
+        }
+        
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as HTMLElement)) {
+                setIsLayoutOpen(false);
+            }
+        };
+        
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [activePlanningTab]);
+    
     // Only show layout controls for Plot Arcs
     if (activePlanningTab === 'Plot Arcs') {
-        const [isLayoutOpen, setIsLayoutOpen] = useState(false);
-        const dropdownRef = useRef<HTMLDivElement>(null);
 
         // Layout definitions matching PlotArcsBoard
         const layoutOptions = [
@@ -331,17 +350,6 @@ const PlanningHeader: React.FC<{
             }, { replace: true });
             setIsLayoutOpen(false);
         };
-
-        useEffect(() => {
-            const handleClickOutside = (event: MouseEvent) => {
-                if (dropdownRef.current && !dropdownRef.current.contains(event.target as HTMLElement)) {
-                    setIsLayoutOpen(false);
-                }
-            };
-            
-            document.addEventListener("mousedown", handleClickOutside);
-            return () => document.removeEventListener("mousedown", handleClickOutside);
-        }, []);
 
         return (
             <div className="relative w-full h-10 bg-gradient-to-br from-black to-gray-800 dark:from-gray-50 dark:to-slate-200 rounded-full overflow-visible border border-gray-700 dark:border-gray-300 shadow-inner">

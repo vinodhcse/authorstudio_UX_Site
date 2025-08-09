@@ -29,9 +29,12 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
     const getTabName = (urlTab: string): 'Plot Arcs' | 'World Building' | 'Characters' => {
         switch (urlTab) {
             case 'PlotArcs':
+            case 'Plot Arcs':
                 return 'Plot Arcs';
             case 'WorldBuilding':
+            case 'World Building':
                 return 'World Building';
+            case 'Characters':
             case 'Character':
                 return 'Characters';
             default:
@@ -67,7 +70,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
         // Set tab parameter only if in Planning mode
         if (activeMode === 'Planning') {
             const urlTabName = activePlanningTab === 'Plot Arcs' ? 'PlotArcs' : 
-                              activePlanningTab === 'World Building' ? 'WorldBuilding' : 'Character';
+                              activePlanningTab === 'World Building' ? 'WorldBuilding' : 'Characters';
             if (urlTabName !== 'PlotArcs') {
                 params.set('tab', urlTabName);
             } else {
