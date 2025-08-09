@@ -296,8 +296,8 @@ const PlanningHeader: React.FC<{
                 items: [
                     { id: 'narrative', label: 'Narrative Layout', description: 'Hierarchical story structure view' },
                     { id: 'character-screentime', label: 'Character Screen Time', description: 'Character presence analysis' },
-                    { id: 'object-screentime', label: 'Object Screen Time', description: 'Object appearance frequency' },
                     { id: 'location-screentime', label: 'Location Screen Time', description: 'Location usage analysis' },
+                    { id: 'object-screentime', label: 'Object Screen Time', description: 'Object appearance frequency' },
                     { id: 'lore-screentime', label: 'Lore Screen Time', description: 'Lore element frequency' }
                 ]
             },
@@ -308,6 +308,14 @@ const PlanningHeader: React.FC<{
                     { id: 'character-heatmap', label: 'Character Appearance Heat Map', description: 'Visual character frequency' },
                     { id: 'character-journey', label: 'Character Journey', description: 'Character path through story' },
                     { id: 'character-possession', label: 'Character Possession Arc', description: 'Character asset relationships' }
+                ]
+            },
+            {
+                category: 'World Entity Layouts',
+                items: [
+                    { id: 'location-heatmap', label: 'Location Appearance Heat Map', description: 'Visual location frequency matrix' },
+                    { id: 'object-heatmap', label: 'Object Appearance Heat Map', description: 'Visual object frequency matrix' },
+                    { id: 'lore-heatmap', label: 'Lore Appearance Heat Map', description: 'Visual lore frequency matrix' }
                 ]
             },
             {

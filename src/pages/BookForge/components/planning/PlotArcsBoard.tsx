@@ -52,6 +52,13 @@ import {
 // Import specialized layout components
 import CharacterScreenTimeLayout from './characterScreentime';
 import CharacterAppearanceHeatMap from './characterScreentime/CharacterAppearanceHeatMap';
+// Import world entity layout components
+import LocationScreenTimeLayout from './worldEntityScreentime/LocationScreenTimeLayout';
+// import LocationAppearanceHeatMap from './worldEntityScreentime/LocationAppearanceHeatMap';
+import ObjectScreenTimeLayout from './worldEntityScreentime/ObjectScreenTimeLayout';
+// import ObjectAppearanceHeatMap from './worldEntityScreentime/ObjectAppearanceHeatMap';
+import LoreScreenTimeLayout from './worldEntityScreentime/LoreScreenTimeLayout';
+// import LoreAppearanceHeatMap from './worldEntityScreentime/LoreAppearanceHeatMap';
 import { 
     NarrativeFlowNode, 
     NarrativeEdge, 
@@ -965,9 +972,9 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                         narrativeEdges={narrativeEdges}
                         onNodeSelect={handleNodeSelect}
                         onCharacterClick={handleCharacterClick}
-                        onSwapLayout={() => handleLayoutChange('characterAppearanceHeatMap')}
+                        onSwapLayout={() => handleLayoutChange('character-heatmap')}
                     />
-                ) : currentLayout === 'characterAppearanceHeatMap' ? (
+                                ) : currentLayout === 'character-heatmap' ? (
                     <CharacterAppearanceHeatMap 
                         narrativeNodes={narrativeNodes}
                         narrativeEdges={narrativeEdges}
@@ -975,6 +982,48 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                         onCharacterClick={handleCharacterClick}
                         onSwapLayout={() => handleLayoutChange('character-screentime')}
                     />
+                ) : /* Location Layouts */
+                currentLayout === 'location-screentime' ? (
+                    <LocationScreenTimeLayout 
+                        narrativeNodes={narrativeNodes}
+                        onSwapLayout={() => handleLayoutChange('location-heatmap')}
+                    />
+                ) : currentLayout === 'location-heatmap' ? (
+                    <div className="p-8 text-center text-gray-500">
+                        Location Heat Map temporarily disabled for fixes
+                    </div>
+                    // <LocationAppearanceHeatMap 
+                    //     narrativeNodes={narrativeNodes}
+                    //     onSwapLayout={() => handleLayoutChange('location-screentime')}
+                    // />
+                ) : /* Object Layouts */
+                currentLayout === 'object-screentime' ? (
+                    <ObjectScreenTimeLayout 
+                        narrativeNodes={narrativeNodes}
+                        onSwapLayout={() => handleLayoutChange('object-heatmap')}
+                    />
+                ) : currentLayout === 'object-heatmap' ? (
+                    <div className="p-8 text-center text-gray-500">
+                        Object Heat Map temporarily disabled for fixes
+                    </div>
+                    // <ObjectAppearanceHeatMap 
+                    //     narrativeNodes={narrativeNodes}
+                    //     onSwapLayout={() => handleLayoutChange('object-screentime')}
+                    // />
+                ) : /* Lore Layouts */
+                currentLayout === 'lore-screentime' ? (
+                    <LoreScreenTimeLayout 
+                        narrativeNodes={narrativeNodes}
+                        onSwapLayout={() => handleLayoutChange('lore-heatmap')}
+                    />
+                ) : currentLayout === 'lore-heatmap' ? (
+                    <div className="p-8 text-center text-gray-500">
+                        Lore Heat Map temporarily disabled for fixes
+                    </div>
+                    // <LoreAppearanceHeatMap 
+                    //     narrativeNodes={narrativeNodes}
+                    //     onSwapLayout={() => handleLayoutChange('lore-screentime')}
+                    // />
                 ) : /* Narrative layout */
                 currentLayout === 'narrative' && viewMode === 'board' ? (
                     <ReactFlowProvider>
