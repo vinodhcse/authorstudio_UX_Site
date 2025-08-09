@@ -51,6 +51,7 @@ import {
 
 // Import specialized layout components
 import CharacterScreenTimeLayout from './characterScreentime';
+import CharacterAppearanceHeatMap from './characterScreentime/CharacterAppearanceHeatMap';
 import { 
     NarrativeFlowNode, 
     NarrativeEdge, 
@@ -964,6 +965,15 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                         narrativeEdges={narrativeEdges}
                         onNodeSelect={handleNodeSelect}
                         onCharacterClick={handleCharacterClick}
+                        onSwapLayout={() => handleLayoutChange('characterAppearanceHeatMap')}
+                    />
+                ) : currentLayout === 'characterAppearanceHeatMap' ? (
+                    <CharacterAppearanceHeatMap 
+                        narrativeNodes={narrativeNodes}
+                        narrativeEdges={narrativeEdges}
+                        onNodeSelect={handleNodeSelect}
+                        onCharacterClick={handleCharacterClick}
+                        onSwapLayout={() => handleLayoutChange('character-screentime')}
                     />
                 ) : /* Narrative layout */
                 currentLayout === 'narrative' && viewMode === 'board' ? (

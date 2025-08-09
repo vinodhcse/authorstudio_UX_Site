@@ -4,7 +4,8 @@ import {
     ChevronDownIcon, 
     ChevronRightIcon, 
     FunnelIcon,
-    ChevronLeftIcon
+    ChevronLeftIcon,
+    ArrowsRightLeftIcon
 } from '@heroicons/react/24/outline';
 import ChargingBarIndicator from './ChargingBarIndicator';
 import { 
@@ -90,6 +91,7 @@ interface CharacterScreenTimeLayoutProps {
     narrativeEdges?: any[];
     onNodeSelect?: (nodeId: string) => void;
     onCharacterClick?: (characterId: string, nodeId: string, event: React.MouseEvent) => void;
+    onSwapLayout?: () => void;
 }
 
 // Extract characters from narrative nodes
@@ -187,7 +189,8 @@ const analyzeCharacterPresence = (node: NarrativeNode, characterId: string, narr
 
 const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({ 
     narrativeNodes,
-    onNodeSelect
+    onNodeSelect,
+    onSwapLayout
 }) => {
     const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
     const [showCharacterFilter, setShowCharacterFilter] = useState(false);
@@ -523,8 +526,19 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                         </span>
                     </div>
                     
-                    {/* Character Filter Dropdown */}
-                    <div className="relative">
+                    <div className="flex items-center gap-3">
+                        {/* Swap Layout Button */}
+                        <button
+                            onClick={onSwapLayout}
+                            className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium transition-colors"
+                            title="Switch to Character Appearance Heat Map"
+                        >
+                            <ArrowsRightLeftIcon className="w-4 h-4" />
+                            Swap Layout
+                        </button>
+
+                        {/* Character Filter Dropdown */}
+                        <div className="relative">
                         <button
                             onClick={() => setShowCharacterFilter(!showCharacterFilter)}
                             className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
@@ -1026,6 +1040,7 @@ const CharacterScreenTimeLayout: React.FC<CharacterScreenTimeLayoutProps> = ({
                     </motion.div>
                 </div>
             )}
+        </div>
         </div>
     );
 };
