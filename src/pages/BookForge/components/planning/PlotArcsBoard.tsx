@@ -54,7 +54,7 @@ import CharacterScreenTimeLayout from './characterScreentime';
 import CharacterAppearanceHeatMap from './characterScreentime/CharacterAppearanceHeatMap';
 // Import world entity layout components
 import LocationScreenTimeLayout from './worldEntityScreentime/LocationScreenTimeLayout';
-// import LocationAppearanceHeatMap from './worldEntityScreentime/LocationAppearanceHeatMap';
+import LocationAppearanceHeatMap from './worldEntityScreentime/LocationAppearanceHeatMap';
 import ObjectScreenTimeLayout from './worldEntityScreentime/ObjectScreenTimeLayout';
 // import ObjectAppearanceHeatMap from './worldEntityScreentime/ObjectAppearanceHeatMap';
 import LoreScreenTimeLayout from './worldEntityScreentime/LoreScreenTimeLayout';
@@ -989,13 +989,10 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                         onSwapLayout={() => handleLayoutChange('location-heatmap')}
                     />
                 ) : currentLayout === 'location-heatmap' ? (
-                    <div className="p-8 text-center text-gray-500">
-                        Location Heat Map temporarily disabled for fixes
-                    </div>
-                    // <LocationAppearanceHeatMap 
-                    //     narrativeNodes={narrativeNodes}
-                    //     onSwapLayout={() => handleLayoutChange('location-screentime')}
-                    // />
+                    <LocationAppearanceHeatMap 
+                        narrativeNodes={narrativeNodes}
+                        onSwapLayout={() => handleLayoutChange('location-screentime')}
+                    />
                 ) : /* Object Layouts */
                 currentLayout === 'object-screentime' ? (
                     <ObjectScreenTimeLayout 
