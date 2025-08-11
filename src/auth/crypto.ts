@@ -28,6 +28,28 @@ function base64ToBytes(base64: string): Uint8Array {
 }
 
 /**
+ * Convert hex string to Uint8Array
+ */
+function hexToBytes(hex: string): Uint8Array {
+  // Remove any whitespace and convert to lowercase
+  const cleanHex = hex.replace(/\s/g, '').toLowerCase();
+  
+  // Check if it's a valid hex string
+  if (!/^[0-9a-f]*$/i.test(cleanHex)) {
+    throw new Error('Invalid hex string');
+  }
+  
+  // Ensure even length
+  const paddedHex = cleanHex.length % 2 === 0 ? cleanHex : '0' + cleanHex;
+  
+  const bytes = new Uint8Array(paddedHex.length / 2);
+  for (let i = 0; i < paddedHex.length; i += 2) {
+    bytes[i / 2] = parseInt(paddedHex.substr(i, 2), 16);
+  }
+  return bytes;
+}
+
+/**
  * Ensure a value is converted to proper Uint8Array BufferSource
  */
 function ensureBufferSource(value: any): Uint8Array {
@@ -37,7 +59,9 @@ function ensureBufferSource(value: any): Uint8Array {
     isUint8Array: value instanceof Uint8Array,
     length: value?.length,
     constructor: value?.constructor?.name,
-    sample: value instanceof Uint8Array ? `[${Array.from(value.slice(0, 5)).join(', ')}...]` : 'N/A'
+    sample: value instanceof Uint8Array ? `[${Array.from(value.slice(0, 5)).join(', ')}...]` : 
+            typeof value === 'string' ? `"${value.substring(0, 50)}..."` : 'N/A',
+    firstChars: typeof value === 'string' ? value.split('').slice(0, 10).map(c => c.charCodeAt(0)) : 'N/A'
   });
   
   if (value instanceof Uint8Array) {
@@ -46,8 +70,51 @@ function ensureBufferSource(value: any): Uint8Array {
     // Convert array to Uint8Array
     return new Uint8Array(value);
   } else if (typeof value === 'string') {
-    // Convert base64 string to Uint8Array
-    return base64ToBytes(value);
+    // Check if it's a JSON array string (SQLite seems to store Uint8Array as JSON)
+    if (value.startsWith('[') && value.endsWith(']')) {
+      console.log('🔍 Detected JSON array format, parsing...');
+      try {
+        const arrayData = JSON.parse(value);
+        if (Array.isArray(arrayData)) {
+          return new Uint8Array(arrayData);
+        }
+      } catch (e) {
+        console.error('🔍 JSON parse failed:', e);
+      }
+    }
+    
+    // Detect if it's a base64 string (contains only base64 chars)
+    if (/^[A-Za-z0-9+/]+=*$/.test(value)) {
+      console.log('🔍 Detected base64 format, decoding...');
+      try {
+        return base64ToBytes(value);
+      } catch (e) {
+        console.error('🔍 Base64 decode failed:', e);
+      }
+    }
+    
+    // Detect if it's a hex string
+    if (/^[0-9a-fA-F]+$/.test(value)) {
+      console.log('🔍 Detected hex format, decoding...');
+      try {
+        return hexToBytes(value);
+      } catch (e) {
+        console.error('🔍 Hex decode failed:', e);
+      }
+    }
+    
+    // If it looks like a UTF-8 encoded binary string, try converting directly
+    console.log('🔍 Treating as raw binary string...');
+    try {
+      const bytes = new Uint8Array(value.length);
+      for (let i = 0; i < value.length; i++) {
+        bytes[i] = value.charCodeAt(i);
+      }
+      return bytes;
+    } catch (e) {
+      console.error('🔍 Raw binary conversion failed:', e);
+      throw new Error(`Failed to decode string data: ${value.substring(0, 20)}...`);
+    }
   } else if (value && typeof value === 'object' && value.data && Array.isArray(value.data)) {
     // Handle SQLite BLOB format which might come as {data: number[]}
     return new Uint8Array(value.data);
