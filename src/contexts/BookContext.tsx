@@ -49,7 +49,7 @@ interface BookContextType {
   
   // Character operations
   getCharacters: (bookId: string, versionId: string) => Character[];
-  getCharacter: (bookId: string, versionId: string, characterId: string) => Character | null;
+  getCharacter: (bookId: string, versionId: string, characterId: string) => Charadacter | null;
   createCharacter: (bookId: string, versionId: string, characterData: Omit<Character, 'id'>) => Character;
   updateCharacter: (bookId: string, versionId: string, characterId: string, updates: Partial<Character>) => void;
   deleteCharacter: (bookId: string, versionId: string, characterId: string) => void;

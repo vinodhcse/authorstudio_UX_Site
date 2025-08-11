@@ -1,8 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-    ChevronDownIcon, 
-    ChevronRightIcon, 
     FunnelIcon,
     ArrowsRightLeftIcon,
     InformationCircleIcon
@@ -10,6 +8,7 @@ import {
 import { 
     NarrativeFlowNode
 } from '../../../../../types/narrative-layout';
+import ChargingBarIndicator from '../characterScreentime/ChargingBarIndicator';
 
 // Types for Object Appearance Heat Map
 interface ObjectEntity {
@@ -140,49 +139,92 @@ const ObjectAppearanceHeatMap: React.FC<ObjectAppearanceHeatMapProps> = ({
             .map(root => buildHierarchy(root));
     }, [narrativeNodes]);
 
-    // Calculate column layout with proper positioning
-    const calculateColumnLayout = () => {
-        const columns: any[] = [];
-        let currentPosition = 0;
+    // Calculate hierarchical column layout
+    const calculateColumnLayout = useCallback(() => {
+        const layout: Array<Array<{ node: NarrativeFlowNode; span: number; level: number; parentPath: string[]; position: number }>> = [];
         
-        const processNode = (node: any, level: number): void => {
-            // Check if node should be expanded and has children
-            const hasValidChildren = node.children && node.children.length > 0;
-            const isExpanded = expandedNodes.has(node.id);
+        const processNodes = (nodes: NarrativeFlowNode[], level: number, parentPath: string[] = [], startPosition: number = 0) => {
+            let currentPosition = startPosition;
             
-            if (level === 0 || (hasValidChildren && isExpanded)) {
-                // Add main column for this node
-                columns.push({
-                    id: node.id,
-                    node: node,
-                    position: currentPosition,
-                    span: 1,
-                    level: level,
-                    type: 'main'
-                });
-                currentPosition++;
+            for (const node of nodes) {
+                const isExpanded = expandedNodes.has(node.id);
+                const hasChildren = node.data.childIds && node.data.childIds.length > 0;
+                const childNodes = hasChildren ? narrativeNodes.filter(n => node.data.childIds.includes(n.id)) : [];
+                const hasValidChildren = childNodes.length > 0;
                 
-                // If expanded and has children, add sub-columns
-                if (hasValidChildren && isExpanded && level < 3) {
-                    node.children.forEach((child: any) => {
-                        processNode(child, level + 1);
+                if (isExpanded && hasValidChildren) {
+                    // Calculate total span for this expanded node based on its children
+                    let totalChildSpan = 0;
+                    
+                    // First pass: calculate spans for all children
+                    for (const child of childNodes) {
+                        const childIsExpanded = expandedNodes.has(child.id);
+                        const childHasChildren = child.data.childIds && child.data.childIds.length > 0;
+                        const grandChildNodes = childHasChildren ? narrativeNodes.filter(n => child.data.childIds.includes(n.id)) : [];
+                        const childSpan = (childIsExpanded && grandChildNodes.length > 0) ? grandChildNodes.length : 1;
+                        totalChildSpan += childSpan;
+                    }
+                    
+                    // Add parent node to this level
+                    if (!layout[level]) layout[level] = [];
+                    layout[level].push({ 
+                        node, 
+                        span: totalChildSpan, 
+                        level,
+                        parentPath: [...parentPath],
+                        position: currentPosition
                     });
+                    
+                    // Process children at next level with proper positioning
+                    processNodes(childNodes, level + 1, [...parentPath, node.id], currentPosition);
+                    currentPosition += totalChildSpan;
+                } else {
+                    // Add node to this level with span of 1 (either not expanded or no valid children)
+                    if (!layout[level]) layout[level] = [];
+                    layout[level].push({ 
+                        node, 
+                        span: 1, 
+                        level,
+                        parentPath: [...parentPath],
+                        position: currentPosition
+                    });
+                    currentPosition += 1;
                 }
             }
         };
         
-        narrativeStructure.forEach(root => processNode(root, 0));
-        return columns;
-    };
+        processNodes(rootNodes, 0);
+        return layout;
+    }, [expandedNodes, narrativeNodes, rootNodes]);
 
-    const columnLayout = useMemo(() => calculateColumnLayout(), [narrativeStructure, expandedNodes]);
+    // Get nodes that should appear at the final level
+    const getFinalLevelNodes = useCallback((): NarrativeFlowNode[] => {
+        const finalNodes: NarrativeFlowNode[] = [];
+        
+        const processNode = (node: NarrativeFlowNode): void => {
+            const isExpanded = expandedNodes.has(node.id);
+            const hasChildren = node.data.childIds && node.data.childIds.length > 0;
+            const childNodes = hasChildren ? narrativeNodes.filter(n => node.data.childIds.includes(n.id)) : [];
+            
+            if (isExpanded && childNodes.length > 0) {
+                // Process children instead of adding this node
+                childNodes.forEach(child => processNode(child));
+            } else {
+                // This is a final node (either leaf or collapsed)
+                finalNodes.push(node);
+            }
+        };
+        
+        rootNodes.forEach(root => processNode(root));
+        return finalNodes;
+    }, [expandedNodes, narrativeNodes, rootNodes]);
 
-    // Get final level nodes for object intersection calculation
-    const getFinalLevelNodes = () => {
-        return columnLayout
-            .filter(col => col.type === 'main')
-            .map(col => col.node);
-    };
+    // Add rootNodes definition
+    const rootNodes = useMemo(() => {
+        return narrativeNodes.filter(node => !node.data.parentId);
+    }, [narrativeNodes]);
+
+    const columnLayout = useMemo(() => calculateColumnLayout(), [calculateColumnLayout]);
 
     // Calculate object presence in specific node
     const calculateObjectPresence = (objectId: string, node: any): string => {

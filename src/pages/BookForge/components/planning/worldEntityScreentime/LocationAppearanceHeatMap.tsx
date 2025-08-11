@@ -1,8 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-    ChevronDownIcon, 
-    ChevronRightIcon, 
     FunnelIcon,
     ArrowsRightLeftIcon,
     InformationCircleIcon
@@ -10,6 +8,7 @@ import {
 import { 
     NarrativeFlowNode
 } from '../../../../../types/narrative-layout';
+import ChargingBarIndicator from '../characterScreentime/ChargingBarIndicator';
 
 // Types for Location Appearance Heat Map
 interface LocationEntity {
@@ -119,70 +118,94 @@ const LocationAppearanceHeatMap: React.FC<LocationAppearanceHeatMapProps> = ({
         }, {} as Record<string, LocationEntity[]>);
     }, [allLocations]);
 
-    // Build hierarchical narrative structure for columns
-    const narrativeStructure = useMemo(() => {
-        // Create a hierarchical structure: Outline -> Acts -> Chapters -> Scenes
-        const rootNodes = narrativeNodes.filter(node => !node.parentId);
-        
-        const buildHierarchy = (parentNode: NarrativeFlowNode): any => {
-            const children = narrativeNodes
-                .filter(node => node.parentId === parentNode.id)
-                .sort((a, b) => a.position.y - b.position.y);
-            
-            return {
-                ...parentNode,
-                children: children.map(child => buildHierarchy(child))
-            };
-        };
-        
-        return rootNodes
-            .sort((a, b) => a.position.y - b.position.y)
-            .map(root => buildHierarchy(root));
+    // Get root nodes (nodes without parent)
+    const rootNodes = useMemo(() => {
+        return narrativeNodes
+            .filter(node => !node.parentId)
+            .sort((a, b) => a.position.y - b.position.y);
     }, [narrativeNodes]);
 
-    // Calculate column layout with proper positioning
-    const calculateColumnLayout = () => {
-        const columns: any[] = [];
-        let currentPosition = 0;
+    // Calculate column spans for each node at each level (proper hierarchical structure)
+    const calculateColumnLayout = useCallback(() => {
+        const layout: Array<Array<{ node: NarrativeFlowNode; span: number; level: number; parentPath: string[]; position: number }>> = [];
         
-        const processNode = (node: any, level: number): void => {
-            // Check if node should be expanded and has children
-            const hasValidChildren = node.children && node.children.length > 0;
-            const isExpanded = expandedNodes.has(node.id);
+        const processNodes = (nodes: NarrativeFlowNode[], level: number, parentPath: string[] = [], startPosition: number = 0) => {
+            let currentPosition = startPosition;
             
-            if (level === 0 || (hasValidChildren && isExpanded)) {
-                // Add main column for this node
-                columns.push({
-                    id: node.id,
-                    node: node,
-                    position: currentPosition,
-                    span: 1,
-                    level: level,
-                    type: 'main'
-                });
-                currentPosition++;
+            for (const node of nodes) {
+                const isExpanded = expandedNodes.has(node.id);
+                const hasChildren = node.data.childIds && node.data.childIds.length > 0;
+                const childNodes = hasChildren ? narrativeNodes.filter(n => node.data.childIds.includes(n.id)) : [];
+                const hasValidChildren = childNodes.length > 0;
                 
-                // If expanded and has children, add sub-columns
-                if (hasValidChildren && isExpanded && level < 3) {
-                    node.children.forEach((child: any) => {
-                        processNode(child, level + 1);
+                if (isExpanded && hasValidChildren) {
+                    // Calculate total span for this expanded node based on its children
+                    let totalChildSpan = 0;
+                    
+                    // First pass: calculate spans for all children
+                    for (const child of childNodes) {
+                        const childIsExpanded = expandedNodes.has(child.id);
+                        const childHasChildren = child.data.childIds && child.data.childIds.length > 0;
+                        const grandChildNodes = childHasChildren ? narrativeNodes.filter(n => child.data.childIds.includes(n.id)) : [];
+                        const childSpan = (childIsExpanded && grandChildNodes.length > 0) ? grandChildNodes.length : 1;
+                        totalChildSpan += childSpan;
+                    }
+                    
+                    // Add parent node to this level
+                    if (!layout[level]) layout[level] = [];
+                    layout[level].push({ 
+                        node, 
+                        span: totalChildSpan, 
+                        level,
+                        parentPath: [...parentPath],
+                        position: currentPosition
                     });
+                    
+                    // Process children at next level with proper positioning
+                    processNodes(childNodes, level + 1, [...parentPath, node.id], currentPosition);
+                    currentPosition += totalChildSpan;
+                } else {
+                    // Add node to this level with span of 1 (either not expanded or no valid children)
+                    if (!layout[level]) layout[level] = [];
+                    layout[level].push({ 
+                        node, 
+                        span: 1, 
+                        level,
+                        parentPath: [...parentPath],
+                        position: currentPosition
+                    });
+                    currentPosition += 1;
                 }
             }
         };
         
-        narrativeStructure.forEach(root => processNode(root, 0));
-        return columns;
-    };
-
-    const columnLayout = useMemo(() => calculateColumnLayout(), [narrativeStructure, expandedNodes]);
+        processNodes(rootNodes, 0);
+        return layout;
+    }, [expandedNodes, narrativeNodes, rootNodes]);
 
     // Get final level nodes for location intersection calculation
-    const getFinalLevelNodes = () => {
-        return columnLayout
-            .filter(col => col.type === 'main')
-            .map(col => col.node);
-    };
+    const getFinalLevelNodes = useCallback(() => {
+        const finalNodes: NarrativeFlowNode[] = [];
+        
+        const processNode = (node: NarrativeFlowNode) => {
+            const isExpanded = expandedNodes.has(node.id);
+            const hasChildren = node.data.childIds && node.data.childIds.length > 0;
+            const childNodes = hasChildren ? narrativeNodes.filter(n => node.data.childIds.includes(n.id)) : [];
+            
+            if (isExpanded && childNodes.length > 0) {
+                // Process all children
+                childNodes.forEach(child => processNode(child));
+            } else {
+                // This is a final node (either leaf or collapsed)
+                finalNodes.push(node);
+            }
+        };
+        
+        rootNodes.forEach(root => processNode(root));
+        return finalNodes;
+    }, [expandedNodes, narrativeNodes, rootNodes]);
+
+    const columnLayout = useMemo(() => calculateColumnLayout(), [calculateColumnLayout]);
 
     // Calculate location presence in specific node
     const calculateLocationPresence = (locationId: string, node: any): string => {
@@ -225,19 +248,6 @@ const LocationAppearanceHeatMap: React.FC<LocationAppearanceHeatMapProps> = ({
         scrollTimeoutRef.current = setTimeout(() => {
             setIsScrolling(false);
         }, 150);
-    }, []);
-
-    // Handle node expansion
-    const handleNodeToggle = useCallback((nodeId: string) => {
-        setExpandedNodes(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(nodeId)) {
-                newSet.delete(nodeId);
-            } else {
-                newSet.add(nodeId);
-            }
-            return newSet;
-        });
     }, []);
 
     // Clear all filters
@@ -364,68 +374,65 @@ const LocationAppearanceHeatMap: React.FC<LocationAppearanceHeatMapProps> = ({
                     </div>
                 </div>
 
-                {/* Matrix content with scrollable narrative columns */}
-                <div className="flex flex-1 overflow-y-auto max-h-[600px]">
-                    {/* Fixed first column - location names */}
-                    <div className="w-80 min-w-80 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex-shrink-0">
-                        {filteredLocations.map((location) => (
-                            <div key={location.id} className="h-20 p-3 border-b border-gray-200 dark:border-gray-700 flex items-center">
-                                <div className="flex items-center gap-2 w-full">
-                                    <div 
-                                        className="w-3 h-3 rounded-full flex-shrink-0"
-                                        style={{ backgroundColor: location.color }}
-                                    />
-                                    <div className="min-w-0 flex-1">
-                                        <div className="font-medium text-sm text-gray-900 dark:text-white truncate">
-                                            {location.name}
-                                        </div>
-                                        <div className="text-xs text-gray-500 truncate">
-                                            {location.type} • {location.region}
+                {/* Location rows */}
+                <div className="flex flex-col">
+                    {filteredLocations.map(location => {
+                        const totalColumns = finalNodes.length;
+                        return (
+                            <div key={location.id} className="flex h-16 border-b border-gray-200 dark:border-gray-700">
+                                {/* Location name column */}
+                                <div className="w-80 min-w-80 p-4 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center">
+                                    <div className="flex items-center gap-3">
+                                        <div 
+                                            className="w-4 h-4 rounded-full flex-shrink-0"
+                                            style={{ backgroundColor: location.color }}
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                                {location.name}
+                                            </div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400 capitalize">
+                                                {location.type}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
+                                
+                                {/* Location presence cells using grid layout */}
+                                <div 
+                                    className="flex-1"
+                                    style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: `repeat(${totalColumns}, 128px)`,
+                                        minWidth: `${totalColumns * 128}px`
+                                    }}
+                                >
+                                    {finalNodes.map((node, nodeIndex) => {
+                                        const presence = calculateLocationPresence(location.id, node.data);
+                                        
+                                        return (
+                                            <div 
+                                                key={`${node.id}-${location.id}`} 
+                                                className="p-1 border-r border-gray-200 dark:border-gray-700"
+                                                style={{
+                                                    gridColumnStart: nodeIndex + 1,
+                                                    gridColumnEnd: nodeIndex + 2,
+                                                }}
+                                            >
+                                                <ChargingBarIndicator
+                                                    percentage={presence === 'primary' ? 100 : presence === 'supporting' ? 75 : presence === 'mentioned' ? 40 : 0}
+                                                    characterColor={location.color}
+                                                    characterName={location.name}
+                                                    plotNode={(node.data.data as any)?.title || node.data.type}
+                                                    tier={presence === 'primary' ? 'Primary POV' : presence === 'supporting' ? 'Major Supporting' : presence === 'mentioned' ? 'Minor Presence' : 'Mentioned Only'}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
-                        ))}
-                    </div>
-
-                    {/* Scrollable narrative columns with location presence indicators */}
-                    <div 
-                        className="flex-1 overflow-x-auto"
-                        style={{
-                            display: 'grid',
-                            gridTemplateColumns: `repeat(${finalNodes.length}, 128px)`,
-                            minWidth: `${finalNodes.length * 128}px`
-                        }}
-                    >
-                        {finalNodes.map((node, nodeIndex) => (
-                            <div key={node.id} className="border-r border-gray-200 dark:border-gray-700">
-                                {filteredLocations.map((location) => {
-                                    const presence = calculateLocationPresence(location.id, node);
-                                    const cellColor = presence === 'primary' ? location.color :
-                                                    presence === 'supporting' ? `${location.color}80` :
-                                                    presence === 'mentioned' ? `${location.color}40` : 'transparent';
-                                    
-                                    return (
-                                        <div 
-                                            key={`${location.id}-${node.id}`}
-                                            className="h-20 border-b border-gray-200 dark:border-gray-700 relative group flex items-center justify-center"
-                                            style={{ backgroundColor: cellColor }}
-                                        >
-                                            {presence !== 'none' && (
-                                                <div className="w-full h-full flex items-center justify-center opacity-75 group-hover:opacity-100 transition-opacity">
-                                                    <div className={`w-3 h-3 rounded-full ${
-                                                        presence === 'primary' ? 'bg-white' :
-                                                        presence === 'supporting' ? 'bg-white/80' :
-                                                        'bg-white/60'
-                                                    }`} />
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        ))}
-                    </div>
+                        );
+                    })}
                 </div>
             </div>
         );

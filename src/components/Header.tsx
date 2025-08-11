@@ -5,6 +5,7 @@ import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { Theme, ActiveTab, Book } from '../types';
 import { SunIcon, MoonIcon, SystemIcon, SearchIcon, BookOpenIcon, ChevronDownIcon, PenIcon, PlusIcon } from '../constants';
+import { useAuth } from '../contexts/AuthContext';
 
 
 const logoContainerVariants: Variants = {
@@ -164,9 +165,16 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, books }) => {
   const location = useLocation();
   const params = useParams<{ bookId?: string }>();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
   
   const isBookDetailsPage = location.pathname.startsWith('/book/');
   const book = isBookDetailsPage && params.bookId ? books.find(b => b.id === params.bookId) : null;
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   const mainTabs: {name: ActiveTab, path: string}[] = [
     { name: 'My Books', path: '/' },
@@ -241,8 +249,17 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
             </DropdownMenu>
 
             <DropdownMenu trigger={<img src="https://picsum.photos/seed/user/40/40" alt="User Avatar" className="w-9 h-9 rounded-full cursor-pointer ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-gray-900 ring-transparent hover:ring-purple-500 transition-all"/>}>
+                <div className="px-4 py-2 text-sm text-gray-300 dark:text-gray-700 border-b border-gray-600 dark:border-gray-300">
+                  <div className="font-medium">{user?.name || 'User'}</div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500">{user?.email}</div>
+                </div>
                 <a href="#" className="block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">My Account</a>
-                <a href="#" className="block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">Logout</a>
+                <button 
+                  onClick={handleLogout}
+                  className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                >
+                  Logout
+                </button>
             </DropdownMenu>
           </div>
         </div>

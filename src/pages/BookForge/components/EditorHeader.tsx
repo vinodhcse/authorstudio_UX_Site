@@ -7,6 +7,7 @@ import { SunIcon, MoonIcon, ChevronDownIcon, TrashIcon, UserIcon, MagnifyingGlas
 import ChapterSettingsModal from './ChapterSettingsModal';
 import { useToolWindowStore } from '../../../stores/toolWindowStore';
 import { useBookContext, useCurrentBookAndVersion } from '../../../contexts/BookContext';
+import { useAuth } from '../../../contexts/AuthContext';
 
 const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNode; className?: string }> = ({ trigger, children, className }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -507,6 +508,8 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
 }) => {
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
     const { openTool, broadcastThemeChange } = useToolWindowStore();
+    const { logout } = useAuth();
+    const navigate = useNavigate();
 
     const handleOpenTool = async (toolName: string) => {
         try {
@@ -520,6 +523,11 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
     const handleThemeChange = async (newTheme: Theme) => {
         setTheme(newTheme);
         await broadcastThemeChange(newTheme);
+    };
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
     };
 
     return (
@@ -602,7 +610,12 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
 
                             <DropdownMenu trigger={<img src="https://picsum.photos/seed/user/40/40" alt="User Avatar" className="w-9 h-9 rounded-full cursor-pointer ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-gray-900 ring-transparent hover:ring-purple-500 transition-all"/>}>
                                 <a href="#" className="block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">My Account</a>
-                                <a href="#" className="block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">Logout</a>
+                                <button 
+                                    onClick={handleLogout}
+                                    className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                                >
+                                    Logout
+                                </button>
                             </DropdownMenu>
                         </div>
                     </div>
