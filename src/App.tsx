@@ -17,9 +17,9 @@ import CharacterProfileBuilder from './pages/Tools/CharacterProfileBuilder';
 import WhisperTestPage from './pages/WhisperTestPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
-import ProtectedRoute from './components/ProtectedRoute';
+// Import new authentication system
+import { AuthGate } from './auth';
 import { BookContextProvider } from './contexts/BookContext';
-import { AuthProvider } from './contexts/AuthContext';
 
 const MainLayout: React.FC<{
     theme: Theme;
@@ -69,7 +69,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-
   const handleThemeChange = (newTheme: Theme) => {
     let finalTheme: 'light' | 'dark';
     if (newTheme === 'system') {
@@ -100,9 +99,37 @@ const App: React.FC = () => {
       ));
   };
 
-
   return (
-    <AuthProvider>
+    <AuthGate
+      fallback={
+        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center p-4">
+          <div className="text-center max-w-md">
+            <h1 className="text-3xl font-bold text-white mb-4">Author Studio</h1>
+            <p className="text-gray-400 mb-8">Please sign in to continue</p>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/signup" element={<SignupPage />} />
+              <Route path="*" element={
+                <div className="space-x-4">
+                  <button 
+                    onClick={() => window.location.href = '/login'}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg"
+                  >
+                    Sign In
+                  </button>
+                  <button 
+                    onClick={() => window.location.href = '/signup'}
+                    className="bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg"
+                  >
+                    Sign Up
+                  </button>
+                </div>
+              } />
+            </Routes>
+          </div>
+        </div>
+      }
+    >
       <div className="relative min-h-screen bg-white dark:bg-black text-gray-800 dark:text-gray-200 transition-colors duration-300 font-sans overflow-x-hidden">
           <div 
               className="absolute inset-0 z-0 bg-gradient-to-br from-slate-100 via-gray-50 to-slate-200 dark:from-gray-950 dark:via-black dark:to-black animate-animated-gradient"
@@ -117,23 +144,17 @@ const App: React.FC = () => {
 
           <div className="relative z-10 h-full">
             <Routes>
-              {/* Public routes */}
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/signup" element={<SignupPage />} />
-              
-              {/* Protected routes */}
+              {/* Main protected routes */}
               <Route
                 element={
-                  <ProtectedRoute>
-                    <BookContextProvider>
-                      <MainLayout 
-                        theme={theme}
-                        setTheme={handleThemeChange}
-                        onOpenCreateModal={() => setCreateModalOpen(true)}
-                        books={books}
-                      />
-                    </BookContextProvider>
-                  </ProtectedRoute>
+                  <BookContextProvider>
+                    <MainLayout 
+                      theme={theme}
+                      setTheme={handleThemeChange}
+                      onOpenCreateModal={() => setCreateModalOpen(true)}
+                      books={books}
+                    />
+                  </BookContextProvider>
                 }
               >
                 <Route path="/" element={<MyBooksView books={books} />} />
@@ -161,36 +182,28 @@ const App: React.FC = () => {
               
               {/* Tool Window Routes */}
               <Route path="/tool/name-generator" element={
-                <ProtectedRoute>
-                  <NameGeneratorPage books={books} theme={theme} setTheme={handleThemeChange}/>
-                </ProtectedRoute>
+                <NameGeneratorPage books={books} theme={theme} setTheme={handleThemeChange}/>
               } />
               <Route path="/tool/character-tracker" element={
-                <ProtectedRoute>
-                  <CharacterProfileBuilder books={books} theme={theme} setTheme={handleThemeChange} />
-                </ProtectedRoute>
+                <CharacterProfileBuilder books={books} theme={theme} setTheme={handleThemeChange} />
               } />
               
               {/* BookForgePage - Full screen editor */}
               <Route path="/book/:bookId/version/:versionId" element={
-                <ProtectedRoute>
-                  <BookContextProvider>
-                    <BookForgePage theme={theme} setTheme={handleThemeChange} />
-                  </BookContextProvider>
-                </ProtectedRoute>
+                <BookContextProvider>
+                  <BookForgePage theme={theme} setTheme={handleThemeChange} />
+                </BookContextProvider>
               } />
             </Routes>
             
-            <ProtectedRoute>
-              <AnimatePresence>
-                {isCreateModalOpen && (
-                  <CreateBookModal onClose={() => setCreateModalOpen(false)} />
-                )}
-              </AnimatePresence>
-            </ProtectedRoute>
+            <AnimatePresence>
+              {isCreateModalOpen && (
+                <CreateBookModal onClose={() => setCreateModalOpen(false)} />
+              )}
+            </AnimatePresence>
           </div>
       </div>
-    </AuthProvider>
+    </AuthGate>
   );
 };
 

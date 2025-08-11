@@ -5,7 +5,7 @@ import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { Theme, ActiveTab, Book } from '../types';
 import { SunIcon, MoonIcon, SystemIcon, SearchIcon, BookOpenIcon, ChevronDownIcon, PenIcon, PlusIcon } from '../constants';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuthStore } from '../auth';
 
 
 const logoContainerVariants: Variants = {
@@ -166,7 +166,7 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
   const location = useLocation();
   const params = useParams<{ bookId?: string }>();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuthStore();
   
   const isBookDetailsPage = location.pathname.startsWith('/book/');
   const book = isBookDetailsPage && params.bookId ? books.find(b => b.id === params.bookId) : null;

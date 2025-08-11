@@ -525,8 +525,8 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
         await broadcastThemeChange(newTheme);
     };
 
-    const handleLogout = () => {
-        logout();
+    const handleLogout = async () => {
+        await logout();
         navigate('/login');
     };
 

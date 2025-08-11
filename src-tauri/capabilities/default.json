@@ -7,6 +7,61 @@
     "core:default",
     "core:event:allow-listen",
     "core:event:allow-emit",
-    "core:window:allow-get-all-windows"
-  ]
+    "core:window:allow-get-all-windows",
+    
+    "sql:default",
+    "sql:allow-load",
+    "sql:allow-close",
+    "sql:allow-execute",
+    "sql:allow-select",
+    
+    "fs:default",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    "fs:allow-remove",
+    "fs:allow-appconfig-read",
+    "fs:allow-appconfig-write",
+    "fs:allow-appconfig-read-recursive",
+    "fs:allow-appconfig-write-recursive",
+    "fs:allow-appconfig-meta",
+    "fs:allow-appdata-read",
+    "fs:allow-appdata-write",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    "fs:allow-appdata-meta",
+    
+    "http:default",
+    "http:allow-fetch",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [
+        {
+          "url": "http://localhost:4000/*"
+        },
+        {
+          "url": "https://localhost:4000/*"
+        },
+        {
+          "url": "http://127.0.0.1:4000/*"
+        },
+        {
+          "url": "https://127.0.0.1:4000/*"
+        },
+        {
+          "url": "https://jsonplaceholder.typicode.com/*"
+        },
+        {
+          "url": "https://*/*"
+        },
+        {
+          "url": "http://*/*"
+        }
+      ]
+    }
+  ],
+  "platforms": ["linux", "macOS", "windows"]
 }

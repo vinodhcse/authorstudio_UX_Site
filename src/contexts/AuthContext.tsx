@@ -14,7 +14,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshToken: () => Promise<void>;
 }
 
@@ -38,17 +38,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     // Check if user is already authenticated on app start
-    const initializeAuth = () => {
-      const currentUser = apiClient.getCurrentUser();
-      if (currentUser.token && currentUser.userId) {
-        setUser({
-          id: currentUser.userId,
-          name: currentUser.name || '',
-          email: currentUser.email || '',
-          role: currentUser.role || 'FREE_USER',
-        });
+    const initializeAuth = async () => {
+      try {
+        const currentUser = await apiClient.getCurrentUser();
+        if (currentUser.token && currentUser.userId) {
+          setUser({
+            id: currentUser.userId,
+            name: currentUser.name || '',
+            email: currentUser.email || '',
+            role: currentUser.role || 'FREE_USER',
+          });
+        }
+      } catch (error) {
+        console.warn('Failed to initialize auth:', error);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     initializeAuth();
@@ -57,7 +62,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string, password: string): Promise<void> => {
     try {
       setIsLoading(true);
-      const deviceId = apiClient.generateDeviceId();
+      const deviceId = await apiClient.generateDeviceId();
       const response: AuthResponse = await apiClient.login({
         email,
         password,
@@ -81,7 +86,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signup = async (name: string, email: string, password: string): Promise<void> => {
     try {
       setIsLoading(true);
-      const deviceId = apiClient.generateDeviceId();
+      const deviceId = await apiClient.generateDeviceId();
       const response: AuthResponse = await apiClient.signup({
         name,
         email,
@@ -103,8 +108,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    apiClient.logout();
+  const logout = async () => {
+    await apiClient.logout();
     setUser(null);
   };
 
