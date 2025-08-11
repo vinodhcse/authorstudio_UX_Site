@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Book, Version, Character, PlotArc } from '../types';
 import { MOCK_BOOKS } from '../constants';
 import { WorldData, Location, WorldObject, Lore, MagicSystem } from '../pages/BookForge/components/planning/types/WorldBuildingTypes';
+import { appLog } from '../auth/fileLogger';
 
 export interface WorldBuildingElement {
   id: string;
@@ -128,11 +129,11 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
   // Initialize books data
   useEffect(() => {
     try {
-      console.log('BookContext: Using MOCK_BOOKS directly:', MOCK_BOOKS);
+      appLog.info('book-context', 'Using MOCK_BOOKS directly', MOCK_BOOKS);
       setBooks(MOCK_BOOKS);
       setLoading(false);
     } catch (err) {
-      console.error('BookContext: Error loading books:', err);
+      appLog.error('book-context', 'Error loading books', err);
       setError('Failed to load books');
       setLoading(false);
     }

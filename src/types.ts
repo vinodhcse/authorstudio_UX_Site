@@ -148,6 +148,8 @@ export interface Collaborator {
 
 export type VersionStatus = 'DRAFT' | 'IN_REVIEW' | 'FINAL';
 
+
+
 export interface Version {
     id: string;
     name: string;
@@ -161,6 +163,7 @@ export interface Version {
     characters: Character[];
     plotArcs: PlotArc[];
     worlds: WorldData[];
+    chapters: any[];
 }
 
 export type ActivityAction = 'created version' | 'updated details' | 'invited collaborator' | 'deleted version' | 'reviewed version';

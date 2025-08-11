@@ -102,32 +102,10 @@ const App: React.FC = () => {
   return (
     <AuthGate
       fallback={
-        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center p-4">
-          <div className="text-center max-w-md">
-            <h1 className="text-3xl font-bold text-white mb-4">Author Studio</h1>
-            <p className="text-gray-400 mb-8">Please sign in to continue</p>
-            <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/signup" element={<SignupPage />} />
-              <Route path="*" element={
-                <div className="space-x-4">
-                  <button 
-                    onClick={() => window.location.href = '/login'}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg"
-                  >
-                    Sign In
-                  </button>
-                  <button 
-                    onClick={() => window.location.href = '/signup'}
-                    className="bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg"
-                  >
-                    Sign Up
-                  </button>
-                </div>
-              } />
-            </Routes>
-          </div>
-        </div>
+        <Routes>
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="*" element={<LoginPage />} />
+        </Routes>
       }
     >
       <div className="relative min-h-screen bg-white dark:bg-black text-gray-800 dark:text-gray-200 transition-colors duration-300 font-sans overflow-x-hidden">

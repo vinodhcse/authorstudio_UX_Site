@@ -7,7 +7,8 @@ import { SunIcon, MoonIcon, ChevronDownIcon, TrashIcon, UserIcon, MagnifyingGlas
 import ChapterSettingsModal from './ChapterSettingsModal';
 import { useToolWindowStore } from '../../../stores/toolWindowStore';
 import { useBookContext, useCurrentBookAndVersion } from '../../../contexts/BookContext';
-import { useAuth } from '../../../contexts/AuthContext';
+import { useAuthStore } from '../../../auth';
+import { appLog } from '../../../auth/fileLogger';
 
 const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNode; className?: string }> = ({ trigger, children, className }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -508,15 +509,15 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
 }) => {
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
     const { openTool, broadcastThemeChange } = useToolWindowStore();
-    const { logout } = useAuth();
+    const { logout } = useAuthStore();
     const navigate = useNavigate();
 
     const handleOpenTool = async (toolName: string) => {
         try {
-            console.log(`Opening tool: ${toolName} for book ${book.id}, version ${version.id} with theme ${theme}`);
+            appLog.info('editor-header', `Opening tool: ${toolName} for book ${book.id}, version ${version.id} with theme ${theme}`);
             await openTool(toolName, book.id, version.id, theme);
         } catch (error) {
-            console.error(`Failed to open ${toolName}:`, error);
+            appLog.error('editor-header', `Failed to open ${toolName}`, error);
         }
     };
 
@@ -526,8 +527,14 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
     };
 
     const handleLogout = async () => {
-        await logout();
-        navigate('/login');
+        try {
+            await appLog.info('editor-header', 'Starting logout process...');
+            await logout();
+            await appLog.success('editor-header', 'Logout successful');
+            // No need to navigate as logout will reload the page
+        } catch (error) {
+            await appLog.error('editor-header', 'Logout failed', error);
+        }
     };
 
     return (

@@ -8,6 +8,7 @@ import EditorHeader from './components/EditorHeader';
 import Editor from './components/Editor';
 import EditorFooter from './components/EditorFooter';
 import FloatingActionButton from './components/FloatingActionButton';
+import { appLog } from '../../auth/fileLogger';
 import { useCurrentBookAndVersion } from '../../contexts/BookContext';
 
 interface BookForgePageProps {
@@ -52,9 +53,9 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
     const { currentBook, currentVersion, loading, error } = useCurrentBookAndVersion();
 
     // Debug logging
-    console.log('BookForgePage - URL params:', { bookId, versionId });
-    console.log('BookForgePage - Context data:', { currentBook, currentVersion, loading, error });
-    console.log('BookForgePage - URL mode and tab:', { mode: modeFromUrl, tab: tabFromUrl });
+    appLog.info('book-forge', 'URL params', { bookId, versionId });
+    appLog.info('book-forge', 'Context data', { currentBook, currentVersion, loading, error });
+    appLog.info('book-forge', 'URL mode and tab', { mode: modeFromUrl, tab: tabFromUrl });
     
     // Update URL when mode or tab changes
     useEffect(() => {

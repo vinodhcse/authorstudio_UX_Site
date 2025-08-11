@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from './useAuthStore';
 import UnlockOffline from './UnlockOffline';
+import SealedNotice from './SealedNotice';
 import IdleWarningModal from './IdleWarningModal';
 import { useIdleTimer, DEFAULT_IDLE_CONFIG } from './idleTimer';
 import { motion } from 'framer-motion';
@@ -11,9 +12,11 @@ interface AuthGateProps {
   fallback?: React.ReactNode;
 }
 
+type AuthState = 'loading' | 'no-session' | 'sealed' | 'unlock' | 'authenticated';
+
 const AuthGate: React.FC<AuthGateProps> = ({ children, fallback }) => {
   const { isAuthenticated, isLoading, appKey } = useAuthStore();
-  const [showUnlock, setShowUnlock] = useState(false);
+  const [authState, setAuthState] = useState<AuthState>('loading');
   
   // Idle timer - only active when authenticated and app key is available
   const {
@@ -24,27 +27,35 @@ const AuthGate: React.FC<AuthGateProps> = ({ children, fallback }) => {
   } = useIdleTimer(DEFAULT_IDLE_CONFIG);
 
   useEffect(() => {
-    // Check if we need to show unlock screen
+    // Check auth state and determine what UI to show
     const checkAuthStatus = async () => {
+      console.log('🔍 AuthGate checking auth status...');
+      
       if (!isAuthenticated && !isLoading) {
-        // Check if there's a stored session that needs unlocking
         try {
           const { getSessionRow } = await import('./sqlite');
           const session = await getSessionRow();
           
-          if (session) {
-            // Session exists, show unlock screen
-            setShowUnlock(true);
+          if (!session) {
+            console.log('📝 No session found - need to login');
+            setAuthState('no-session');
+          } else if (session.session_state === 'sealed') {
+            console.log('🔒 Session is sealed - need online login to unseal');
+            setAuthState('sealed');
           } else {
-            // No session, user needs to login first
-            setShowUnlock(false);
+            console.log('🔓 Active session found - show unlock screen');
+            setAuthState('unlock');
           }
         } catch (error) {
-          console.error('Failed to check session:', error);
-          setShowUnlock(false);
+          console.error('❌ Failed to check session:', error);
+          setAuthState('no-session');
         }
       } else if (isAuthenticated) {
-        setShowUnlock(false);
+        console.log('✅ User is authenticated');
+        setAuthState('authenticated');
+      } else {
+        console.log('⏳ Authentication loading...');
+        setAuthState('loading');
       }
     };
 
@@ -54,7 +65,7 @@ const AuthGate: React.FC<AuthGateProps> = ({ children, fallback }) => {
   // If appKey is cleared (due to idle timeout), show unlock screen
   useEffect(() => {
     if (isAuthenticated && !appKey) {
-      setShowUnlock(true);
+      setAuthState('unlock');
     }
   }, [isAuthenticated, appKey]);
 
@@ -75,12 +86,17 @@ const AuthGate: React.FC<AuthGateProps> = ({ children, fallback }) => {
   }
 
   // Show unlock screen if needed
-  if (showUnlock) {
-    return <UnlockOffline onUnlock={() => setShowUnlock(false)} />;
+  if (authState === 'unlock') {
+    return <UnlockOffline onUnlock={() => setAuthState('authenticated')} />;
+  }
+
+  // Show sealed notice if session is sealed
+  if (authState === 'sealed') {
+    return <SealedNotice onLogin={() => setAuthState('no-session')} />;
   }
 
   // Show authentication required fallback
-  if (!isAuthenticated) {
+  if (authState === 'no-session') {
     if (fallback) {
       return <>{fallback}</>;
     }

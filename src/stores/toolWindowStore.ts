@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { appLog } from '../auth/fileLogger';
 
 export interface WindowPosition {
   x: number;
@@ -102,7 +103,7 @@ export const useToolWindowStore = create<ToolWindowState>()(
     },
 
     dockWindow: async (windowId: string) => {
-      console.log('Docking window:', windowId);
+      appLog.info('tool-window', 'Docking window', windowId);
       const toolWindow = get().toolWindows.find(w => w.id === windowId);
       if (!toolWindow) return;
 
@@ -116,7 +117,7 @@ export const useToolWindowStore = create<ToolWindowState>()(
         get().updateToolWindow(windowId, { docked: true, visible: false });
         set({ dockVisible: true });
       } catch (error) {
-        console.error('Failed to dock window:', error);
+        appLog.error('tool-window', 'Failed to dock window', error);
       }
     },
 
@@ -135,7 +136,7 @@ export const useToolWindowStore = create<ToolWindowState>()(
 
         get().updateToolWindow(windowId, { docked: false, visible: true });
       } catch (error) {
-        console.error('Failed to undock window:', error);
+        appLog.error('tool-window', 'Failed to undock window', error);
       }
     },
 
@@ -155,9 +156,9 @@ export const useToolWindowStore = create<ToolWindowState>()(
 
         // Update our store with the backend state
         set({ toolWindows: tauriWindows });
-        console.log('Synced tool windows from backend:', tauriWindows);
+        appLog.info('tool-window', 'Synced tool windows from backend', tauriWindows);
       } catch (error) {
-        console.error('Failed to sync with Tauri:', error);
+        appLog.error('tool-window', 'Failed to sync with Tauri', error);
       }
     },
 

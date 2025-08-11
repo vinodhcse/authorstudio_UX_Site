@@ -1,5 +1,6 @@
 // SQLite database operations for Tauri authentication
-import Database from "@tauri-apps/plugin-sql";
+import Database from '@tauri-apps/plugin-sql';
+import { appLog } from './fileLogger';
 
 let db: Database | null = null;
 
@@ -18,6 +19,8 @@ export interface SessionRow {
   subscription_status?: string;
   subscription_expires_at?: number;
   subscription_last_checked_at?: number;
+  session_state?: 'active' | 'sealed'; // New: session sealing state
+  sealed_at?: number; // New: when session was sealed
   updated_at?: number;
 }
 
@@ -49,9 +52,32 @@ export async function openDb(): Promise<Database> {
       subscription_status TEXT,
       subscription_expires_at INTEGER,
       subscription_last_checked_at INTEGER,
+      session_state TEXT DEFAULT 'active' CHECK (session_state IN ('active', 'sealed')),
+      sealed_at INTEGER,
       updated_at INTEGER
     )
   `);
+  
+  // Add migration for existing databases that might not have the new columns
+  try {
+    await db.execute(`
+      ALTER TABLE session ADD COLUMN session_state TEXT DEFAULT 'active' CHECK (session_state IN ('active', 'sealed'))
+    `);
+    appLog.info('migration', 'Added session_state column');
+  } catch (error) {
+    // Column already exists, ignore error
+    appLog.info('migration', 'session_state column already exists');
+  }
+  
+  try {
+    await db.execute(`
+      ALTER TABLE session ADD COLUMN sealed_at INTEGER
+    `);
+    appLog.info('migration', 'Added sealed_at column');
+  } catch (error) {
+    // Column already exists, ignore error
+    appLog.info('migration', 'sealed_at column already exists');
+  }
   
   // Create device table
   await db.execute(`
@@ -73,22 +99,41 @@ export async function openDb(): Promise<Database> {
 }
 
 export async function getSessionRow(): Promise<SessionRow | null> {
+  appLog.info('sqlite', 'Retrieving session from database...');
   const database = await openDb();
   
   const result = await database.select<SessionRow[]>(
     "SELECT * FROM session WHERE id = 1"
   );
   
-  return result.length > 0 ? result[0] : null;
+  if (result.length > 0) {
+    appLog.info('sqlite', 'Session found', {
+      user_id: result[0].user_id,
+      email: result[0].email,
+      state: result[0].session_state,
+      sealed_at: result[0].sealed_at
+    });
+    return result[0];
+  } else {
+    appLog.info('sqlite', 'No session found in database');
+    return null;
+  }
 }
 
 export async function upsertSessionRow(data: Partial<SessionRow>): Promise<void> {
+  appLog.info('sqlite', 'Upserting session data...', {
+    fieldsToUpdate: Object.keys(data),
+    hasUserId: !!data.user_id,
+    hasEmail: !!data.email,
+    sessionState: data.session_state
+  });
   const database = await openDb();
   
   // Check if row exists
   const existing = await getSessionRow();
   
   if (existing) {
+    appLog.info('sqlite', 'Updating existing session...');
     // Update existing row
     const updateFields: string[] = [];
     const values: any[] = [];
@@ -102,12 +147,17 @@ export async function upsertSessionRow(data: Partial<SessionRow>): Promise<void>
     
     if (updateFields.length > 0) {
       values.push(1); // WHERE id = 1
+      console.log('📊 [SQLITE] Executing UPDATE with fields:', updateFields);
       await database.execute(
         `UPDATE session SET ${updateFields.join(', ')} WHERE id = 1`,
         values
       );
+      console.log('✅ [SQLITE] Session updated successfully');
+    } else {
+      console.log('⚠️ [SQLITE] No fields to update');
     }
   } else {
+    console.log('➕ [SQLITE] Creating new session...');
     // Insert new row
     const fields = ['id', ...Object.keys(data).filter(k => data[k as keyof SessionRow] !== undefined)];
     const placeholders = fields.map(() => '?').join(', ');
@@ -121,6 +171,7 @@ export async function upsertSessionRow(data: Partial<SessionRow>): Promise<void>
 }
 
 export async function clearSession(): Promise<void> {
+  console.log('🗑️ Clearing session completely...');
   const database = await openDb();
   
   // Clear session data
@@ -128,6 +179,67 @@ export async function clearSession(): Promise<void> {
   
   // Clear all KV secrets
   await database.execute("DELETE FROM kv");
+  
+  console.log('✅ Session cleared completely');
+}
+
+/**
+ * Seal the current session (logout but keep data)
+ */
+export async function sealSession(): Promise<void> {
+  appLog.info('sqlite', 'Starting session sealing process...');
+  const database = await openDb();
+  
+  console.log('📊 [SQLITE] Updating session table to sealed state...');
+  await database.execute(`
+    UPDATE session 
+    SET session_state = 'sealed', 
+        sealed_at = ?1, 
+        access_exp = NULL,
+        updated_at = ?2
+    WHERE id = 1
+  `, [Date.now(), Date.now()]);
+  
+  appLog.success('sqlite', 'Session sealed successfully - data preserved but access locked');
+}
+
+/**
+ * Activate (unseal) the session for the same user
+ */
+export async function activateSession(userId: string): Promise<boolean> {
+  console.log('🔓 [SQLITE] Starting session activation for user:', userId);
+  const database = await openDb();
+  
+  // Check if session exists and belongs to the same user
+  console.log('📋 [SQLITE] Checking existing session for user match...');
+  const session = await getSessionRow();
+  if (!session) {
+    console.log('❌ [SQLITE] No session found to activate');
+    return false;
+  }
+  
+  console.log('🔍 [SQLITE] Session found - verifying user match:', {
+    sessionUserId: session.user_id,
+    requestedUserId: userId,
+    currentState: session.session_state
+  });
+  
+  if (session.user_id !== userId) {
+    console.log('❌ [SQLITE] Session belongs to different user - keeping sealed');
+    return false;
+  }
+  
+  console.log('📊 [SQLITE] Updating session to active state...');
+  await database.execute(`
+    UPDATE session 
+    SET session_state = 'active', 
+        sealed_at = NULL,
+        updated_at = ?1
+    WHERE id = 1
+  `, [Date.now()]);
+  
+  console.log('✅ [SQLITE] Session activated successfully for user:', userId);
+  return true;
 }
 
 export async function getDeviceRow(): Promise<DeviceRow | null> {

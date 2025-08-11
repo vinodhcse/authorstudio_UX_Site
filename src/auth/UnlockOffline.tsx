@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { LockClosedIcon, EyeIcon, EyeSlashIcon, WifiIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from './useAuthStore';
+import { appLog } from './fileLogger';
 
 interface UnlockOfflineProps {
   onUnlock?: () => void;
@@ -34,7 +35,7 @@ const UnlockOffline: React.FC<UnlockOfflineProps> = ({ onUnlock }) => {
         onUnlock();
       }
     } catch (error) {
-      console.error('Unlock failed:', error);
+      appLog.error('unlock-offline', 'Unlock failed', error);
       setError(error instanceof Error ? error.message : 'Unlock failed');
     }
   };

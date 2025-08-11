@@ -6,6 +6,7 @@ import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { Theme, ActiveTab, Book } from '../types';
 import { SunIcon, MoonIcon, SystemIcon, SearchIcon, BookOpenIcon, ChevronDownIcon, PenIcon, PlusIcon } from '../constants';
 import { useAuthStore } from '../auth';
+import { appLog } from '../auth/fileLogger';
 
 
 const logoContainerVariants: Variants = {
@@ -171,9 +172,15 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
   const isBookDetailsPage = location.pathname.startsWith('/book/');
   const book = isBookDetailsPage && params.bookId ? books.find(b => b.id === params.bookId) : null;
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      await appLog.info('header', 'Starting logout process...');
+      await logout();
+      await appLog.success('header', 'Logout successful');
+      // No need to navigate as logout will reload the page
+    } catch (error) {
+      await appLog.error('header', 'Logout failed', error);
+    }
   };
 
   const mainTabs: {name: ActiveTab, path: string}[] = [

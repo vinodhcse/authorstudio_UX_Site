@@ -91,6 +91,15 @@ class TauriApiClient {
   ): Promise<T> {
     const { method = 'GET', body, requiresAuth = false } = options;
     const url = `${this.baseUrl}${endpoint}`;
+    
+    console.log('🌐 [HTTP] Starting request:', {
+      method,
+      endpoint,
+      url,
+      requiresAuth,
+      hasToken: !!this.accessToken,
+      isOnline: this.isOnline()
+    });
 
     // Prepare headers
     const headers: Record<string, string> = {
@@ -100,19 +109,23 @@ class TauriApiClient {
     // Add authorization header if required and token available
     if (requiresAuth && this.accessToken) {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
+      console.log('🔑 [HTTP] Authorization header added');
     }
 
     // Prepare request body
     let requestBody: string | undefined;
     if (body) {
       requestBody = JSON.stringify(body);
+      console.log('📦 [HTTP] Request body prepared:', {
+        bodySize: requestBody.length,
+        hasEmail: body.email ? '✓' : '✗',
+        hasPassword: body.password ? '✓' : '✗',
+        hasDeviceId: body.deviceId ? '✓' : '✗'
+      });
     }
 
     try {
-      console.log('Making HTTP request to:', url);
-      console.log('Request headers:', headers);
-      console.log('Request method:', method);
-      console.log('Request body:', requestBody);
+      console.log('📡 [HTTP] Sending request to:', url);
       
       const response = await fetch(url, {
         method,
@@ -175,13 +188,24 @@ class TauriApiClient {
    * Login user
    */
   async login(credentials: LoginRequest): Promise<AuthResponse> {
+    console.log('🌐 [API] Starting login request for:', credentials.email);
+    console.log('🔧 [API] Device ID:', credentials.deviceId);
+    
     const response = await this.makeRequest<AuthResponse>('/auth/login', {
       method: 'POST',
       body: credentials,
     });
 
+    console.log('✅ [API] Login response received:', {
+      userId: response.userId,
+      email: response.email,
+      name: response.name,
+      hasToken: !!response.token
+    });
+
     // Store the access token
     this.setAccessToken(response.token);
+    console.log('💾 [API] Access token stored');
 
     return response;
   }
