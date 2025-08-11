@@ -164,6 +164,12 @@ export interface Version {
     plotArcs: PlotArc[];
     worlds: WorldData[];
     chapters: any[];
+    // New encrypted sync fields
+    revLocal?: string;
+    revCloud?: string;
+    syncState?: SyncState;
+    conflictState?: ConflictState;
+    updatedAt?: number;
 }
 
 export type ActivityAction = 'created version' | 'updated details' | 'invited collaborator' | 'deleted version' | 'reviewed version';
@@ -181,11 +187,17 @@ export interface Activity {
 
 export type PublishedStatus = 'Published' | 'Unpublished' | 'Scheduled';
 
+// Sync state types for encrypted data
+export type SyncState = 'idle' | 'dirty' | 'pushing' | 'pulling' | 'conflict';
+export type ConflictState = 'none' | 'needs_review' | 'blocked';
+export type EncryptionScheme = 'udek' | 'bsk';
+
 export interface Book {
   id: string;
   title: string;
   subtitle?: string;
   author?: string;
+  authorId?: string;
   coverImage?: string;
   coverImages?: string[];
   lastModified: string;
@@ -210,9 +222,65 @@ export interface Book {
   description?: string;
   versions?: Version[];
   activity?: Activity[];
+  // New encrypted sync fields
+  isShared?: boolean;
+  revLocal?: string;
+  revCloud?: string;
+  syncState?: SyncState;
+  conflictState?: ConflictState;
+  updatedAt?: number;
 }
 
 export type Theme = 'light' | 'dark' | 'system';
 
 export type ActiveTab = 'My Books' | 'Editing' | 'Reviewing' | 'WhisperTest';
 export type BookDetailsTab = 'Versions' | 'Collaborators' | 'Recent Activity';
+
+// New encrypted data types
+export interface Chapter {
+  id: string;
+  title: string;
+  orderIndex?: number;
+  revLocal?: string;
+  revCloud?: string;
+  syncState?: SyncState;
+  conflictState?: ConflictState;
+  updatedAt?: number;
+  scenes: Scene[];
+}
+
+export interface Scene {
+  id: string;
+  title: string;
+  encScheme: EncryptionScheme;
+  contentEnc?: string; // base64 encrypted content
+  contentIv?: string;  // base64 IV
+  revLocal?: string;
+  revCloud?: string;
+  syncState?: SyncState;
+  conflictState?: ConflictState;
+  updatedAt?: number;
+  wordCount?: number;
+  hasProposals?: boolean;
+}
+
+// User key management
+export interface UserKeys {
+  udekWrapAppkey: Uint8Array;
+  kdfSalt: Uint8Array;
+  kdfIters: number;
+  updatedAt: number;
+}
+
+// Grant for shared books
+export interface Grant {
+  grantId: string;
+  ownerUserId: string;
+  bookId: string;
+  issuerUserId: string;
+  bskWrapForMe: Uint8Array;
+  perms: string; // 'view,suggest,edit'
+  revoked: boolean;
+  issuedAt: number;
+  updatedAt: number;
+}

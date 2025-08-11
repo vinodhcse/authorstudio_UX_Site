@@ -1,6 +1,7 @@
 // Zustand store for Tauri-only authentication management
 import { create } from 'zustand';
 import { apiClient } from './apiClient';
+import { apiClient as libApiClient } from '../lib/apiClient';
 import { HTTPTestClient } from './httpTestClient';
 import { sealSession, activateSession } from './sqlite';
 import { clearAllLocalData } from './clearData';
@@ -93,8 +94,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       accessTokenExp: accessTokenExp || null 
     });
     
-    // Update API client
+    // Update API clients
     apiClient.setAccessToken(accessToken);
+    libApiClient.setAccessToken(accessToken);
   },
 
   // Set loading state
@@ -196,11 +198,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Login with server
       console.log('🌐 [LOGIN] Sending login request to server...');
       const authResponse = await apiClient.login({ email, password, deviceId });
-      console.log('✅ [LOGIN] Server login successful:', {
-        userId: authResponse.userId,
-        email: authResponse.email,
-        name: authResponse.name
-      });
+      console.log('✅ [LOGIN] Server login successful:', authResponse);
       
       // If we had a sealed session, try to activate it for the same user
       if (existingSession && existingSession.session_state === 'sealed') {
@@ -209,25 +207,53 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         if (activated) {
           console.log('✅ [LOGIN] Sealed session successfully activated for same user');
           
-          // Update tokens in the activated session
-          console.log('🔄 [LOGIN] Updating access token in activated session...');
+          // Even with sealed session activation, we need to update the refresh token
+          // with the new one from the current login response
+          console.log('🔄 [LOGIN] Updating refresh token in activated session...');
+          
+          // Get the app key from the activated session to encrypt the new refresh token
+          const { key: appKey } = await deriveAppKey(
+            password, 
+            existingSession.appkey_wrap_salt!, 
+            existingSession.appkey_wrap_iters!
+          );
+          
+          console.log('� [LOGIN] Auth response tokens for sealed session:', {
+            accessToken: authResponse.token ? 'present' : 'missing',
+            refreshToken: authResponse.refreshToken ? 'present' : 'missing',
+            accessTokenLength: authResponse.token?.length,
+            refreshTokenLength: authResponse.refreshToken?.length,
+            tokensAreDifferent: authResponse.token !== authResponse.refreshToken
+          });
+          
+          if (!authResponse.refreshToken) {
+            console.error('❌ [LOGIN] No refresh token in auth response for sealed session');
+            throw new Error('Server did not provide refresh token');
+          }
+          
+          // Encrypt the new refresh token
+          const encryptedRefreshToken = await encryptString(authResponse.refreshToken, appKey);
+          console.log('✅ [LOGIN] New refresh token encrypted for sealed session');
+          
+          // Update session with new tokens and expiry
           await upsertSessionRow({
+            refresh_token_enc: pack(encryptedRefreshToken.iv, encryptedRefreshToken.data),
             access_exp: Date.now() + 15 * 60 * 1000, // 15 minutes
             updated_at: Date.now(),
           });
           
-          // Set user and access token in memory
-          console.log('💾 [LOGIN] Setting user and token in memory state...');
+          // Set user, app key, and access token in memory
+          console.log('💾 [LOGIN] Setting user, app key, and token in memory state...');
           _setUser({
             id: authResponse.userId,
             email: authResponse.email || email,
             name: authResponse.name || '',
-            role: 'user', // Default role
+            role: authResponse.globalRole || 'FREE_USER',
           });
+          _setAppKey(appKey);
           _setAccessToken(authResponse.token, Date.now() + 15 * 60 * 1000);
-          apiClient.setAccessToken(authResponse.token);
           
-          console.log('🎉 [LOGIN] Login complete via sealed session activation');
+          console.log('🎉 [LOGIN] Login complete via sealed session activation with fresh tokens');
           return; // Session unsealed, login complete
         } else {
           console.log('⚠️ [LOGIN] Sealed session belongs to different user, keeping it sealed');
@@ -273,8 +299,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         console.warn('Could not fetch subscription info:', error);
       }
       
-      // Encrypt refresh token (we'll use the access token as refresh for now)
-      const encryptedRefreshToken = await encryptString(authResponse.token, appKey);
+      // Encrypt refresh token
+      console.log('🔐 [LOGIN] Encrypting refresh token...');
+      console.log('🔍 [LOGIN] Auth response tokens:', {
+        accessToken: authResponse.token ? 'present' : 'missing',
+        refreshToken: authResponse.refreshToken ? 'present' : 'missing',
+        accessTokenLength: authResponse.token?.length,
+        refreshTokenLength: authResponse.refreshToken?.length,
+        tokensAreDifferent: authResponse.token !== authResponse.refreshToken
+      });
+      
+      if (!authResponse.refreshToken) {
+        console.error('❌ [LOGIN] No refresh token in auth response');
+        throw new Error('Server did not provide refresh token');
+      }
+      
+      const encryptedRefreshToken = await encryptString(authResponse.refreshToken, appKey);
+      console.log('✅ [LOGIN] Refresh token encrypted successfully');
       
       // Store session in SQLite
       const sessionData: Partial<SessionRow> = {
@@ -395,6 +436,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       console.log('✅ [UNLOCK] Passphrase verified successfully');
       
+      // Initialize encryption service with user credentials
+      try {
+        console.log('🔐 [UNLOCK] Initializing encryption service...');
+        const { encryptionService } = await import('../services/encryptionService');
+        await encryptionService.initialize(session.user_id, passphrase);
+        console.log('✅ [UNLOCK] Encryption service initialized successfully');
+      } catch (encryptionError) {
+        console.error('❌ [UNLOCK] Failed to initialize encryption service:', encryptionError);
+        // Continue with unlock even if encryption service fails
+      }
+      
       // Check subscription validity
       const now = Date.now();
       const subscriptionValid = checkSubscriptionValidity(
@@ -428,6 +480,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           const refreshResponse = await apiClient.refreshToken({ refreshToken });
           _setAccessToken(refreshResponse.token, Date.now() + 15 * 60 * 1000);
           
+          // Update session with new access token expiry
+          await upsertSessionRow({
+            access_exp: Date.now() + 15 * 60 * 1000,
+            updated_at: Date.now(),
+          });
+          
+          console.log('✅ [UNLOCK] Access token refreshed successfully');
+          
           // Update subscription info
           try {
             const subscription = await apiClient.getSubscription();
@@ -443,8 +503,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           
         } catch (error) {
           console.warn('Failed to refresh token online:', error);
-          // Continue with offline mode
+          // Continue with offline mode - no access token available
+          console.log('🔓 [UNLOCK] Continuing in offline mode without access token');
         }
+      } else {
+        console.log('🔓 [UNLOCK] Offline mode - no access token available');
+        // In offline mode, we don't have an access token
+        // But we still have the user authenticated locally
       }
       
     } catch (error) {
@@ -465,35 +530,67 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       _setAccessToken 
     } = get();
     
+    console.log('🔍 [ENSURE_TOKEN] Checking access token validity...', {
+      hasToken: !!accessToken,
+      tokenExp: accessTokenExp,
+      timeUntilExp: accessTokenExp ? (accessTokenExp - Date.now()) : null,
+      threshold: TOKEN_REFRESH_THRESHOLD_MS,
+      isOnline,
+      hasAppKey: !!appKey
+    });
+    
     // Check if token exists and is not expiring soon
     if (accessToken && accessTokenExp && 
         (accessTokenExp - Date.now()) > TOKEN_REFRESH_THRESHOLD_MS) {
+      console.log('✅ [ENSURE_TOKEN] Current token is still valid');
       return accessToken;
     }
     
     if (!isOnline) {
+      console.error('❌ [ENSURE_TOKEN] Cannot refresh token while offline');
       throw new Error('Cannot refresh token while offline');
     }
     
     if (!appKey) {
+      console.error('❌ [ENSURE_TOKEN] No app key available');
       throw new Error('App key not available. Please unlock first.');
     }
     
     // Get session and refresh token
+    console.log('🔍 [ENSURE_TOKEN] Getting session and refresh token...');
     const session = await getSessionRow();
     if (!session?.refresh_token_enc) {
+      console.error('❌ [ENSURE_TOKEN] No refresh token in session');
       throw new Error('No refresh token available');
     }
     
     try {
+      console.log('🔓 [ENSURE_TOKEN] Decrypting refresh token...');
       // Decrypt refresh token
       const { iv, data } = unpack(session.refresh_token_enc);
       const refreshToken = await decryptString(data, iv, appKey);
+      console.log('✅ [ENSURE_TOKEN] Refresh token decrypted successfully');
+      console.log('🔍 [ENSURE_TOKEN] Refresh token info:', {
+        length: refreshToken?.length,
+        firstChars: refreshToken?.substring(0, 10) + '...',
+        lastChars: '...' + refreshToken?.substring(refreshToken.length - 10)
+      });
+      
+      // Compare with current access token to make sure they're different
+      const { accessToken: currentAccessToken } = get();
+      console.log('🔍 [ENSURE_TOKEN] Token comparison:', {
+        accessTokenLength: currentAccessToken?.length,
+        refreshTokenLength: refreshToken?.length,
+        tokensAreDifferent: currentAccessToken !== refreshToken,
+        refreshTokenIsValid: refreshToken && refreshToken.length > 0
+      });
       
       // Refresh access token
+      console.log('🌐 [ENSURE_TOKEN] Calling refresh token API...');
       const response = await apiClient.refreshToken({ refreshToken });
       const newExpiry = Date.now() + 15 * 60 * 1000;
       
+      console.log('✅ [ENSURE_TOKEN] New access token received');
       _setAccessToken(response.token, newExpiry);
       
       // Update session
@@ -502,10 +599,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         updated_at: Date.now(),
       });
       
+      console.log('✅ [ENSURE_TOKEN] Token refresh complete');
       return response.token;
       
     } catch (error) {
-      console.error('Token refresh failed:', error);
+      console.error('❌ [ENSURE_TOKEN] Token refresh failed:', error);
       throw new Error('Failed to refresh access token');
     }
   },

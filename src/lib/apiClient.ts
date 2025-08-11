@@ -1,5 +1,17 @@
 // API Client for authentication and user management
 
+import { appLog } from '../auth/fileLogger';
+
+// Import the auth store to get tokens when needed
+let getAuthStore: () => any;
+try {
+  const { useAuthStore } = require('../auth/useAuthStore');
+  getAuthStore = () => useAuthStore.getState();
+} catch (e) {
+  // Fallback if auth store is not available
+  getAuthStore = () => ({ accessToken: null, isAuthenticated: false, user: null });
+}
+
 export interface LoginRequest {
   email: string;
   password: string;
@@ -59,6 +71,11 @@ class ApiClient {
     this.baseUrl = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4000/api';
   }
 
+  // Method to set access token from auth store
+  setAccessToken(token: string | null): void {
+    this.authToken = token;
+  }
+
   private async makeRequest<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -68,13 +85,39 @@ class ApiClient {
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': this.authToken ? `Bearer ${this.authToken}` : '',
         ...options.headers,
       },
       ...options,
     };
 
     // Add auth token if available
-    const token = this.authToken || await this.getStoredToken();
+    let token = this.authToken;
+    
+    // If no token is set locally, try to get it from auth store
+    if (!token) {
+      token = await this.getStoredToken();
+    }
+    
+    // If still no token, try to get it from auth store
+    if (!token) {
+      try {
+        const authState = getAuthStore();
+        token = authState.accessToken;
+        if (token) {
+          // Cache the token locally for future requests
+          this.authToken = token;
+          await appLog.info('lib-api-client', 'Got token from auth store', { tokenExists: !!token });
+        }
+      } catch (e) {
+        console.warn('Could not get token from auth store:', e);
+      }
+    }
+    
+    if (!token) {
+      await appLog.warn('lib-api-client', 'No access token available for request', { endpoint });
+    }
+    
     if (token && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/signup')) {
       config.headers = {
         ...config.headers,
@@ -296,14 +339,73 @@ class ApiClient {
 
   // Enhanced token management
   async ensureAccessToken(): Promise<string> {
-    let token = await this.getStoredToken();
+    // First try to get token from local cache
+    let token = this.authToken;
     
+    // If no local token, try to get from auth store
     if (!token) {
+      try {
+        const authState = getAuthStore();
+        
+        // Check if user is actually authenticated
+        if (!authState.isAuthenticated) {
+          await appLog.warn('lib-api-client', 'User is not authenticated in auth store', { 
+            isAuthenticated: authState.isAuthenticated,
+            hasUser: !!authState.user
+          });
+          throw new Error('User not authenticated. Please login.');
+        }
+        
+        // Try to use the auth store's ensureAccessToken method
+        if (authState.ensureAccessToken) {
+          await appLog.info('lib-api-client', 'Using auth store ensureAccessToken method');
+          token = await authState.ensureAccessToken();
+          if (token) {
+            // Cache the token locally
+            this.authToken = token;
+            await appLog.info('lib-api-client', 'Got fresh token from auth store ensureAccessToken', { tokenExists: !!token });
+            return token;
+          }
+        }
+        
+        // Fallback to auth store current token
+        token = authState.accessToken;
+        if (token) {
+          // Cache the token locally
+          this.authToken = token;
+          await appLog.info('lib-api-client', 'Got token from auth store in ensureAccessToken', { tokenExists: !!token });
+        } else {
+          await appLog.warn('lib-api-client', 'Auth store has no access token', { 
+            authState: { 
+              hasAccessToken: !!authState.accessToken,
+              isAuthenticated: authState.isAuthenticated,
+              user: authState.user ? 'exists' : 'null'
+            }
+          });
+        }
+      } catch (e) {
+        await appLog.error('lib-api-client', 'Could not get token from auth store in ensureAccessToken', { error: e });
+        throw e; // Re-throw the error
+      }
+    }
+    
+    // If still no token, try stored token as fallback
+    if (!token) {
+      token = await this.getStoredToken();
+      if (token) {
+        await appLog.info('lib-api-client', 'Got token from stored token fallback', { tokenExists: !!token });
+      }
+    }
+
+    if (!token) {
+      await appLog.error('lib-api-client', 'No access token available anywhere', {
+        authTokenExists: !!this.authToken,
+        authStoreChecked: true,
+        storedTokenChecked: true
+      });
       throw new Error('No access token available. Please login.');
     }
 
-    // TODO: Add token expiry checking logic here
-    // For now, return the token as-is
     return token;
   }
 
@@ -358,33 +460,71 @@ class ApiClient {
           ...options.headers,
         },
       };
-
+      console.log(`Making request to ${endpoint} with options:`, config);
+     appLog.info('ApiClient',`Making request to ${endpoint} with options:`, config);
       return await this.makeRequest<T>(endpoint, config);
     } catch (error) {
       if (error instanceof Error && error.message.includes('401')) {
-        // Try to refresh token once
-        try {
-          await this.refreshToken();
-          const newToken = await this.ensureAccessToken();
-          
-          const retryConfig = {
-            ...options,
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${newToken}`,
-              ...options.headers,
-            },
-          };
-
-          return await this.makeRequest<T>(endpoint, retryConfig);
-        } catch (refreshError) {
-          // If refresh fails, clear auth and throw
-          await this.logout();
-          throw new Error('Session expired. Please login again.');
-        }
+        // Clear the token and throw error - let the auth store handle refresh
+        this.authToken = null;
+        throw new Error('Authentication failed. Token may have expired.');
       }
       throw error;
     }
+  }
+
+  // Book API methods
+  async createBook(bookData: any): Promise<any> {
+    return this.makeAuthenticatedRequest('/books', {
+      method: 'POST',
+      body: JSON.stringify(bookData),
+    });
+  }
+
+  async updateBook(bookId: string, bookData: any): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(bookData),
+    });
+  }
+
+  async deleteBook(bookId: string): Promise<any> {
+    console.log(`Deleting book with ID: ${bookId}`);
+    return this.makeAuthenticatedRequest(`/books/${bookId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getBooks(): Promise<any> {
+    return this.makeAuthenticatedRequest('/books', {
+      method: 'GET',
+    });
+  }
+
+  async getBook(bookId: string): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}`, {
+      method: 'GET',
+    });
+  }
+
+  async createVersion(bookId: string, versionData: any): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}/versions`, {
+      method: 'POST',
+      body: JSON.stringify(versionData),
+    });
+  }
+
+  async updateVersion(bookId: string, versionId: string, versionData: any): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}/versions/${versionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(versionData),
+    });
+  }
+
+  async deleteVersion(bookId: string, versionId: string): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}/versions/${versionId}`, {
+      method: 'DELETE',
+    });
   }
 }
 

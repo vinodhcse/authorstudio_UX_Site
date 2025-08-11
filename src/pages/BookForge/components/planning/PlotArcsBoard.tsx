@@ -16,6 +16,9 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { Book, Version, Theme } from '../../../../types';
 
+// Import encrypted scene editor
+import SceneEditModal from './SceneEditModal';
+
 
 
 
@@ -79,6 +82,8 @@ interface PlotArcsBoardProps {
 }
 
 const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({ 
+    book,
+    version,
     theme, 
     searchQuery = '', 
     viewMode = 'board', 
@@ -136,6 +141,18 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     });
     const [editingNode, setEditingNode] = useState<NarrativeNode | null>(null);
     const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([]);
+    
+    // Encrypted scene editor modal state
+    const [sceneEditModal, setSceneEditModal] = useState<{
+        isOpen: boolean;
+        sceneId?: string;
+        sceneName?: string;
+    }>({
+        isOpen: false,
+        sceneId: undefined,
+        sceneName: undefined,
+    });
+    
     const [characterPopup, setCharacterPopup] = useState<{
         isVisible: boolean;
         characterId: string;
@@ -321,13 +338,23 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     const handleNodeEdit = useCallback((nodeId: string) => {
         const node = narrativeNodes.find(n => n.id === nodeId);
         if (node) {
-            setEditingNode(node.data);
-            setCreateNodeModal(prev => ({
-                ...prev,
-                isVisible: true,
-                nodeType: node.data.type,
-                parentId: node.data.parentId
-            }));
+            // If it's a scene, open the encrypted scene editor
+            if (node.data.type === 'scene') {
+                setSceneEditModal({
+                    isOpen: true,
+                    sceneId: nodeId,
+                    sceneName: (node.data as any).title || 'Untitled Scene'
+                });
+            } else {
+                // For other node types, use the standard edit modal
+                setEditingNode(node.data);
+                setCreateNodeModal(prev => ({
+                    ...prev,
+                    isVisible: true,
+                    nodeType: node.data.type,
+                    parentId: node.data.parentId
+                }));
+            }
         }
     }, [narrativeNodes]);
 
@@ -1085,6 +1112,17 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 suggestions={aiSuggestions}
                 onDismiss={handleDismissSuggestion}
                 onApply={handleApplySuggestion}
+            />
+
+            {/* Encrypted Scene Editor Modal */}
+            <SceneEditModal
+                isOpen={sceneEditModal.isOpen}
+                onClose={() => setSceneEditModal({ isOpen: false })}
+                sceneId={sceneEditModal.sceneId}
+                bookId={book.id}
+                versionId={version.id}
+                chapterId="demo-chapter-123" // Demo chapter ID
+                sceneName={sceneEditModal.sceneName}
             />
         </div>
     );

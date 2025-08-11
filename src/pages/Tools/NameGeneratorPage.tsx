@@ -7,7 +7,7 @@ import ToolWindowControls from '../../components/ToolWindowControls';
 import { listen } from '@tauri-apps/api/event';
 
 interface NameGeneratorPageProps {
-  books: Book[];
+  books?: Book[];
   theme: Theme;
   setTheme: (theme: Theme) => void;
 }
@@ -77,7 +77,7 @@ const NameGeneratorPage: React.FC<NameGeneratorPageProps> = ({ books, theme, set
     numberOfSuggestions: 10
   });
 
-  const book = books.find(b => b.id === bookId);
+  const book = books?.find(b => b.id === bookId);
 
   // Mock data for generated names
   const mockGeneratedNames: GeneratedName[] = [

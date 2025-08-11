@@ -3,10 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Outlet } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
-import { Theme, Book, Version } from './types';
+import { Theme } from './types';
 import Header from './components/Header';
 import MyBooksView from './components/MyBooksView';
-import { MOCK_BOOKS } from './constants';
 import CreateBookModal from './components/CreateBookModal';
 import BookDetailsPage from './pages/BookDetails/BookDetailsPage';
 import BookForgePage from './pages/BookForge/BookForgePage';
@@ -19,14 +18,23 @@ import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 // Import new authentication system
 import { AuthGate } from './auth';
-import { BookContextProvider } from './contexts/BookContext';
+import { BookContextProvider, useBookContext } from './contexts/BookContext';
+
+// Component that uses BookContext to provide books to MyBooksView
+const MyBooksWithContext: React.FC = () => {
+    const { books } = useBookContext();
+    return <MyBooksView books={books} />;
+};
 
 const MainLayout: React.FC<{
     theme: Theme;
     setTheme: (theme: Theme) => void;
     onOpenCreateModal: () => void;
-    books: Book[];
-}> = ({ theme, setTheme, onOpenCreateModal, books }) => {
+    isCreateModalOpen: boolean;
+    setCreateModalOpen: (open: boolean) => void;
+}> = ({ theme, setTheme, onOpenCreateModal, isCreateModalOpen, setCreateModalOpen }) => {
+    const { books } = useBookContext();
+    
     return (
         <>
             <Header
@@ -38,6 +46,12 @@ const MainLayout: React.FC<{
             <main className="px-8 sm:px-16 lg:px-24 py-8">
                 <Outlet />
             </main>
+            
+            <AnimatePresence>
+              {isCreateModalOpen && (
+                <CreateBookModal onClose={() => setCreateModalOpen(false)} />
+              )}
+            </AnimatePresence>
         </>
     );
 };
@@ -45,7 +59,6 @@ const MainLayout: React.FC<{
 
 const App: React.FC = () => {
   const [theme, setTheme] = useState<Theme>('dark');
-  const [books, setBooks] = useState<Book[]>(MOCK_BOOKS);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
 
   useEffect(() => {
@@ -86,18 +99,6 @@ const App: React.FC = () => {
         document.documentElement.classList.remove('dark');
     }
   };
-  
-  const handleUpdateBook = (bookId: string, updatedData: Partial<Book>) => {
-      setBooks(currentBooks => currentBooks.map(b =>
-          b.id === bookId ? { ...b, ...updatedData } : b
-      ));
-  };
-
-  const handleCreateVersion = (bookId: string, newVersion: Version) => {
-      setBooks(currentBooks => currentBooks.map(b =>
-          b.id === bookId ? { ...b, versions: [...(b.versions || []), newVersion] } : b
-      ));
-  };
 
   return (
     <AuthGate
@@ -130,21 +131,16 @@ const App: React.FC = () => {
                       theme={theme}
                       setTheme={handleThemeChange}
                       onOpenCreateModal={() => setCreateModalOpen(true)}
-                      books={books}
+                      isCreateModalOpen={isCreateModalOpen}
+                      setCreateModalOpen={setCreateModalOpen}
                     />
                   </BookContextProvider>
                 }
               >
-                <Route path="/" element={<MyBooksView books={books} />} />
+                <Route path="/" element={<MyBooksWithContext />} />
                 <Route 
                   path="/book/:bookId" 
-                  element={
-                    <BookDetailsPage 
-                      books={books}
-                      onUpdateBook={handleUpdateBook}
-                      onCreateVersion={handleCreateVersion}
-                    />
-                  } 
+                  element={<BookDetailsPage />} 
                 />
                 <Route 
                   path="/book/:bookId/version/:versionId/character/:characterId" 
@@ -154,16 +150,16 @@ const App: React.FC = () => {
                 <Route path="/reviewing" element={<div className="flex items-center justify-center h-96 text-gray-500">Reviewing Content Area</div>} />
                 <Route path="/test-nodes" element={<CustomNodeTest />} />
                 <Route path="/test-whisper" element={<WhisperTestPage />} />
-                <Route path="/tools/name-generator" element={<NameGeneratorPage books={books} theme={theme} setTheme={handleThemeChange}/>} />
-                <Route path="/tools/character-profile-builder" element={<CharacterProfileBuilder books={books} theme={theme} setTheme={handleThemeChange} />} />
+                <Route path="/tools/name-generator" element={<NameGeneratorPage theme={theme} setTheme={handleThemeChange}/>} />
+                <Route path="/tools/character-profile-builder" element={<CharacterProfileBuilder theme={theme} setTheme={handleThemeChange} />} />
               </Route>
               
               {/* Tool Window Routes */}
               <Route path="/tool/name-generator" element={
-                <NameGeneratorPage books={books} theme={theme} setTheme={handleThemeChange}/>
+                <NameGeneratorPage theme={theme} setTheme={handleThemeChange}/>
               } />
               <Route path="/tool/character-tracker" element={
-                <CharacterProfileBuilder books={books} theme={theme} setTheme={handleThemeChange} />
+                <CharacterProfileBuilder theme={theme} setTheme={handleThemeChange} />
               } />
               
               {/* BookForgePage - Full screen editor */}
@@ -173,12 +169,6 @@ const App: React.FC = () => {
                 </BookContextProvider>
               } />
             </Routes>
-            
-            <AnimatePresence>
-              {isCreateModalOpen && (
-                <CreateBookModal onClose={() => setCreateModalOpen(false)} />
-              )}
-            </AnimatePresence>
           </div>
       </div>
     </AuthGate>

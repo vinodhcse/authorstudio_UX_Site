@@ -1,9 +1,19 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { Book, Version, Character, PlotArc } from '../types';
-import { MOCK_BOOKS } from '../constants';
+import { Book, Version, Character, PlotArc, Scene } from '../types';
 import { WorldData, Location, WorldObject, Lore, MagicSystem } from '../pages/BookForge/components/planning/types/WorldBuildingTypes';
 import { appLog } from '../auth/fileLogger';
+import { 
+  getUserBooks, 
+  getScenesByBook,
+  getScene,
+  putBook,
+  deleteBook as deleteBookFromDB,
+  BookRow
+} from '../data/dal';
+import { useAuthStore } from '../auth/useAuthStore';
+import { encryptionService } from '../services/encryptionService';
+import { apiClient } from '../lib/apiClient';
 
 export interface WorldBuildingElement {
   id: string;
@@ -41,16 +51,16 @@ interface BookContextType {
   
   // Book operations
   getBook: (bookId: string) => Book | null;
-  updateBook: (bookId: string, updates: Partial<Book>) => void;
+  updateBook: (bookId: string, updates: Partial<Book>) => Promise<void>;
   
   // Version operations
   getVersion: (bookId: string, versionId: string) => Version | null;
   updateVersion: (bookId: string, versionId: string, updates: Partial<Version>) => void;
-  createVersion: (bookId: string, versionData: Omit<Version, 'id'>) => Version;
+  createVersion: (bookId: string, versionData: Omit<Version, 'id'>) => Promise<Version>;
   
   // Character operations
   getCharacters: (bookId: string, versionId: string) => Character[];
-  getCharacter: (bookId: string, versionId: string, characterId: string) => Charadacter | null;
+  getCharacter: (bookId: string, versionId: string, characterId: string) => Character | null;
   createCharacter: (bookId: string, versionId: string, characterData: Omit<Character, 'id'>) => Character;
   updateCharacter: (bookId: string, versionId: string, characterId: string, updates: Partial<Character>) => void;
   deleteCharacter: (bookId: string, versionId: string, characterId: string) => void;
@@ -97,9 +107,20 @@ interface BookContextType {
   updateMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemId: string, updates: Partial<MagicSystem>) => void;
   deleteMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemId: string) => void;
   
+  // Scene operations (encrypted content)
+  getSceneContent: (sceneId: string) => Promise<string | null>;
+  updateSceneContent: (sceneId: string, content: string) => Promise<void>;
+  createScene: (bookId: string, versionId: string, chapterId: string, title: string, content?: string) => Promise<Scene>;
+  getBookScenes: (bookId: string) => Promise<Scene[]>;
+  
+  // Book CRUD operations
+  createBook: (bookData: Omit<Book, 'id'>) => Promise<Book>;
+  deleteBook: (bookId: string) => Promise<void>;
+  
   // Utility methods
   generateId: () => string;
   refreshData: () => void;
+  createSampleData: () => Promise<void>;
 }
 
 // Create context
@@ -126,17 +147,70 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
   // World Building UI state
   const [selectedWorldId, setSelectedWorldId] = useState<string | null>(null);
 
-  // Initialize books data
+  // Initialize books data from encrypted storage
   useEffect(() => {
-    try {
-      appLog.info('book-context', 'Using MOCK_BOOKS directly', MOCK_BOOKS);
-      setBooks(MOCK_BOOKS);
-      setLoading(false);
-    } catch (err) {
-      appLog.error('book-context', 'Error loading books', err);
-      setError('Failed to load books');
-      setLoading(false);
-    }
+    const loadBooks = async () => {
+      try {
+        const { user, isAuthenticated } = useAuthStore.getState();
+        
+        if (!isAuthenticated || !user) {
+          await appLog.info('book-context', 'User not authenticated, loading empty state');
+          setBooks([]);
+          setLoading(false);
+          return;
+        }
+
+        await appLog.info('book-context', 'Loading encrypted books for user', { userId: user.id });
+        
+        // TODO: In a real implementation, you'd need the user's passphrase
+        // For now, we'll skip encryption service initialization and load basic book metadata
+        
+        // Load books from encrypted database
+        const bookRows = await getUserBooks(user.id);
+        
+        // Convert BookRow[] to Book[] 
+        const books: Book[] = bookRows.map((bookRow) => {
+          return {
+            id: bookRow.book_id,
+            title: bookRow.title,
+            author: user.name,
+            description: 'Encrypted book description', // TODO: decrypt actual description
+            synopsis: 'Encrypted synopsis', // TODO: decrypt actual synopsis
+            lastModified: new Date(bookRow.updated_at || Date.now()).toISOString(),
+            progress: 0, // TODO: calculate from scenes
+            wordCount: 0, // TODO: calculate from scenes
+            genre: 'Fiction', // TODO: decrypt from metadata
+            collaboratorCount: 0, // TODO: count from grants
+            collaborators: [], // TODO: load from grants
+            characters: [], // TODO: load from version data
+            featured: false,
+            bookType: 'Novel',
+            prose: 'Fiction',
+            language: 'English',
+            publisher: '',
+            publishedStatus: 'Unpublished' as const,
+            versions: [], // TODO: load versions from encrypted storage
+            activity: [], // TODO: load activity log
+            isShared: Boolean(bookRow.is_shared),
+            syncState: bookRow.sync_state as any,
+            revLocal: bookRow.rev_local,
+            revCloud: bookRow.rev_cloud,
+            updatedAt: bookRow.updated_at,
+          };
+        });
+        
+        setBooks(books);
+        setLoading(false);
+        await appLog.success('book-context', `Loaded ${books.length} encrypted books`);
+        
+      } catch (err) {
+        await appLog.error('book-context', 'Error loading encrypted books', err);
+        setError('Failed to load books');
+        setLoading(false);
+      }
+    };
+
+    loadBooks();
   }, []);
 
   // Book operations
@@ -144,12 +218,77 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     return books.find(book => book.id === id) || null;
   };
 
-  const updateBook = (id: string, updates: Partial<Book>): void => {
-    setBooks(prevBooks => 
-      prevBooks.map(book => 
-        book.id === id ? { ...book, ...updates } : book
-      )
-    );
+  const updateBook = async (id: string, updates: Partial<Book>): Promise<void> => {
+    try {
+      const currentBook = getBook(id);
+      if (!currentBook) {
+        throw new Error('Book not found');
+      }
+
+      const updatedBook = { 
+        ...currentBook, 
+        ...updates, 
+        lastModified: new Date().toISOString(),
+        updatedAt: Date.now()
+      };
+      
+      // Update local state first
+      setBooks(prevBooks => 
+        prevBooks.map(book => 
+          book.id === id ? updatedBook : book
+        )
+      );
+
+      // Convert to database format and save
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const bookRow: BookRow = {
+        book_id: updatedBook.id,
+        owner_user_id: user.id,
+        title: updatedBook.title,
+        is_shared: updatedBook.isShared ? 1 : 0,
+        sync_state: 'dirty',
+        conflict_state: 'none',
+        last_local_change: Date.now(),
+        updated_at: Date.now()
+      };
+
+      await putBook(bookRow);
+
+      // Try to sync to cloud if online
+      if (navigator.onLine) {
+        try {
+          // Ensure we have a valid access token before making API calls
+          const { ensureAccessToken } = useAuthStore.getState();
+          await ensureAccessToken();
+          
+          await apiClient.updateBook(id, updatedBook);
+          // Update sync state to indicate successful cloud sync
+          bookRow.sync_state = 'idle';
+          await putBook(bookRow);
+          
+          // Update local state with synced status
+          setBooks(prevBooks => 
+            prevBooks.map(book => 
+              book.id === id ? { ...book, syncState: 'idle' } : book
+            )
+          );
+          
+          await appLog.info('book-context', 'Book synced to cloud successfully', { bookId: id });
+        } catch (cloudError) {
+          await appLog.warn('book-context', 'Failed to sync book to cloud, will retry later', { bookId: id, error: cloudError });
+        }
+      }
+
+      await appLog.success('book-context', 'Book updated successfully', { bookId: id });
+    } catch (error) {
+      console.error('Failed to update book:', error);
+      await appLog.error('book-context', 'Failed to update book', { bookId: id, error });
+      throw error;
+    }
   };
 
   // Version operations
@@ -173,22 +312,29 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     );
   };
 
-  const createVersion = (bookId: string, versionData: Omit<Version, 'id'>): Version => {
+  const createVersion = async (bookId: string, versionData: Omit<Version, 'id'>): Promise<Version> => {
     const newVersion: Version = {
       ...versionData,
       id: generateId(),
     };
 
-    setBooks(prevBooks => 
-      prevBooks.map(book => 
-        book.id === bookId 
-          ? {
-              ...book,
-              versions: [...(book.versions || []), newVersion]
-            }
-          : book
-      )
-    );
+    const currentBook = getBook(bookId);
+    if (!currentBook) {
+      throw new Error('Book not found');
+    }
+
+    const updatedVersions = [...(currentBook.versions || []), newVersion];
+    await updateBook(bookId, { versions: updatedVersions });
+
+    // Try to sync to cloud if online
+    if (navigator.onLine) {
+      try {
+        await apiClient.createVersion(bookId, versionData);
+        await appLog.info('book-context', 'Version synced to cloud successfully', { bookId, versionId: newVersion.id });
+      } catch (cloudError) {
+        await appLog.warn('book-context', 'Failed to sync version to cloud, will retry later', { bookId, versionId: newVersion.id, error: cloudError });
+      }
+    }
 
     return newVersion;
   };
@@ -505,13 +651,287 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     }
   };
 
+  // Scene operations (encrypted content)
+  const getSceneContent = async (sceneId: string): Promise<string | null> => {
+    try {
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Load and decrypt the scene content
+      const content = await encryptionService.loadSceneContent(sceneId, user.id);
+      return content;
+
+    } catch (error) {
+      await appLog.error('book-context', 'Failed to get scene content', { sceneId, error });
+      return null;
+    }
+  };
+
+  const updateSceneContent = async (sceneId: string, content: string): Promise<void> => {
+    try {
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Get current scene to get book/version/chapter info
+      const currentScene = await getScene(sceneId, user.id);
+      if (!currentScene) {
+        throw new Error('Scene not found');
+      }
+
+      // Save encrypted content
+      await encryptionService.saveSceneContent(
+        sceneId,
+        user.id,
+        currentScene.book_id,
+        currentScene.version_id,
+        currentScene.chapter_id,
+        content,
+        Boolean(currentScene.enc_scheme === 'bsk')
+      );
+
+      await appLog.info('book-context', 'Scene content updated', { sceneId });
+
+    } catch (error) {
+      await appLog.error('book-context', 'Failed to update scene content', { sceneId, error });
+      throw error;
+    }
+  };
+
+  const createScene = async (
+    bookId: string, 
+    versionId: string, 
+    chapterId: string, 
+    title: string, 
+    content: string = ''
+  ): Promise<Scene> => {
+    try {
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const sceneId = generateId();
+      
+      // Save encrypted scene content
+      await encryptionService.saveSceneContent(
+        sceneId,
+        user.id,
+        bookId,
+        versionId,
+        chapterId,
+        { title, content },
+        false // Private book for now
+      );
+
+      // Return Scene object
+      const scene: Scene = {
+        id: sceneId,
+        title: title,
+        encScheme: 'udek',
+        syncState: 'dirty',
+        conflictState: 'none',
+        updatedAt: Date.now(),
+        wordCount: content.split(/\s+/).length
+      };
+
+      await appLog.info('book-context', 'Scene created', { sceneId, bookId });
+      return scene;
+
+    } catch (error) {
+      await appLog.error('book-context', 'Failed to create scene', { bookId, chapterId, error });
+      throw error;
+    }
+  };
+
+  const getBookScenes = async (bookId: string): Promise<Scene[]> => {
+    try {
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const sceneRows = await getScenesByBook(bookId, user.id);
+      
+      // Convert SceneRow[] to Scene[]
+      const scenes: Scene[] = sceneRows.map(row => ({
+        id: row.scene_id,
+        title: row.title || 'Untitled Scene',
+        encScheme: row.enc_scheme as any,
+        syncState: row.sync_state as any,
+        conflictState: row.conflict_state as any,
+        updatedAt: row.updated_at,
+        wordCount: row.word_count,
+        hasProposals: Boolean(row.has_proposals)
+      }));
+
+      return scenes;
+
+    } catch (error) {
+      await appLog.error('book-context', 'Failed to get book scenes', { bookId, error });
+      return [];
+    }
+  };
+
   // Utility methods
   const generateId = (): string => {
-    return `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   };
 
   const refreshData = (): void => {
-    setBooks(MOCK_BOOKS);
+    // Reload books from encrypted storage
+    window.location.reload(); // Temporary implementation
+  };
+
+  const createSampleData = async (): Promise<void> => {
+    try {
+      const { user, isAuthenticated } = useAuthStore.getState();
+      
+      if (!isAuthenticated || !user) {
+        await appLog.warn('book-context', 'Cannot create sample data - user not authenticated');
+        return;
+      }
+
+      await appLog.info('book-context', 'Creating sample encrypted books...');
+      
+      // Create a sample book with encrypted content
+      const sampleBookId = generateId();
+      
+      // Add book to database using putBook
+      await putBook({
+        book_id: sampleBookId,
+        owner_user_id: user.id,
+        title: 'My First Novel',
+        is_shared: 0,
+        sync_state: 'idle',
+        conflict_state: 'none',
+        last_local_change: Date.now(),
+        updated_at: Date.now()
+      });
+      
+      // Add scene with encrypted content using createScene
+      const sampleContent = "It was a dark and stormy night when our story begins...";
+      await createScene(sampleBookId, 'version-1', 'chapter-1', 'Opening Scene', sampleContent);
+      
+      await appLog.success('book-context', 'Sample data created successfully');
+      
+      // Refresh the books list
+      refreshData();
+      
+    } catch (error) {
+      await appLog.error('book-context', 'Failed to create sample data', error);
+    }
+  };
+
+  const createBook = async (bookData: Omit<Book, 'id'>): Promise<Book> => {
+    try {
+      const { user, isAuthenticated } = useAuthStore.getState();
+      
+      if (!isAuthenticated || !user) {
+        throw new Error('User not authenticated');
+      }
+
+      await appLog.info('book-context', 'Creating new book...', { title: bookData.title });
+      
+      const bookId = generateId();
+      const newBook: Book = {
+        ...bookData,
+        id: bookId,
+        authorId: user.id,
+        author: user.name || bookData.author || 'Unknown Author',
+        lastModified: new Date().toISOString(),
+        updatedAt: Date.now(),
+        syncState: 'idle',
+        conflictState: 'none'
+      };
+
+      // Save to local database
+      const bookRow = {
+        book_id: bookId,
+        owner_user_id: user.id,
+        title: newBook.title,
+        is_shared: newBook.isShared ? 1 : 0,
+        sync_state: 'dirty',
+        conflict_state: 'none',
+        last_local_change: Date.now(),
+        updated_at: Date.now()
+      };
+      
+      await putBook(bookRow);
+      
+      // Try to sync to cloud if online
+      if (navigator.onLine) {
+        try {
+          // Ensure we have a valid access token before making API calls
+          const { ensureAccessToken } = useAuthStore.getState();
+          await ensureAccessToken();
+          
+          await apiClient.createBook(newBook);
+          // Update sync state to indicate successful cloud sync
+          bookRow.sync_state = 'idle';
+          await putBook(bookRow);
+          newBook.syncState = 'idle';
+          
+          await appLog.info('book-context', 'Book synced to cloud successfully', { bookId });
+        } catch (cloudError) {
+          await appLog.warn('book-context', 'Failed to sync book to cloud, will retry later', { bookId, error: cloudError });
+          // Keep sync_state as 'dirty' for retry later
+        }
+      }
+      
+      // Update local state
+      setBooks(prev => [...prev, newBook]);
+      
+      await appLog.success('book-context', 'Book created successfully', { bookId });
+      return newBook;
+      
+    } catch (error) {
+      await appLog.error('book-context', 'Failed to create book', error);
+      throw error;
+    }
+  };
+
+  const deleteBook = async (bookId: string): Promise<void> => {
+    try {
+      const { user, isAuthenticated } = useAuthStore.getState();
+      
+      if (!isAuthenticated || !user) {
+        throw new Error('User not authenticated');
+      }
+
+      await appLog.info('book-context', 'Deleting book...', { bookId });
+      
+      // Try to delete from cloud if online and authenticated
+      if (navigator.onLine) {
+        try {
+          await apiClient.deleteBook(bookId);
+          await appLog.info('book-context', 'Book deleted from cloud successfully', { bookId });
+        } catch (cloudError) {
+          await appLog.warn('book-context', 'Failed to delete book from cloud, continuing with local deletion', { 
+            bookId, 
+            error: cloudError,
+            message: cloudError instanceof Error ? cloudError.message : 'Unknown error'
+          });
+        }
+      } else {
+        await appLog.info('book-context', 'Offline mode - skipping cloud deletion', { bookId });
+      }
+      
+      // Delete from local database
+      await deleteBookFromDB(bookId, user.id);
+      
+      // Update local state
+      setBooks(prev => prev.filter(book => book.id !== bookId));
+      
+      await appLog.success('book-context', 'Book deleted successfully', { bookId });
+      
+    } catch (error) {
+      await appLog.error('book-context', 'Failed to delete book', error);
+      throw error;
+    }
   };
 
   const contextValue: BookContextType = {
@@ -582,9 +1002,20 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     updateMagicSystem,
     deleteMagicSystem,
     
+    // Scene operations (encrypted content)
+    getSceneContent,
+    updateSceneContent,
+    createScene,
+    getBookScenes,
+    
+    // Book CRUD operations
+    createBook,
+    deleteBook,
+    
     // Utility methods
     generateId,
     refreshData,
+    createSampleData,
   };
 
   return (

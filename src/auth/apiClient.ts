@@ -15,6 +15,7 @@ export interface SignupRequest {
 
 export interface AuthResponse {
   token: string;
+  refreshToken: string;
   userId: string;
   globalRole?: string;
   name?: string;

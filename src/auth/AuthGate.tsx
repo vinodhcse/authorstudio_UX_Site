@@ -1,11 +1,14 @@
 // AuthGate component to protect routes and handle authentication flow
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from './useAuthStore';
+import { encryptionService } from '../services/encryptionService';
+import { apiClient } from '../api/apiClient';
 import UnlockOffline from './UnlockOffline';
 import SealedNotice from './SealedNotice';
 import IdleWarningModal from './IdleWarningModal';
 import { useIdleTimer, DEFAULT_IDLE_CONFIG } from './idleTimer';
 import { motion } from 'framer-motion';
+import { appLog } from './fileLogger';
 
 interface AuthGateProps {
   children: React.ReactNode;
@@ -26,10 +29,23 @@ const AuthGate: React.FC<AuthGateProps> = ({ children, fallback }) => {
     dismissWarning
   } = useIdleTimer(DEFAULT_IDLE_CONFIG);
 
+  // Add logging when auth state changes
+  useEffect(() => {
+    const logStateChange = async () => {
+      await appLog.debug('auth-gate', 'Auth state changed', {
+        authState,
+        isAuthenticated,
+        hasAppKey: !!appKey,
+        isLoading
+      });
+    };
+    logStateChange();
+  }, [authState, isAuthenticated, appKey, isLoading]);
+
   useEffect(() => {
     // Check auth state and determine what UI to show
     const checkAuthStatus = async () => {
-      console.log('🔍 AuthGate checking auth status...');
+      await appLog.debug('auth-gate', 'Checking auth status...');
       
       if (!isAuthenticated && !isLoading) {
         try {
@@ -37,24 +53,44 @@ const AuthGate: React.FC<AuthGateProps> = ({ children, fallback }) => {
           const session = await getSessionRow();
           
           if (!session) {
-            console.log('📝 No session found - need to login');
+            await appLog.info('auth-gate', 'No session found - need to login');
             setAuthState('no-session');
           } else if (session.session_state === 'sealed') {
-            console.log('🔒 Session is sealed - need online login to unseal');
+            await appLog.info('auth-gate', 'Session is sealed - need online login to unseal');
             setAuthState('sealed');
           } else {
-            console.log('🔓 Active session found - show unlock screen');
+            await appLog.info('auth-gate', 'Active session found - show unlock screen');
             setAuthState('unlock');
           }
         } catch (error) {
-          console.error('❌ Failed to check session:', error);
+          await appLog.error('auth-gate', 'Failed to check session', error);
           setAuthState('no-session');
         }
       } else if (isAuthenticated) {
-        console.log('✅ User is authenticated');
+        await appLog.success('auth-gate', 'User is authenticated');
         setAuthState('authenticated');
+        
+        // Initialize encryption service and API client when authenticated
+        const { user, accessToken } = useAuthStore.getState();
+        if (user && accessToken) {
+          try {
+            // Set API client token
+            apiClient.setAccessToken(accessToken);
+            
+            // Get device ID from session for API client
+            const { getSessionRow } = await import('./sqlite');
+            const session = await getSessionRow();
+            if (session?.device_id) {
+              apiClient.setDeviceId(session.device_id);
+            }
+            
+            await appLog.info('auth-gate', 'API client configured with authentication');
+          } catch (error) {
+            await appLog.error('auth-gate', 'Failed to configure API client', error);
+          }
+        }
       } else {
-        console.log('⏳ Authentication loading...');
+        await appLog.debug('auth-gate', 'Authentication loading...');
         setAuthState('loading');
       }
     };
@@ -64,10 +100,21 @@ const AuthGate: React.FC<AuthGateProps> = ({ children, fallback }) => {
 
   // If appKey is cleared (due to idle timeout), show unlock screen
   useEffect(() => {
-    if (isAuthenticated && !appKey) {
-      setAuthState('unlock');
-    }
-  }, [isAuthenticated, appKey]);
+    const logAppKeyStatus = async () => {
+      await appLog.debug('auth-gate', 'App key status check', {
+        isAuthenticated,
+        hasAppKey: !!appKey,
+        currentAuthState: authState
+      });
+      
+      if (isAuthenticated && !appKey) {
+        await appLog.warn('auth-gate', 'App key missing but user authenticated - showing unlock screen');
+        setAuthState('unlock');
+      }
+    };
+    
+    logAppKeyStatus();
+  }, [isAuthenticated, appKey, authState]);
 
   // Show loading state
   if (isLoading) {

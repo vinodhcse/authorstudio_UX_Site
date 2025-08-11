@@ -4,6 +4,13 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-mo
 import { Book } from '../../../types';
 import { PenIcon, ExternalLinkIcon } from '../../../constants';
 
+// Add TrashIcon to the imports if it exists, or define a simple one
+const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+);
+
 const DefaultCover: React.FC<{ title: string; author?: string }> = ({ title, author }) => (
     <div className="absolute inset-0 bg-gradient-to-br from-gray-700 via-gray-900 to-black p-4 flex flex-col justify-center items-center text-center rounded-lg">
         <h3 className="text-xl font-bold text-white text-shadow">{title}</h3>
@@ -38,7 +45,7 @@ const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
     </div>
 );
 
-const BookHero: React.FC<{ book: Book, onEdit: () => void }> = ({ book, onEdit }) => {
+const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void }> = ({ book, onEdit, onDelete }) => {
     const x = useMotionValue(0);
     const y = useMotionValue(0);
     const rotateX = useTransform(y, [-150, 150], [8, -8]);
@@ -108,13 +115,22 @@ const BookHero: React.FC<{ book: Book, onEdit: () => void }> = ({ book, onEdit }
                             <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">{book.title}</h1>
                             {book.author && <p className="text-md text-gray-600 dark:text-gray-300 mt-2">by {book.author}</p>}
                         </div>
-                        <button 
-                            onClick={onEdit}
-                            className="flex-shrink-0 flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-purple-600 text-white hover:bg-purple-700 dark:bg-sky-500 dark:hover:bg-sky-600 transition-all transform hover:scale-105 shadow-md shadow-purple-500/20 dark:shadow-sky-500/30"
-                        >
-                            <PenIcon className="h-4 w-4" />
-                            Edit
-                        </button>
+                        <div className="flex-shrink-0 flex items-center gap-3">
+                            <button 
+                                onClick={onEdit}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-purple-600 text-white hover:bg-purple-700 dark:bg-sky-500 dark:hover:bg-sky-600 transition-all transform hover:scale-105 shadow-md shadow-purple-500/20 dark:shadow-sky-500/30"
+                            >
+                                <PenIcon className="h-4 w-4" />
+                                Edit
+                            </button>
+                            <button 
+                                onClick={onDelete}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-red-600 text-white hover:bg-red-700 transition-all transform hover:scale-105 shadow-md shadow-red-500/20"
+                            >
+                                <TrashIcon className="h-4 w-4" />
+                                Delete
+                            </button>
+                        </div>
                     </div>
                     
                     <p className="text-gray-600 dark:text-gray-400 leading-relaxed text-sm max-w-2xl">

@@ -26,7 +26,7 @@ import {
 import { listen } from '@tauri-apps/api/event';
 
 interface CharacterProfileBuilderProps {
-  books: Book[];
+  books?: Book[];
    theme: Theme;
    setTheme: (theme: Theme) => void;
 }
@@ -280,7 +280,7 @@ const CharacterProfileBuilder: React.FC<CharacterProfileBuilderProps> = ({ books
   const [isGenerating, setIsGenerating] = useState(false);
   const [visibleTabsStart, setVisibleTabsStart] = useState(0);
 
-  const book = books.find(b => b.id === bookId);
+  const book = books?.find(b => b.id === bookId);
   const maxVisibleTabs = 4; // Show 4 tabs at a time
 
   const updateProfile = (updates: Partial<CharacterProfile>) => {
