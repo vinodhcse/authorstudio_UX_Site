@@ -56,6 +56,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
     appLog.info('book-forge', 'URL params', { bookId, versionId });
     appLog.info('book-forge', 'Context data', { currentBook, currentVersion, loading, error });
     appLog.info('book-forge', 'URL mode and tab', { mode: modeFromUrl, tab: tabFromUrl });
+    appLog.info('book-forge', 'State values', { activeMode, activePlanningTab });
     
     // Update URL when mode or tab changes
     useEffect(() => {
@@ -209,6 +210,8 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                     onEditorReady={setEditorInstance}
                     bookId={bookId!}
                     versionId={versionId!}
+                    book={compatibilityBook}
+                    version={compatibilityVersion}
                     theme={theme}
                     activeMode={activeMode}
                     planningTab={activePlanningTab}

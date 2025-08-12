@@ -18,6 +18,7 @@ import CharacterProfileBuilder from './pages/Tools/CharacterProfileBuilder';
 import WhisperTestPage from './pages/WhisperTestPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
+import ErrorBoundary from './components/ErrorBoundary';
 // Import new authentication system
 import { AuthGate } from './auth';
 import { BookContextProvider, useBookContext } from './contexts/BookContext';
@@ -124,11 +125,12 @@ const App: React.FC = () => {
           ></div>
 
           <div className="relative z-10 h-full">
-            <Routes>
-              {/* Main protected routes */}
-              <Route
-                element={
-                  <BookContextProvider>
+            <ErrorBoundary>
+              <BookContextProvider>
+              <Routes>
+                {/* Main protected routes */}
+                <Route
+                  element={
                     <MainLayout 
                       theme={theme}
                       setTheme={handleThemeChange}
@@ -136,42 +138,41 @@ const App: React.FC = () => {
                       isCreateModalOpen={isCreateModalOpen}
                       setCreateModalOpen={setCreateModalOpen}
                     />
-                  </BookContextProvider>
-                }
-              >
-                <Route path="/" element={<MyBooksWithContext />} />
-                <Route 
-                  path="/book/:bookId" 
-                  element={<BookDetailsPage />} 
-                />
-                <Route 
-                  path="/book/:bookId/version/:versionId/character/:characterId" 
-                  element={<CharacterDetailsPage theme={theme} setTheme={handleThemeChange} />} 
-                />
-                <Route path="/editing" element={<EditingBooksView />} />
-                <Route path="/reviewing" element={<ReviewingBooksView />} />
-                <Route path="/test-nodes" element={<CustomNodeTest />} />
-                <Route path="/test-whisper" element={<WhisperTestPage />} />
-                <Route path="/tools/name-generator" element={<NameGeneratorPage theme={theme} setTheme={handleThemeChange}/>} />
-                <Route path="/tools/character-profile-builder" element={<CharacterProfileBuilder theme={theme} setTheme={handleThemeChange} />} />
-              </Route>
-              
-              {/* Tool Window Routes */}
-              <Route path="/tool/name-generator" element={
-                <NameGeneratorPage theme={theme} setTheme={handleThemeChange}/>
-              } />
-              <Route path="/tool/character-tracker" element={
-                <CharacterProfileBuilder theme={theme} setTheme={handleThemeChange} />
-              } />
-              
-              {/* BookForgePage - Full screen editor */}
-              <Route path="/book/:bookId/version/:versionId" element={
-                <BookContextProvider>
+                  }
+                >
+                  <Route path="/" element={<MyBooksWithContext />} />
+                  <Route 
+                    path="/book/:bookId" 
+                    element={<BookDetailsPage />} 
+                  />
+                  <Route 
+                    path="/book/:bookId/version/:versionId/character/:characterId" 
+                    element={<CharacterDetailsPage theme={theme} setTheme={handleThemeChange} />} 
+                  />
+                  <Route path="/editing" element={<EditingBooksView />} />
+                  <Route path="/reviewing" element={<ReviewingBooksView />} />
+                  <Route path="/test-nodes" element={<CustomNodeTest />} />
+                  <Route path="/test-whisper" element={<WhisperTestPage />} />
+                  <Route path="/tools/name-generator" element={<NameGeneratorPage theme={theme} setTheme={handleThemeChange}/>} />
+                  <Route path="/tools/character-profile-builder" element={<CharacterProfileBuilder theme={theme} setTheme={handleThemeChange} />} />
+                </Route>
+                
+                {/* Tool Window Routes */}
+                <Route path="/tool/name-generator" element={
+                  <NameGeneratorPage theme={theme} setTheme={handleThemeChange}/>
+                } />
+                <Route path="/tool/character-tracker" element={
+                  <CharacterProfileBuilder theme={theme} setTheme={handleThemeChange} />
+                } />
+                
+                {/* BookForgePage - Full screen editor */}
+                <Route path="/book/:bookId/version/:versionId" element={
                   <BookForgePage theme={theme} setTheme={handleThemeChange} />
-                </BookContextProvider>
-              } />
-            </Routes>
-          </div>
+                } />
+              </Routes>
+            </BookContextProvider>
+          </ErrorBoundary>
+        </div>
       </div>
     </AuthGate>
   );

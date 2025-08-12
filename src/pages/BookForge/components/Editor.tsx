@@ -28,8 +28,9 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { chapterContent } from '../../../data/chapterContent';
-import { Theme, Book, Version } from '../../../types';
+import { Theme, Book, Version, Chapter } from '../../../types';
 import PlanningPage from './PlanningPage';
+import { useBookContext } from '../../../contexts/BookContext';
 
 // Tool Window System Imports
 import DockSidebar from '../../../components/DockSidebar';
@@ -1812,6 +1813,8 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
 const Editor: React.FC<{ 
     bookId?: string;
     versionId?: string;
+    book?: Book;
+    version?: Version;
     showTypographySettings?: boolean;
     onCloseTypographySettings?: () => void;
     onOpenTypographySettings?: () => void;
@@ -1822,7 +1825,9 @@ const Editor: React.FC<{
     planningSearchQuery?: string;
 }> = ({ 
     bookId = 'default-book', 
-    versionId = 'v1', 
+    versionId = 'v1',
+    book,
+    version,
     showTypographySettings = false, 
     onCloseTypographySettings, 
     onOpenTypographySettings, 
@@ -2251,7 +2256,7 @@ const Editor: React.FC<{
 
                 {activeMode === 'Planning' ? (
                     <PlanningPage 
-                        book={{
+                        book={book || {
                             id: bookId,
                             title: 'Current Book',
                             lastModified: new Date().toISOString(),
@@ -2269,7 +2274,7 @@ const Editor: React.FC<{
                             publishedStatus: 'Unpublished',
                             synopsis: ''
                         }}
-                        version={{
+                        version={version || {
                             id: versionId,
                             name: 'Working Draft',
                             status: 'DRAFT',
@@ -2278,7 +2283,11 @@ const Editor: React.FC<{
                             contributor: {
                                 name: 'Author',
                                 avatar: ''
-                            }
+                            },
+                            characters: [],
+                            plotArcs: [],
+                            worlds: [],
+                            chapters: []
                         }}
                         theme={theme}
                         activeTab={planningTab}

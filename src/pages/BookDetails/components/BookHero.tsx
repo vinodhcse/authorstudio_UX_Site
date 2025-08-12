@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { Book } from '../../../types';
-import { PenIcon, ExternalLinkIcon } from '../../../constants';
+import { PenIcon, ExternalLinkIcon, CloudIcon, RefreshIcon, CheckCircleIcon } from '../../../constants';
 import CoverPicker from '../../../components/CoverPicker';
 import { AssetService } from '../../../services/AssetService';
+import { useBookContext } from '../../../contexts/BookContext';
 
 // Add TrashIcon to the imports if it exists, or define a simple one
 const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -55,6 +56,108 @@ const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void,
     const [showCoverPicker, setShowCoverPicker] = useState(false);
     const [currentCoverId, setCurrentCoverId] = useState<string | undefined>(book.coverImageRef?.assetId);
     const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>();
+    const [isSyncing, setIsSyncing] = useState(false);
+    
+    const { syncBook } = useBookContext();
+
+    // Handle sync action
+    const handleSync = async () => {
+        if (!book || isSyncing) return;
+        
+        setIsSyncing(true);
+        try {
+            await syncBook(book.id);
+        } catch (error) {
+            console.error('Failed to sync book:', error);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    // Sync status component
+    const SyncStatusButton: React.FC = () => {
+        const getSyncStatusInfo = () => {
+            switch (book.syncState) {
+                case 'dirty':
+                    return {
+                        icon: <CloudIcon className="h-4 w-4" />,
+                        text: 'Sync Now',
+                        color: 'text-yellow-600 dark:text-yellow-400',
+                        bgColor: 'bg-yellow-50 dark:bg-yellow-900/20',
+                        borderColor: 'border-yellow-200 dark:border-yellow-800',
+                        isButton: true
+                    };
+                case 'pushing':
+                    return {
+                        icon: <RefreshIcon className="h-4 w-4 animate-spin" />,
+                        text: 'Syncing...',
+                        color: 'text-blue-600 dark:text-blue-400',
+                        bgColor: 'bg-blue-50 dark:bg-blue-900/20',
+                        borderColor: 'border-blue-200 dark:border-blue-800',
+                        isButton: false
+                    };
+                case 'conflict':
+                    return {
+                        icon: <div className="h-4 w-4 bg-red-500 rounded-full" />,
+                        text: 'Conflict',
+                        color: 'text-red-600 dark:text-red-400',
+                        bgColor: 'bg-red-50 dark:bg-red-900/20',
+                        borderColor: 'border-red-200 dark:border-red-800',
+                        isButton: false
+                    };
+                case 'idle':
+                default:
+                    return {
+                        icon: <CheckCircleIcon className="h-4 w-4" />,
+                        text: 'Synced',
+                        color: 'text-green-600 dark:text-green-400',
+                        bgColor: 'bg-green-50 dark:bg-green-900/20',
+                        borderColor: 'border-green-200 dark:border-green-800',
+                        isButton: false
+                    };
+            }
+        };
+        
+        const statusInfo = getSyncStatusInfo();
+        
+        if (statusInfo.isButton && navigator.onLine) {
+            return (
+                <button
+                    onClick={handleSync}
+                    disabled={isSyncing}
+                    className={`flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-full border ${statusInfo.bgColor} ${statusInfo.borderColor} ${statusInfo.color} hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105`}
+                >
+                    {isSyncing ? (
+                        <>
+                            <RefreshIcon className="h-4 w-4 animate-spin" />
+                            Syncing...
+                        </>
+                    ) : (
+                        <>
+                            {statusInfo.icon}
+                            {statusInfo.text}
+                        </>
+                    )}
+                </button>
+            );
+        }
+        
+        return (
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-full border ${statusInfo.bgColor} ${statusInfo.borderColor}`}>
+                <div className={statusInfo.color}>
+                    {statusInfo.icon}
+                </div>
+                <span className={`text-sm font-medium ${statusInfo.color}`}>
+                    {statusInfo.text}
+                </span>
+                {book.syncState === 'dirty' && !navigator.onLine && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                        (Offline)
+                    </span>
+                )}
+            </div>
+        );
+    };
 
     // Load cover image from asset system
     useEffect(() => {
@@ -198,6 +301,7 @@ const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void,
                             {book.author && <p className="text-md text-gray-600 dark:text-gray-300 mt-2">by {book.author}</p>}
                         </div>
                         <div className="flex-shrink-0 flex items-center gap-3">
+                            <SyncStatusButton />
                             <button 
                                 onClick={onEdit}
                                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-purple-600 text-white hover:bg-purple-700 dark:bg-sky-500 dark:hover:bg-sky-600 transition-all transform hover:scale-105 shadow-md shadow-purple-500/20 dark:shadow-sky-500/30"

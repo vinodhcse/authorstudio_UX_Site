@@ -162,6 +162,8 @@ const BookContext = createContext<BookContextType | undefined>(undefined);
 export const useBookContext = () => {
   const context = useContext(BookContext);
   if (context === undefined) {
+    // Add more context to the error message
+    console.error('useBookContext called outside of BookContextProvider. Current stack:', new Error().stack);
     throw new Error('useBookContext must be used within a BookContextProvider');
   }
   return context;
@@ -599,6 +601,23 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
         )
       );
 
+      // Also update categorized book arrays
+      setAuthoredBooks(prevBooks => 
+        prevBooks.map(book => 
+          book.id === id ? updatedBook : book
+        )
+      );
+      setEditableBooks(prevBooks => 
+        prevBooks.map(book => 
+          book.id === id ? updatedBook : book
+        )
+      );
+      setReviewableBooks(prevBooks => 
+        prevBooks.map(book => 
+          book.id === id ? updatedBook : book
+        )
+      );
+
       // Convert to database format and save
       const { user } = useAuthStore.getState();
       if (!user) {
@@ -645,6 +664,23 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
           
           // Update local state with synced status
           setBooks(prevBooks => 
+            prevBooks.map(book => 
+              book.id === id ? { ...book, syncState: 'idle' } : book
+            )
+          );
+
+          // Also update categorized book arrays
+          setAuthoredBooks(prevBooks => 
+            prevBooks.map(book => 
+              book.id === id ? { ...book, syncState: 'idle' } : book
+            )
+          );
+          setEditableBooks(prevBooks => 
+            prevBooks.map(book => 
+              book.id === id ? { ...book, syncState: 'idle' } : book
+            )
+          );
+          setReviewableBooks(prevBooks => 
             prevBooks.map(book => 
               book.id === id ? { ...book, syncState: 'idle' } : book
             )
@@ -1727,10 +1763,31 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
   );
 };
 
+// Safe hook version that doesn't throw errors
+export const useBookContextSafe = () => {
+  const context = useContext(BookContext);
+  return context;
+};
+
 // Custom hook to get current book and version from URL params
 export const useCurrentBookAndVersion = () => {
   const { bookId, versionId } = useParams<{ bookId: string; versionId: string }>();
-  const { getBook, getVersion } = useBookContext();
+  
+  // Use safe hook first to check if context is available
+  const contextSafe = useBookContextSafe();
+  
+  if (!contextSafe) {
+    return {
+      bookId,
+      versionId,
+      currentBook: null,
+      currentVersion: null,
+      loading: false,
+      error: 'BookContext not available'
+    };
+  }
+  
+  const { getBook, getVersion } = contextSafe;
   
   const currentBook = bookId ? getBook(bookId) : null;
   const currentVersion = currentBook && versionId && bookId ? getVersion(bookId, versionId) : null;
