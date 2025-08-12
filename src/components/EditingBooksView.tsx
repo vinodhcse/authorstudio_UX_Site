@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Book } from '../types';
 import BookCard from './BookCard';
+import Modal from './Modal';
 import { useBookContext } from '../contexts/BookContext';
 import { useAuthStore } from '../auth/useAuthStore';
 import { appLog } from '../auth/fileLogger';
@@ -10,6 +12,7 @@ interface EditingBooksViewProps {
 }
 
 const EditingBooksView: React.FC<EditingBooksViewProps> = ({ books: propBooks }) => {
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const { editableBooks, loading, error } = useBookContext();
   const { isAuthenticated, user } = useAuthStore();
 
@@ -70,7 +73,12 @@ const EditingBooksView: React.FC<EditingBooksViewProps> = ({ books: propBooks })
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.5 }}
+    >
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
           Books I Can Edit ({books.length})
@@ -85,14 +93,20 @@ const EditingBooksView: React.FC<EditingBooksViewProps> = ({ books: propBooks })
           <BookCard 
             key={book.id} 
             book={book}
-            onSelect={() => {
-              appLog.debug('editing-books-view', 'Book selected', { bookId: book.id, title: book.title });
-              // TODO: Implement book selection/opening logic
-            }}
+            onSelect={() => setSelectedBook(book)}
           />
         ))}
       </div>
-    </div>
+
+      <AnimatePresence>
+        {selectedBook && (
+          <Modal 
+            book={selectedBook} 
+            onClose={() => setSelectedBook(null)} 
+          />
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 };
 
