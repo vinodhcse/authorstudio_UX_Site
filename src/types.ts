@@ -1,6 +1,71 @@
 
 import { WorldData } from './pages/BookForge/components/planning/types/WorldBuildingTypes';
 
+// Asset System Types
+export type EntityType =
+  | 'book' | 'character' | 'world' | 'location' | 'object' | 'chapter' | 'divider';
+
+export type AssetRole =
+  | 'cover' | 'avatar' | 'gallery' | 'divider' | 'attachment' | 'map' | 'lore';
+
+export type AssetStatus = 
+  | 'local_only' | 'pending_upload' | 'uploaded' | 'failed';
+
+export interface FileRef {
+  assetId: string;
+  sha256: string;
+  role: AssetRole;
+  mime?: string;
+  width?: number;
+  height?: number;
+  remoteId?: string;
+  remoteUrl?: string;
+  localPath?: string;
+}
+
+export interface AssetImportResult extends FileRef {
+  wasReused: boolean; // Indicates if this asset was already in the system
+  uploadStatus?: 'uploaded' | 'pending_upload' | 'failed' | 'local_only';
+}
+
+export interface ImportContext {
+  entityType: EntityType;
+  entityId: string;
+  role: AssetRole;
+  bookId: string; // for namespacing local cache & backend route
+  tags?: string[]; // serialized for upload
+  description?: string;
+}
+
+export interface FileAsset {
+  id: string;
+  sha256: string;
+  ext: string;
+  mime: string;
+  size_bytes: number;
+  width?: number;
+  height?: number;
+  local_path?: string;
+  remote_id?: string;
+  remote_url?: string;
+  status: AssetStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FileAssetLink {
+  id: string;
+  asset_id: string;
+  entity_type: EntityType;
+  entity_id: string;
+  role: AssetRole;
+  sort_order: number;
+  tags?: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PlotArc {
   id: string;
   title: string;
@@ -43,7 +108,9 @@ export interface Relationship {
 export interface Character {
   id: string;
   name: string;
-  image: string;
+  image: string; // Legacy field for backward compatibility
+  avatarRef?: FileRef; // New asset reference for avatar
+  galleryRefs?: FileRef[]; // New asset references for gallery
   quote: string;
   
   // Core Identity
@@ -198,7 +265,8 @@ export interface Book {
   subtitle?: string;
   author?: string;
   authorId?: string;
-  coverImage?: string;
+  coverImage?: string; // Legacy field for backward compatibility
+  coverImageRef?: FileRef; // New asset reference
   coverImages?: string[];
   lastModified: string;
   progress: number;

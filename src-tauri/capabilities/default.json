@@ -33,6 +33,22 @@
     "fs:allow-appdata-read-recursive",
     "fs:allow-appdata-write-recursive",
     "fs:allow-appdata-meta",
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        }
+      ]
+    },
     
     "http:default",
     "http:allow-fetch",

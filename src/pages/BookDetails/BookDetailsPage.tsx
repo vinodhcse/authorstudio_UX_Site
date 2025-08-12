@@ -42,6 +42,19 @@ const BookDetailsPage: React.FC = () => {
         setEditModalOpen(false);
     };
 
+    const handleCoverUpdate = async (coverId: string | null) => {
+        if (!book) return;
+        
+        try {
+            const updatedData: Partial<Book> = {
+                coverImageRef: coverId ? { assetId: coverId } as any : undefined
+            };
+            await updateBook(book.id, updatedData);
+        } catch (error) {
+            console.error('Failed to update book cover:', error);
+        }
+    };
+
     const handleDeleteBook = async () => {
         if (!book) return;
         
@@ -111,7 +124,12 @@ const BookDetailsPage: React.FC = () => {
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.5 }}
             >
-                <BookHero book={book} onEdit={() => setEditModalOpen(true)} onDelete={() => setDeleteModalOpen(true)} />
+                <BookHero 
+                    book={book} 
+                    onEdit={() => setEditModalOpen(true)} 
+                    onDelete={() => setDeleteModalOpen(true)}
+                    onCoverUpdate={handleCoverUpdate}
+                />
                 
                 <TabSwitcher 
                     tabs={detailTabs}

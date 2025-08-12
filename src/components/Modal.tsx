@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Book } from '../types';
+import { AssetService } from '../services/AssetService';
 
 const ModalProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
     <div className="w-full bg-gray-200 dark:bg-gray-700/50 rounded-full h-2.5 overflow-hidden">
@@ -47,9 +48,37 @@ interface ModalProps {
 }
 
 const Modal: React.FC<ModalProps> = ({ book, onClose }) => {
-  const images = [book.coverImage, ...(book.coverImages || [])].filter(Boolean) as string[];
+  const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const navigate = useNavigate();
+
+  // Load cover image from asset system
+  useEffect(() => {
+    const loadCoverImage = async () => {
+      if (book.coverImageRef?.assetId) {
+        try {
+          const fileRef = await AssetService.getFileRef(book.coverImageRef.assetId);
+          if (fileRef) {
+            // Try to get data URL for local files
+            const imageUrl = await AssetService.getLocalImageDataUrl(fileRef);
+            setCoverImageUrl(imageUrl);
+          }
+        } catch (error) {
+          console.warn('Failed to load cover image from assets:', error);
+          // Fallback to book.coverImage if available
+          setCoverImageUrl(book.coverImage);
+        }
+      } else {
+        // Use legacy cover image if no asset reference
+        setCoverImageUrl(book.coverImage);
+      }
+    };
+
+    loadCoverImage();
+  }, [book.coverImageRef?.assetId, book.coverImage]);
+
+  // Use resolved cover image instead of book.coverImage
+  const images = [coverImageUrl, ...(book.coverImages || [])].filter(Boolean) as string[];
 
   useEffect(() => {
     if (images.length <= 1) return;

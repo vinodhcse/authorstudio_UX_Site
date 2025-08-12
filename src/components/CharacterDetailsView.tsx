@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
 import { Character } from '../types';
+import AssetUploadButton from './AssetUploadButton';
 
 interface CharacterDetailsViewProps {
     character: Character | null;
@@ -9,6 +10,7 @@ interface CharacterDetailsViewProps {
     showBackButton?: boolean;
     onBack?: () => void;
     onEdit?: (character: Character) => void;
+    bookId?: string; // Add bookId for asset management
 }
 
 type CharacterTab = 'details' | 'relations' | 'mentions' | 'heatmap';
@@ -19,9 +21,11 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
     theme, 
     showBackButton = false,
     onBack,
-    onEdit 
+    onEdit,
+    bookId 
 }) => {
     const [activeTab, setActiveTab] = useState<CharacterTab>('details');
+    const [showImageUpload, setShowImageUpload] = useState(false);
 
     // Motion values for 3D effect
     const x = useMotionValue(0);
@@ -33,6 +37,12 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
         const rect = event.currentTarget.getBoundingClientRect();
         x.set(event.clientX - rect.left - rect.width / 2);
         y.set(event.clientY - rect.top - rect.height / 2);
+    };
+
+    const handleImageUpload = (assetId: string, assetUrl: string) => {
+        // TODO: Update character with new image asset
+        console.log('Character image uploaded:', assetId, assetUrl);
+        setShowImageUpload(false);
     };
 
     if (!character) {
@@ -105,6 +115,17 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
                                     </svg>
                                     Edit
                                 </button>
+                                {bookId && (
+                                    <button 
+                                        onClick={() => setShowImageUpload(true)}
+                                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-white/20 text-white backdrop-blur-md hover:bg-white/30 transition-colors"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                        </svg>
+                                        Upload
+                                    </button>
+                                )}
                                 <button 
                                     className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-white/20 text-white backdrop-blur-md hover:bg-white/30 transition-colors"
                                 >
@@ -115,6 +136,41 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
                                 </button>
                             </div>
                         </div>
+
+                        {/* Upload Modal */}
+                        {showImageUpload && bookId && (
+                            <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-40 p-4">
+                                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 max-w-sm w-full">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Upload Character Image</h3>
+                                        <button
+                                            onClick={() => setShowImageUpload(false)}
+                                            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <AssetUploadButton
+                                        entityType="character"
+                                        entityId={character.id}
+                                        bookId={bookId}
+                                        role="avatar"
+                                        onAssetUploaded={handleImageUpload}
+                                        className="w-full"
+                                        acceptedTypes={['image/*']}
+                                    >
+                                        <div className="w-full p-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center hover:border-blue-500 dark:hover:border-blue-400 transition-colors cursor-pointer">
+                                            <svg className="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                            </svg>
+                                            <p className="text-gray-600 dark:text-gray-400">Click to upload or drag & drop</p>
+                                        </div>
+                                    </AssetUploadButton>
+                                </div>
+                            </div>
+                        )}
                         
                         {/* Importance Badge */}
                         <div className="absolute top-3 right-3 w-10 h-10 bg-purple-500 rounded-full border-3 border-white flex items-center justify-center shadow-lg z-30">

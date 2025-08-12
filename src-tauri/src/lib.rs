@@ -36,6 +36,13 @@ use whisper_diagnostics::{
     test_whisper_silence, test_whisper_noise, test_whisper_microphone_noise
 };
 
+// Asset system commands
+mod asset_commands;
+use asset_commands::{
+    compute_sha256, compute_sha256_bytes, probe_image, probe_image_bytes, 
+    ensure_dir, ext_from_mime, generate_nanoid
+};
+
 // Uncomment this and comment out simple_dictation if you have whisper-rs working:
 // mod whisper_dictation;
 // use whisper_dictation::{
@@ -179,7 +186,15 @@ pub fn run() {
             list_test_audio_files,
             test_whisper_silence,
             test_whisper_noise,
-            test_whisper_microphone_noise
+            test_whisper_microphone_noise,
+            // Asset system commands
+            compute_sha256,
+            compute_sha256_bytes,
+            probe_image,
+            probe_image_bytes,
+            ensure_dir,
+            ext_from_mime,
+            generate_nanoid
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

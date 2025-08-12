@@ -1,29 +1,20 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Theme } from '../types';
+import { Book, Theme } from '../types';
 import CharacterDetailsView from '../components/CharacterDetailsView';
-import { useBookContext, useCurrentBookAndVersion } from '../contexts/BookContext';
 
 interface CharacterDetailsPageProps {
+    books: Book[];
     theme: Theme;
     setTheme: (theme: Theme) => void;
 }
 
-const CharacterDetailsPage: React.FC<CharacterDetailsPageProps> = ({ theme, setTheme: _setTheme }) => {
+const CharacterDetailsPage: React.FC<CharacterDetailsPageProps> = ({ books, theme, setTheme: _setTheme }) => {
     const { bookId, versionId, characterId } = useParams();
     const navigate = useNavigate();
-    
-    // Use BookContext to get character data
-    const { getCharacter } = useBookContext();
-    const { bookId: contextBookId, versionId: contextVersionId, currentBook } = useCurrentBookAndVersion();
-    
-    // Use the URL params if available, otherwise use context
-    const finalBookId = bookId || contextBookId;
-    const finalVersionId = versionId || contextVersionId;
-    
-    const character = characterId && finalBookId && finalVersionId 
-        ? getCharacter(finalBookId, finalVersionId, characterId) 
-        : null;
+
+    const book = books.find(b => b.id === bookId);
+    const character = book?.characters?.find(c => c.id === characterId);
 
     const renderBreadcrumbs = () => (
         <nav className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 mb-8">
@@ -38,7 +29,7 @@ const CharacterDetailsPage: React.FC<CharacterDetailsPageProps> = ({ theme, setT
                 onClick={() => navigate(`/book/${bookId}`)}
                 className="hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
             >
-                {currentBook?.title}
+                {book?.title}
             </button>
             <span>/</span>
             <button 
@@ -63,7 +54,6 @@ const CharacterDetailsPage: React.FC<CharacterDetailsPageProps> = ({ theme, setT
                     theme={theme}
                     showBackButton={true}
                     onBack={() => navigate(`/book/${bookId}/version/${versionId}/planning`)}
-                    bookId={finalBookId}
                 />
             </div>
         </div>

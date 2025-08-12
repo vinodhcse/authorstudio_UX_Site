@@ -20,6 +20,7 @@ import LoreDetailsModal from './modals/LoreDetailsModal';
 import MagicSystemDetailsModal from './modals/MagicSystemDetailsModal';
 import { WorldData, Location, WorldObject, Lore, MagicSystem } from './types/WorldBuildingTypes';
 import { sampleWorldData } from './data/sampleWorldData';
+import AssetImageCard from '../../../../components/AssetImageCard';
 
 interface WorldBuildingPageProps {
     book: Book;
@@ -27,7 +28,7 @@ interface WorldBuildingPageProps {
     theme: Theme;
 }
 
-const WorldBuildingPage: React.FC<WorldBuildingPageProps> = ({ theme }) => {
+const WorldBuildingPage: React.FC<WorldBuildingPageProps> = ({ book, theme }) => {
     const [worlds] = useState<WorldData[]>([sampleWorldData]);
     const [selectedWorldId, setSelectedWorldId] = useState<string>(worlds[0]?.id || '');
     const [activeTab, setActiveTab] = useState<'details' | 'locations' | 'objects' | 'lore' | 'magic-systems' | 'maps' | 'visualization'>('details');
@@ -123,36 +124,29 @@ const WorldBuildingPage: React.FC<WorldBuildingPageProps> = ({ theme }) => {
                 
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {selectedWorld.locations.map((location: Location) => (
-                        <motion.div
+                        <AssetImageCard
                             key={location.id}
-                            className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden cursor-pointer"
-                            whileHover={{ scale: 1.02 }}
+                            id={location.id}
+                            name={location.name}
+                            description={location.description}
+                            imageUrl={location.image}
+                            assetId={undefined}
+                            entityType="location"
+                            role="gallery"
+                            bookId={book.id}
+                            badges={[
+                                { label: location.type, color: 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' }
+                            ]}
+                            metadata={[
+                                { label: 'Region', value: location.region },
+                                { label: 'Type', value: location.type }
+                            ]}
                             onClick={() => setSelectedLocation(location)}
-                        >
-                            {location.image && (
-                                <img 
-                                    src={location.image} 
-                                    alt={location.name}
-                                    className="w-full h-48 object-cover"
-                                />
-                            )}
-                            <div className="p-4">
-                                <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                                    {location.name}
-                                </h4>
-                                <p className="text-gray-600 dark:text-gray-400 text-sm mb-2">
-                                    {location.description}
-                                </p>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                                        {location.region}
-                                    </span>
-                                    <span className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs">
-                                        {location.type}
-                                    </span>
-                                </div>
-                            </div>
-                        </motion.div>
+                            onImageUpdated={(assetId, imageUrl) => {
+                                // TODO: Update location with new asset
+                                console.log('Location image updated:', location.id, assetId, imageUrl);
+                            }}
+                        />
                     ))}
                 </div>
             </div>
@@ -174,36 +168,29 @@ const WorldBuildingPage: React.FC<WorldBuildingPageProps> = ({ theme }) => {
                 
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {selectedWorld.objects.map((object: WorldObject) => (
-                        <motion.div
+                        <AssetImageCard
                             key={object.id}
-                            className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden cursor-pointer"
-                            whileHover={{ scale: 1.02 }}
+                            id={object.id}
+                            name={object.name}
+                            description={object.description}
+                            imageUrl={object.image}
+                            assetId={undefined}
+                            entityType="object"
+                            role="attachment"
+                            bookId={book.id}
+                            badges={[
+                                { label: object.type, color: 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200' }
+                            ]}
+                            metadata={[
+                                { label: 'Origin', value: object.origin },
+                                { label: 'Type', value: object.type }
+                            ]}
                             onClick={() => setSelectedObject(object)}
-                        >
-                            {object.image && (
-                                <img 
-                                    src={object.image} 
-                                    alt={object.name}
-                                    className="w-full h-48 object-cover"
-                                />
-                            )}
-                            <div className="p-4">
-                                <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                                    {object.name}
-                                </h4>
-                                <p className="text-gray-600 dark:text-gray-400 text-sm mb-2">
-                                    {object.description}
-                                </p>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                                        {object.origin}
-                                    </span>
-                                    <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs">
-                                        {object.type}
-                                    </span>
-                                </div>
-                            </div>
-                        </motion.div>
+                            onImageUpdated={(assetId, imageUrl) => {
+                                // TODO: Update object with new asset
+                                console.log('Object image updated:', object.id, assetId, imageUrl);
+                            }}
+                        />
                     ))}
                 </div>
             </div>
@@ -223,30 +210,31 @@ const WorldBuildingPage: React.FC<WorldBuildingPageProps> = ({ theme }) => {
                     </button>
                 </div>
                 
-                <div className="space-y-4">
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {selectedWorld.lore.map((loreEntry: Lore) => (
-                        <motion.div
+                        <AssetImageCard
                             key={loreEntry.id}
-                            className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 cursor-pointer"
-                            whileHover={{ scale: 1.01 }}
+                            id={loreEntry.id}
+                            name={loreEntry.title}
+                            description={loreEntry.description}
+                            imageUrl={undefined} // Lore entries typically don't have images
+                            assetId={undefined}
+                            entityType="world"
+                            role="lore"
+                            bookId={book.id}
+                            badges={[
+                                { label: loreEntry.category, color: 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' }
+                            ]}
+                            metadata={[
+                                { label: 'Period', value: loreEntry.timeline.age },
+                                { label: 'Key Figures', value: `${loreEntry.keyFigures.length}` }
+                            ]}
                             onClick={() => setSelectedLore(loreEntry)}
-                        >
-                            <div className="flex justify-between items-start mb-2">
-                                <h4 className="font-semibold text-gray-900 dark:text-gray-100">
-                                    {loreEntry.title}
-                                </h4>
-                                <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs">
-                                    {loreEntry.category}
-                                </span>
-                            </div>
-                            <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">
-                                {loreEntry.description}
-                            </p>
-                            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                                <span>{loreEntry.timeline.age} ({loreEntry.timeline.startYear} - {loreEntry.timeline.endYear})</span>
-                                <span>{loreEntry.keyFigures.length} key figures</span>
-                            </div>
-                        </motion.div>
+                            onImageUpdated={(assetId, imageUrl) => {
+                                // TODO: Update lore with new asset
+                                console.log('Lore image updated:', loreEntry.id, assetId, imageUrl);
+                            }}
+                        />
                     ))}
                 </div>
             </div>
@@ -268,34 +256,26 @@ const WorldBuildingPage: React.FC<WorldBuildingPageProps> = ({ theme }) => {
                 
                 <div className="grid md:grid-cols-2 gap-6">
                     {selectedWorld.magicSystems.map((magicSystem: MagicSystem) => (
-                        <motion.div
+                        <AssetImageCard
                             key={magicSystem.id}
-                            className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 cursor-pointer"
-                            whileHover={{ scale: 1.02 }}
+                            id={magicSystem.id}
+                            name={magicSystem.name}
+                            description={`Source: ${magicSystem.sourceOfPower}`}
+                            assetId={undefined}
+                            entityType="object"
+                            role="gallery"
+                            bookId={book.id}
+                            badges={[{ label: magicSystem.category, color: 'purple' }]}
+                            metadata={magicSystem.rules.slice(0, 2).map((rule, idx) => ({ 
+                                label: `Rule ${idx + 1}`, 
+                                value: rule 
+                            }))}
                             onClick={() => setSelectedMagicSystem(magicSystem)}
-                        >
-                            <div className="flex justify-between items-start mb-2">
-                                <h4 className="font-semibold text-gray-900 dark:text-gray-100">
-                                    {magicSystem.name}
-                                </h4>
-                                <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs">
-                                    {magicSystem.category}
-                                </span>
-                            </div>
-                            <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">
-                                Source: {magicSystem.sourceOfPower}
-                            </p>
-                            <div className="space-y-2">
-                                <div>
-                                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Rules:</span>
-                                    <ul className="text-xs text-gray-600 dark:text-gray-400 ml-4">
-                                        {magicSystem.rules.slice(0, 2).map((rule, idx) => (
-                                            <li key={idx}>• {rule}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </div>
-                        </motion.div>
+                            onImageUpdated={(assetId) => {
+                                // Handle magic system image update
+                                console.log('Magic system image updated:', assetId);
+                            }}
+                        />
                     ))}
                 </div>
             </div>
@@ -518,6 +498,7 @@ const WorldBuildingPage: React.FC<WorldBuildingPageProps> = ({ theme }) => {
 
             {selectedLocation && (
                 <LocationDetailsModal
+                    isOpen={!!selectedLocation}
                     location={selectedLocation}
                     onClose={() => setSelectedLocation(null)}
                     theme={theme}
@@ -526,6 +507,7 @@ const WorldBuildingPage: React.FC<WorldBuildingPageProps> = ({ theme }) => {
 
             {selectedObject && (
                 <ObjectDetailsModal
+                    isOpen={!!selectedObject}
                     object={selectedObject}
                     onClose={() => setSelectedObject(null)}
                     theme={theme}
@@ -534,6 +516,7 @@ const WorldBuildingPage: React.FC<WorldBuildingPageProps> = ({ theme }) => {
 
             {selectedLore && (
                 <LoreDetailsModal
+                    isOpen={!!selectedLore}
                     lore={selectedLore}
                     onClose={() => setSelectedLore(null)}
                     theme={theme}
@@ -542,6 +525,7 @@ const WorldBuildingPage: React.FC<WorldBuildingPageProps> = ({ theme }) => {
 
             {selectedMagicSystem && (
                 <MagicSystemDetailsModal
+                    isOpen={!!selectedMagicSystem}
                     magicSystem={selectedMagicSystem}
                     onClose={() => setSelectedMagicSystem(null)}
                     theme={theme}

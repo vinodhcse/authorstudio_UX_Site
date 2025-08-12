@@ -1,10 +1,11 @@
 
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { Book } from '../types';
 import { BookOpenIcon } from '../constants';
 import { useBookContext } from '../contexts/BookContext';
+import { AssetService } from '../services/AssetService';
 
 interface ProgressBarProps {
   progress: number;
@@ -82,7 +83,33 @@ const cardVariants = {
 
 const BookCard: React.FC<BookCardProps> = ({ book, onSelect }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>();
   const { syncBook } = useBookContext();
+
+  // Load cover image from asset system
+  useEffect(() => {
+    const loadCoverImage = async () => {
+      if (book.coverImageRef?.assetId) {
+        try {
+          const fileRef = await AssetService.getFileRef(book.coverImageRef.assetId);
+          if (fileRef) {
+            // Try to get data URL for local files
+            const imageUrl = await AssetService.getLocalImageDataUrl(fileRef);
+            setCoverImageUrl(imageUrl);
+          }
+        } catch (error) {
+          console.warn('Failed to load cover image from assets:', error);
+          // Fallback to book.coverImage if available
+          setCoverImageUrl(book.coverImage);
+        }
+      } else {
+        // Use legacy cover image if no asset reference
+        setCoverImageUrl(book.coverImage);
+      }
+    };
+
+    loadCoverImage();
+  }, [book.coverImageRef?.assetId, book.coverImage]);
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -138,8 +165,8 @@ const BookCard: React.FC<BookCardProps> = ({ book, onSelect }) => {
             <motion.div layout="position" className={`flex gap-4 ${isHovered ? 'flex-col' : 'flex-row items-start'}`}>
                 {/* Image */}
                 <motion.div layout className={`relative rounded-lg overflow-hidden flex-shrink-0 ${isHovered ? 'w-full h-40' : 'w-24 h-32'}`}>
-                     {book.coverImage ? (
-                        <img src={book.coverImage} alt={book.title} className="absolute w-full h-full object-cover"/>
+                     {coverImageUrl ? (
+                        <img src={coverImageUrl} alt={book.title} className="absolute w-full h-full object-cover"/>
                      ) : (
                         <div className="absolute w-full h-full bg-gradient-to-br from-gray-700 via-gray-900 to-black flex items-center justify-center">
                             <BookOpenIcon className="w-8 h-8 text-gray-400" />

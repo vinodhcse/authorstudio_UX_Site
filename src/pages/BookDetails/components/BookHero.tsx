@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { Book } from '../../../types';
 import { PenIcon, ExternalLinkIcon } from '../../../constants';
+import CoverPicker from '../../../components/CoverPicker';
+import { AssetService } from '../../../services/AssetService';
 
 // Add TrashIcon to the imports if it exists, or define a simple one
 const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -45,11 +47,44 @@ const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
     </div>
 );
 
-const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void }> = ({ book, onEdit, onDelete }) => {
+const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void, onCoverUpdate?: (coverId: string | null, coverUrl?: string) => void }> = ({ book, onEdit, onDelete, onCoverUpdate }) => {
     const x = useMotionValue(0);
     const y = useMotionValue(0);
     const rotateX = useTransform(y, [-150, 150], [8, -8]);
     const rotateY = useTransform(x, [-150, 150], [-8, 8]);
+    const [showCoverPicker, setShowCoverPicker] = useState(false);
+    const [currentCoverId, setCurrentCoverId] = useState<string | undefined>(book.coverImageRef?.assetId);
+    const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>();
+
+    // Load cover image from asset system
+    useEffect(() => {
+        const loadCoverImage = async () => {
+            if (currentCoverId) {
+                try {
+                    const fileRef = await AssetService.getFileRef(currentCoverId);
+                    if (fileRef) {
+                        // Try to get data URL for local files
+                        const imageUrl = await AssetService.getLocalImageDataUrl(fileRef);
+                        setCoverImageUrl(imageUrl);
+                    }
+                } catch (error) {
+                    console.warn('Failed to load cover image from assets:', error);
+                    // Fallback to book.coverImage if available
+                    setCoverImageUrl(book.coverImage);
+                }
+            } else {
+                // Use legacy cover image if no asset reference
+                setCoverImageUrl(book.coverImage);
+            }
+        };
+
+        loadCoverImage();
+    }, [currentCoverId, book.coverImage]);
+
+    // Update currentCoverId when book.coverImageRef changes
+    useEffect(() => {
+        setCurrentCoverId(book.coverImageRef?.assetId);
+    }, [book.coverImageRef?.assetId]);
 
     const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
@@ -57,7 +92,18 @@ const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void 
         y.set(event.clientY - rect.top - rect.height / 2);
     };
 
-    const images = [book.coverImage, ...(book.characters || []).map(c => c.image)].filter(Boolean) as string[];
+    const handleCoverChanged = (coverId: string | null) => {
+        setCurrentCoverId(coverId || undefined);
+        onCoverUpdate?.(coverId);
+        setShowCoverPicker(false);
+    };
+
+    const handleEditCoverClick = () => {
+        setShowCoverPicker(true);
+    };
+
+    // Use resolved cover image instead of book.coverImage
+    const images = [coverImageUrl, ...(book.characters || []).map(c => c.image)].filter(Boolean) as string[];
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
     useEffect(() => {
@@ -99,12 +145,48 @@ const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void 
                         ) : (
                             <DefaultCover title={book.title} author={book.author} />
                         )}
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center z-20 cursor-pointer">
-                            <button className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-white/20 text-white backdrop-blur-md hover:bg-white/30 transition-colors">
-                                <PenIcon className="h-4 w-4" />
-                                Edit Cover
-                            </button>
-                        </div>
+                        
+                        {/* Cover Picker Overlay */}
+                        <AnimatePresence>
+                            {showCoverPicker ? (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="absolute inset-0 bg-black/80 flex items-center justify-center z-30 p-4"
+                                >
+                                    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 max-w-sm w-full">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Update Cover</h3>
+                                            <button
+                                                onClick={() => setShowCoverPicker(false)}
+                                                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                            >
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <CoverPicker
+                                            bookId={book.id}
+                                            currentCoverId={currentCoverId}
+                                            onCoverChanged={handleCoverChanged}
+                                            className="w-full"
+                                        />
+                                    </div>
+                                </motion.div>
+                            ) : (
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center z-20 cursor-pointer">
+                                    <button 
+                                        onClick={handleEditCoverClick}
+                                        className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-white/20 text-white backdrop-blur-md hover:bg-white/30 transition-colors"
+                                    >
+                                        <PenIcon className="h-4 w-4" />
+                                        Edit Cover
+                                    </button>
+                                </div>
+                            )}
+                        </AnimatePresence>
                     </motion.div>
                 </motion.div>
                 

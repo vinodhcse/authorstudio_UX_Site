@@ -138,6 +138,44 @@ export async function runMigrations(db: Database): Promise<void> {
       await appLog.info('migrations', 'enc_schema column already exists or failed to add', { error });
     }
 
+    // Migration 8: Asset system tables
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS file_assets (
+        id TEXT PRIMARY KEY,
+        sha256 TEXT NOT NULL,
+        ext TEXT NOT NULL,
+        mime TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        width INTEGER,
+        height INTEGER,
+        local_path TEXT,
+        remote_id TEXT,
+        remote_url TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(sha256)
+      )
+    `);
+    await appLog.info('migrations', 'File assets table created');
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS file_asset_links (
+        id TEXT PRIMARY KEY,
+        asset_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        tags TEXT,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(asset_id, entity_type, entity_id, role)
+      )
+    `);
+    await appLog.info('migrations', 'File asset links table created');
+
     // Create indexes
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_books_owner ON books(owner_user_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_versions_owner ON versions(owner_user_id)`);
@@ -145,6 +183,14 @@ export async function runMigrations(db: Database): Promise<void> {
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_scenes_owner ON scenes(owner_user_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_scenes_book ON scenes(book_id)`);
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_grants_owner ON grants(owner_user_id)`);
+
+    // Asset system indexes
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_file_assets_status ON file_assets(status)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_file_assets_sha256 ON file_assets(sha256)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_links_entity ON file_asset_links(entity_type, entity_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_links_asset ON file_asset_links(asset_id)`);
+    await db.execute(`CREATE INDEX IF NOT EXISTS idx_links_role ON file_asset_links(role)`);
+    await appLog.info('migrations', 'Asset system indexes created');
 
     await appLog.success('migrations', 'All database migrations completed successfully');
   } catch (error) {

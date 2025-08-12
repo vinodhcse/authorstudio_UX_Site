@@ -33,6 +33,11 @@ tauri-plugin-sql = { version = "2.0", features = ["sqlite"] }
 tauri-plugin-fs = "2.0"
 tauri-plugin-http = "2.0"
 
+# Asset system dependencies
+sha2 = "0.10"
+image = "0.24"
+nanoid = "0.4"
+
 # Real Whisper + CPAL dependencies for full AI functionality (latest versions)
 whisper-rs = "0.14.4"
 cpal = "0.15"
