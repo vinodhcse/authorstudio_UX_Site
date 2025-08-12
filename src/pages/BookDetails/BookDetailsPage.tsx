@@ -12,18 +12,118 @@ import TabSwitcher from './components/TabSwitcher';
 import EditBookModal from './components/EditBookModal';
 import CreateVersionModal from './components/CreateVersionModal';
 import { useBookContext } from '../../contexts/BookContext';
+import { CloudIcon, RefreshIcon, CheckCircleIcon } from '../../constants';
 
 const BookDetailsPage: React.FC = () => {
     const { bookId } = useParams<{ bookId: string }>();
     const navigate = useNavigate();
-    const { books, createVersion, updateBook, deleteBook } = useBookContext();
+    const { books, createVersion, updateBook, deleteBook, syncBook } = useBookContext();
     const [activeTab, setActiveTab] = useState<BookDetailsTab>('Versions');
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
     const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [issyncing, setIsSyncing] = useState(false);
 
     const book = books.find(b => b.id === bookId);
+
+    // Handle sync action
+    const handleSync = async () => {
+        if (!book || issyncing) return;
+        
+        setIsSyncing(true);
+        try {
+            await syncBook(book.id);
+        } catch (error) {
+            console.error('Failed to sync book:', error);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    // Sync status component
+    const SyncStatusIndicator: React.FC = () => {
+        if (!book) return null;
+        
+        const getSyncStatusInfo = () => {
+            switch (book.syncState) {
+                case 'dirty':
+                    return {
+                        icon: <CloudIcon className="h-4 w-4" />,
+                        text: 'Needs Sync',
+                        color: 'text-yellow-600 dark:text-yellow-400',
+                        bgColor: 'bg-yellow-50 dark:bg-yellow-900/20',
+                        borderColor: 'border-yellow-200 dark:border-yellow-800',
+                        showSyncButton: true
+                    };
+                case 'pushing':
+                    return {
+                        icon: <RefreshIcon className="h-4 w-4 animate-spin" />,
+                        text: 'Syncing...',
+                        color: 'text-blue-600 dark:text-blue-400',
+                        bgColor: 'bg-blue-50 dark:bg-blue-900/20',
+                        borderColor: 'border-blue-200 dark:border-blue-800',
+                        showSyncButton: false
+                    };
+                case 'conflict':
+                    return {
+                        icon: <div className="h-4 w-4 bg-red-500 rounded-full" />,
+                        text: 'Sync Conflict',
+                        color: 'text-red-600 dark:text-red-400',
+                        bgColor: 'bg-red-50 dark:bg-red-900/20',
+                        borderColor: 'border-red-200 dark:border-red-800',
+                        showSyncButton: false
+                    };
+                case 'idle':
+                default:
+                    return {
+                        icon: <CheckCircleIcon className="h-4 w-4" />,
+                        text: 'Synced',
+                        color: 'text-green-600 dark:text-green-400',
+                        bgColor: 'bg-green-50 dark:bg-green-900/20',
+                        borderColor: 'border-green-200 dark:border-green-800',
+                        showSyncButton: false
+                    };
+            }
+        };
+        
+        const statusInfo = getSyncStatusInfo();
+        
+        return (
+            <div className={`flex items-center gap-3 px-4 py-2 rounded-lg border ${statusInfo.bgColor} ${statusInfo.borderColor}`}>
+                <div className={statusInfo.color}>
+                    {statusInfo.icon}
+                </div>
+                <span className={`text-sm font-medium ${statusInfo.color}`}>
+                    {statusInfo.text}
+                </span>
+                {statusInfo.showSyncButton && !navigator.onLine && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                        (Offline)
+                    </span>
+                )}
+                {statusInfo.showSyncButton && navigator.onLine && (
+                    <button
+                        onClick={handleSync}
+                        disabled={issyncing}
+                        className="ml-auto flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-md bg-yellow-600 text-white hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {issyncing ? (
+                            <>
+                                <RefreshIcon className="h-3 w-3 animate-spin" />
+                                Syncing...
+                            </>
+                        ) : (
+                            <>
+                                <CloudIcon className="h-3 w-3" />
+                                Sync Now
+                            </>
+                        )}
+                    </button>
+                )}
+            </div>
+        );
+    };
 
     if (!book) {
         return <Navigate to="/" replace />;
@@ -130,6 +230,11 @@ const BookDetailsPage: React.FC = () => {
                     onDelete={() => setDeleteModalOpen(true)}
                     onCoverUpdate={handleCoverUpdate}
                 />
+                
+                {/* Sync Status Indicator */}
+                <div className="mb-6">
+                    <SyncStatusIndicator />
+                </div>
                 
                 <TabSwitcher 
                     tabs={detailTabs}

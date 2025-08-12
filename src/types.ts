@@ -230,7 +230,7 @@ export interface Version {
     characters: Character[];
     plotArcs: PlotArc[];
     worlds: WorldData[];
-    chapters: any[];
+    chapters: Chapter[];
     // New encrypted sync fields
     revLocal?: string;
     revCloud?: string;

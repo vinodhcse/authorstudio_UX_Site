@@ -46,8 +46,8 @@ const AssetImageNode: React.FC<AssetImageNodeProps> = ({
 
         setFileRef(ref);
 
-        // Resolve the source URL
-        const src = AssetService.resolveSrc(ref);
+        // Resolve the source URL with offline support
+        const src = await AssetService.getLocalImageDataUrl(ref);
         setImageSrc(src);
 
         // Update node attributes with asset metadata if not already set

@@ -36,7 +36,8 @@ const CoverPicker: React.FC<CoverPickerProps> = ({
         const ref = await AssetService.getFileRef(currentCoverId);
         if (ref) {
           setCoverRef(ref);
-          setCoverSrc(AssetService.resolveSrc(ref));
+          const coverUrl = await AssetService.getLocalImageDataUrl(ref);
+          setCoverSrc(coverUrl);
         }
       } catch (err) {
         console.error('Failed to load current cover:', err);
@@ -70,7 +71,10 @@ const CoverPicker: React.FC<CoverPickerProps> = ({
 
       setUploadProgress('Uploading...');
 
-      // Trigger upload
+      // First, notify about the cover change to mark book as dirty
+      onCoverChanged?.(importResult.assetId);
+
+      // Then trigger upload (which will sync when online)
       await SyncEngine.uploadPending(bookId);
 
       // Use the import result
@@ -86,7 +90,6 @@ const CoverPicker: React.FC<CoverPickerProps> = ({
       setCoverRef(finalFileRef);
       const imageUrl = await AssetService.getLocalImageDataUrl(finalFileRef);
       setCoverSrc(imageUrl);
-      onCoverChanged?.(finalFileRef.assetId);
 
       setUploadProgress('');
     } catch (err) {

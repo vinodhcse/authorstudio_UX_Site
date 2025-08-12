@@ -5,6 +5,7 @@ import { WorldData, Location, WorldObject, Lore, MagicSystem } from '../pages/Bo
 import { appLog } from '../auth/fileLogger';
 import { 
   getUserBooks, 
+  getBook as getBookFromDB,
   getScenesByBook,
   getScene,
   putBook,
@@ -1490,12 +1491,28 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
           await appLog.info('book-context', 'Book created on cloud successfully', { bookId });
         }
         
-        // Update sync state to success
-        await updateBook(bookId, { 
-          syncState: 'idle',
-          conflictState: 'none',
-          revCloud: localBook.revLocal || '1'
-        });
+        // Update sync state to success directly in database and local state
+        const { user } = useAuthStore.getState();
+        if (user) {
+          const bookRow = await getBookFromDB(bookId, user.id);
+          if (bookRow) {
+            bookRow.sync_state = 'idle';
+            bookRow.rev_cloud = localBook.revLocal || '1';
+            await putBook(bookRow);
+          }
+        }
+        
+        // Update local state
+        setBooks(prevBooks => 
+          prevBooks.map(book => 
+            book.id === bookId ? { 
+              ...book, 
+              syncState: 'idle',
+              conflictState: 'none',
+              revCloud: localBook.revLocal || '1'
+            } : book
+          )
+        );
 
         await appLog.success('book-context', 'Book synced successfully', { bookId });
       } catch (error) {

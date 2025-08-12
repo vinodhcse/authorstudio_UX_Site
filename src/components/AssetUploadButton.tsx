@@ -94,7 +94,7 @@ const AssetUploadButton: React.FC<AssetUploadButtonProps> = ({
         
         // Get updated asset info after potential upload
         const updatedRef = await AssetService.getFileRef(importResult.assetId);
-        const assetUrl = AssetService.resolveSrc(updatedRef || importResult);
+        const assetUrl = await AssetService.getLocalImageDataUrl(updatedRef || importResult);
         
         if (assetUrl) {
           onAssetUploaded?.(importResult.assetId, assetUrl);
@@ -102,7 +102,7 @@ const AssetUploadButton: React.FC<AssetUploadButtonProps> = ({
       } catch (syncError) {
         console.warn('Upload to server failed, asset saved locally:', syncError);
         // Still resolve the local asset URL
-        const assetUrl = AssetService.resolveSrc(importResult);
+        const assetUrl = await AssetService.getLocalImageDataUrl(importResult);
         if (assetUrl) {
           onAssetUploaded?.(importResult.assetId, assetUrl);
         }

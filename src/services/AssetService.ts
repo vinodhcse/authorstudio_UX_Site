@@ -23,6 +23,13 @@ const ASSET_CONFIG = {
   UPLOAD_CONCURRENCY: 2
 };
 
+/**
+ * Check if the app is online
+ */
+const isOnline = (): boolean => {
+  return typeof navigator !== 'undefined' ? navigator.onLine : true;
+};
+
 interface ComputeHashResult {
   sha256: string;
 }
@@ -131,7 +138,7 @@ export class AssetService {
       // Write file to local cache
       let localPath: string;
       try {
-        localPath = await this.writeToLocalCache(fileBytes, context.bookId, sha256, ext);
+        localPath = await this.writeToLocalCache(fileBytes, context.bookId, sha256, ext, file.name);
         await appLog.info('asset-service', 'File written to local cache', { localPath });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -205,13 +212,17 @@ export class AssetService {
    * Resolve FileRef to a usable source URL
    */
   static resolveSrc(fileRef: FileRef): string | undefined {
-    // Prefer remote URL if available
+    // When offline, skip remote URLs and force local resolution
+    if (!isOnline()) {
+      return undefined; // Force use of getLocalImageDataUrl
+    }
+
+    // When online, prefer remote URL if available
     if (fileRef.remoteUrl) {
       return fileRef.remoteUrl;
     }
 
-    // For local files, return a data URL placeholder or load from local storage
-    // This will be resolved by a separate method
+    // For local files, return undefined to trigger local loading
     return undefined;
   }
 
@@ -219,6 +230,36 @@ export class AssetService {
    * Get image as data URL from local file
    */
   static async getLocalImageDataUrl(fileRef: FileRef): Promise<string | undefined> {
+    // When offline, always use local files even if remote URL exists
+    if (!isOnline()) {
+      if (fileRef.localPath) {
+        try {
+          // Read file from local storage as bytes
+          const relativePath = fileRef.localPath.split('/books/')[1]; // Extract relative path
+          if (relativePath) {
+            const fileBytes = await readFile(`books/${relativePath}`, { baseDir: BaseDirectory.AppConfig });
+            
+            // Convert to base64 data URL using proper method for large files
+            let binary = '';
+            const len = fileBytes.length;
+            for (let i = 0; i < len; i++) {
+              binary += String.fromCharCode(fileBytes[i]);
+            }
+            const base64 = btoa(binary);
+            const mimeType = fileRef.mime || 'image/jpeg';
+            return `data:${mimeType};base64,${base64}`;
+          }
+        } catch (error) {
+          await appLog.error('asset-service', 'Failed to load local image in offline mode', { 
+            localPath: fileRef.localPath, 
+            error 
+          });
+        }
+      }
+      return undefined;
+    }
+
+    // When online, prefer remote URL if available
     if (fileRef.remoteUrl) {
       return fileRef.remoteUrl;
     }
@@ -374,13 +415,15 @@ export class AssetService {
 
   // Private helper methods
 
-  private static async writeToLocalCache(bytes: Uint8Array, bookId: string, sha256: string, ext: string): Promise<string> {
+  private static async writeToLocalCache(bytes: Uint8Array, bookId: string, sha256: string, ext: string, originalFileName?: string): Promise<string> {
     // Use AppConfig directory which has better permission support
     const relativePath = `books/${bookId}/files/${sha256}`;
-    const fileName = `original.${ext}`;
+    
+    // Use original filename if provided, otherwise fallback to original.ext
+    const fileName = originalFileName || `original.${ext}`;
     const relativeFilePath = `${relativePath}/${fileName}`;
 
-    await appLog.info('asset-service', 'Writing to config dir path', { relativePath, fileName, relativeFilePath });
+    await appLog.info('asset-service', 'Writing to config dir path', { relativePath, fileName, relativeFilePath, originalFileName });
 
     // Ensure directory exists using BaseDirectory.AppConfig
     try {

@@ -14,7 +14,7 @@ interface MyBooksViewProps {
 
 const MyBooksView: React.FC<MyBooksViewProps> = ({ books }) => {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
-  const { createSampleData, syncAllBooks, getDirtyBooks, getConflictedBooks } = useBookContext();
+  const { createSampleData, syncAllBooks, getDirtyBooks, getConflictedBooks, loading } = useBookContext();
   const { isAuthenticated, user, isOnline } = useAuthStore();
   const featuredBook = books.find(b => b.featured);
   const otherBooks = books.filter(b => !b.featured);
@@ -135,28 +135,43 @@ const MyBooksView: React.FC<MyBooksViewProps> = ({ books }) => {
       
       {featuredBook && <FeaturedBook book={featuredBook} onSelect={() => setSelectedBook(featuredBook)} />}
       
-      <motion.div 
-        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 items-start"
-        variants={{
-          hidden: { opacity: 0 },
-          show: {
-            opacity: 1,
-            transition: {
-              staggerChildren: 0.1,
+      {/* Loading Spinner */}
+      {loading && (
+        <div className="flex flex-col items-center justify-center py-12">
+          <div className="relative">
+            <div className="w-12 h-12 border-4 border-purple-200 dark:border-purple-800 rounded-full animate-spin border-t-purple-600 dark:border-t-purple-400"></div>
+            <div className="absolute top-0 left-0 w-12 h-12 border-4 border-transparent rounded-full animate-ping border-t-purple-600/50 dark:border-t-purple-400/50"></div>
+          </div>
+          <p className="mt-4 text-sm text-gray-600 dark:text-gray-400 animate-pulse">
+            Loading books from local storage...
+          </p>
+        </div>
+      )}
+      
+      {!loading && (
+        <motion.div 
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 items-start"
+          variants={{
+            hidden: { opacity: 0 },
+            show: {
+              opacity: 1,
+              transition: {
+                staggerChildren: 0.1,
+              },
             },
-          },
-        }}
-        initial="hidden"
-        animate="show"
-      >
-        {otherBooks.map((book) => (
-            <BookCard 
-                key={book.id} 
-                book={book} 
-                onSelect={() => setSelectedBook(book)} 
-            />
-        ))}
-      </motion.div>
+          }}
+          initial="hidden"
+          animate="show"
+        >
+          {otherBooks.map((book) => (
+              <BookCard 
+                  key={book.id} 
+                  book={book} 
+                  onSelect={() => setSelectedBook(book)} 
+              />
+          ))}
+        </motion.div>
+      )}
 
       <AnimatePresence>
         {selectedBook && (

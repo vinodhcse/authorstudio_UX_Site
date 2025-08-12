@@ -48,7 +48,7 @@ const AssetImageCard: React.FC<AssetImageCardProps> = ({
         try {
           const fileRef = await AssetService.getFileRef(assetId);
           if (fileRef) {
-            const url = AssetService.resolveSrc(fileRef);
+            const url = await AssetService.getLocalImageDataUrl(fileRef);
             setCurrentImageUrl(url);
           }
         } catch (error) {
