@@ -2,16 +2,6 @@
 
 import { appLog } from '../auth/fileLogger';
 
-// Import the auth store to get tokens when needed
-let getAuthStore: () => any;
-try {
-  const { useAuthStore } = require('../auth/useAuthStore');
-  getAuthStore = () => useAuthStore.getState();
-} catch (e) {
-  // Fallback if auth store is not available
-  getAuthStore = () => ({ accessToken: null, isAuthenticated: false, user: null });
-}
-
 export interface LoginRequest {
   email: string;
   password: string;
@@ -99,21 +89,7 @@ class ApiClient {
       token = await this.getStoredToken();
     }
     
-    // If still no token, try to get it from auth store
-    if (!token) {
-      try {
-        const authState = getAuthStore();
-        token = authState.accessToken;
-        if (token) {
-          // Cache the token locally for future requests
-          this.authToken = token;
-          await appLog.info('lib-api-client', 'Got token from auth store', { tokenExists: !!token });
-        }
-      } catch (e) {
-        console.warn('Could not get token from auth store:', e);
-      }
-    }
-    
+    // If still no token, we'll proceed without one (some endpoints may not require auth)
     if (!token) {
       await appLog.warn('lib-api-client', 'No access token available for request', { endpoint });
     }
@@ -140,7 +116,27 @@ class ApiClient {
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
 
-      return await response.json();
+      // Handle different content types
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        return await response.json();
+      } else {
+        // For non-JSON responses (like plain text success messages)
+        const textResponse = await response.text();
+        await appLog.info('api-client', 'Received non-JSON response', { 
+          endpoint, 
+          status: response.status,
+          contentType,
+          response: textResponse 
+        });
+        
+        // Return a standardized success object for non-JSON responses
+        return { 
+          success: true, 
+          message: textResponse,
+          status: response.status 
+        } as T;
+      }
     } catch (error) {
       console.error('API request failed:', error);
       throw error;
@@ -337,55 +333,32 @@ class ApiClient {
     return deviceId;
   }
 
-  // Enhanced token management
-  async ensureAccessToken(): Promise<string> {
+  // Enhanced token management - now accepts a token getter function
+  async ensureAccessToken(tokenGetter?: () => Promise<string>): Promise<string> {
     // First try to get token from local cache
     let token = this.authToken;
     
-    // If no local token, try to get from auth store
-    if (!token) {
+    // If no local token and we have a token getter, use it
+    if (!token && tokenGetter) {
       try {
-        const authState = getAuthStore();
-        
-        // Check if user is actually authenticated
-        if (!authState.isAuthenticated) {
-          await appLog.warn('lib-api-client', 'User is not authenticated in auth store', { 
-            isAuthenticated: authState.isAuthenticated,
-            hasUser: !!authState.user
-          });
-          throw new Error('User not authenticated. Please login.');
-        }
-        
-        // Try to use the auth store's ensureAccessToken method
-        if (authState.ensureAccessToken) {
-          await appLog.info('lib-api-client', 'Using auth store ensureAccessToken method');
-          token = await authState.ensureAccessToken();
-          if (token) {
-            // Cache the token locally
-            this.authToken = token;
-            await appLog.info('lib-api-client', 'Got fresh token from auth store ensureAccessToken', { tokenExists: !!token });
-            return token;
-          }
-        }
-        
-        // Fallback to auth store current token
-        token = authState.accessToken;
+        await appLog.info('lib-api-client', 'Using provided token getter function');
+        token = await tokenGetter();
+        await appLog.info('lib-api-client', 'Token getter completed', { 
+          tokenExists: !!token,
+          tokenLength: token?.length,
+          tokenSample: token ? `${token.substring(0, 10)}...${token.substring(token.length - 10)}` : 'null'
+        });
         if (token) {
           // Cache the token locally
           this.authToken = token;
-          await appLog.info('lib-api-client', 'Got token from auth store in ensureAccessToken', { tokenExists: !!token });
+          await appLog.info('lib-api-client', 'Got fresh token from token getter', { tokenExists: !!token });
+          return token;
         } else {
-          await appLog.warn('lib-api-client', 'Auth store has no access token', { 
-            authState: { 
-              hasAccessToken: !!authState.accessToken,
-              isAuthenticated: authState.isAuthenticated,
-              user: authState.user ? 'exists' : 'null'
-            }
-          });
+          await appLog.warn('lib-api-client', 'Token getter returned null or empty token');
         }
       } catch (e) {
-        await appLog.error('lib-api-client', 'Could not get token from auth store in ensureAccessToken', { error: e });
-        throw e; // Re-throw the error
+        await appLog.error('lib-api-client', 'Token getter failed', { error: e });
+        throw e;
       }
     }
     
@@ -444,13 +417,13 @@ class ApiClient {
   }
 
   // Enhanced error handling for offline scenarios
-  async makeAuthenticatedRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  async makeAuthenticatedRequest<T>(endpoint: string, options: RequestInit = {}, tokenGetter?: () => Promise<string>): Promise<T> {
     if (!this.isOnline()) {
       throw new Error('Network unavailable. Operating in offline mode.');
     }
 
     try {
-      const token = await this.ensureAccessToken();
+      const token = await this.ensureAccessToken(tokenGetter);
       
       const config = {
         ...options,
@@ -461,8 +434,10 @@ class ApiClient {
         },
       };
       console.log(`Making request to ${endpoint} with options:`, config);
-     appLog.info('ApiClient',`Making request to ${endpoint} with options:`, config);
-      return await this.makeRequest<T>(endpoint, config);
+      appLog.info('ApiClient',`Making request to ${endpoint} with options:`, config);
+      const response = await this.makeRequest<T>(endpoint, config);
+      appLog.info('ApiClient',`Received response from ${endpoint}:`, response);
+      return response;
     } catch (error) {
       if (error instanceof Error && error.message.includes('401')) {
         // Clear the token and throw error - let the auth store handle refresh
@@ -474,25 +449,25 @@ class ApiClient {
   }
 
   // Book API methods
-  async createBook(bookData: any): Promise<any> {
+  async createBook(bookData: any, tokenGetter?: () => Promise<string>): Promise<any> {
     return this.makeAuthenticatedRequest('/books', {
       method: 'POST',
       body: JSON.stringify(bookData),
-    });
+    }, tokenGetter);
   }
 
-  async updateBook(bookId: string, bookData: any): Promise<any> {
+  async updateBook(bookId: string, bookData: any, tokenGetter?: () => Promise<string>): Promise<any> {
     return this.makeAuthenticatedRequest(`/books/${bookId}`, {
       method: 'PATCH',
       body: JSON.stringify(bookData),
-    });
+    }, tokenGetter);
   }
 
-  async deleteBook(bookId: string): Promise<any> {
+  async deleteBook(bookId: string, tokenGetter?: () => Promise<string>): Promise<any> {
     console.log(`Deleting book with ID: ${bookId}`);
     return this.makeAuthenticatedRequest(`/books/${bookId}`, {
       method: 'DELETE',
-    });
+    }, tokenGetter);
   }
 
   async getBooks(): Promise<any> {
@@ -501,17 +476,23 @@ class ApiClient {
     });
   }
 
-  async getBook(bookId: string): Promise<any> {
-    return this.makeAuthenticatedRequest(`/books/${bookId}`, {
+  async getUserBooks(tokenGetter?: () => Promise<string>): Promise<any> {
+    return this.makeAuthenticatedRequest('/books/userbooks', {
       method: 'GET',
-    });
+    }, tokenGetter);
   }
 
-  async createVersion(bookId: string, versionData: any): Promise<any> {
+  async getBook(bookId: string, tokenGetter?: () => Promise<string>): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}`, {
+      method: 'GET',
+    }, tokenGetter);
+  }
+
+  async createVersion(bookId: string, versionData: any, tokenGetter?: () => Promise<string>): Promise<any> {
     return this.makeAuthenticatedRequest(`/books/${bookId}/versions`, {
       method: 'POST',
       body: JSON.stringify(versionData),
-    });
+    }, tokenGetter);
   }
 
   async updateVersion(bookId: string, versionId: string, versionData: any): Promise<any> {

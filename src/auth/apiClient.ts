@@ -59,10 +59,25 @@ export interface DeviceRegistrationRequest {
 class TauriApiClient {
   private baseUrl: string;
   private accessToken: string | null = null;
+  private deviceId: string | null = null;
 
   constructor() {
     // Read from environment variable or use default
     this.baseUrl = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4000/api';
+  }
+
+  /**
+   * Set device ID for device-specific operations
+   */
+  setDeviceId(deviceId: string | null): void {
+    this.deviceId = deviceId;
+  }
+
+  /**
+   * Get current device ID
+   */
+  getDeviceId(): string | null {
+    return this.deviceId;
   }
 
   /**
@@ -275,6 +290,13 @@ class TauriApiClient {
    */
   clearAccessToken(): void {
     this.accessToken = null;
+  }
+
+  /**
+   * Clear device ID
+   */
+  clearDeviceId(): void {
+    this.deviceId = null;
   }
 }
 

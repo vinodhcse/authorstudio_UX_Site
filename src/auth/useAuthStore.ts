@@ -64,6 +64,9 @@ export interface AuthState {
 const GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const TOKEN_REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
+// Guard against concurrent token refresh attempts
+let tokenRefreshPromise: Promise<string> | null = null;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   // Initial state
   user: null,
@@ -522,12 +525,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   // Ensure access token is valid
   ensureAccessToken: async () => {
+    // Guard against concurrent refresh attempts
+    if (tokenRefreshPromise) {
+      console.log('🔍 [ENSURE_TOKEN] Concurrent refresh detected, waiting for existing refresh...');
+      return await tokenRefreshPromise;
+    }
+    
     const { 
       accessToken, 
       accessTokenExp, 
       appKey, 
       isOnline,
-      _setAccessToken 
+      _setAccessToken,
+      _setUser
     } = get();
     
     console.log('🔍 [ENSURE_TOKEN] Checking access token validity...', {
@@ -546,66 +556,89 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return accessToken;
     }
     
-    if (!isOnline) {
-      console.error('❌ [ENSURE_TOKEN] Cannot refresh token while offline');
-      throw new Error('Cannot refresh token while offline');
-    }
+    // Start the refresh process with promise guard
+    tokenRefreshPromise = (async () => {
+      try {
+        if (!isOnline) {
+          console.error('❌ [ENSURE_TOKEN] Cannot refresh token while offline');
+          throw new Error('Cannot refresh token while offline');
+        }
+        
+        if (!appKey) {
+          console.error('❌ [ENSURE_TOKEN] No app key available');
+          throw new Error('App key not available. Please unlock first.');
+        }
+        
+        // Get session and refresh token
+        console.log('🔍 [ENSURE_TOKEN] Getting session and refresh token...');
+        const session = await getSessionRow();
+        if (!session?.refresh_token_enc) {
+          console.error('❌ [ENSURE_TOKEN] No refresh token in session');
+          throw new Error('No refresh token available');
+        }
+        
+        console.log('🔓 [ENSURE_TOKEN] Decrypting refresh token...');
+        // Decrypt refresh token
+        const { iv, data } = unpack(session.refresh_token_enc);
+        const refreshToken = await decryptString(data, iv, appKey);
+        console.log('✅ [ENSURE_TOKEN] Refresh token decrypted successfully');
+        console.log('🔍 [ENSURE_TOKEN] Refresh token info:', {
+          length: refreshToken?.length,
+          firstChars: refreshToken?.substring(0, 10) + '...',
+          lastChars: '...' + refreshToken?.substring(refreshToken.length - 10)
+        });
+        
+        // Compare with current access token to make sure they're different
+        const { accessToken: currentAccessToken } = get();
+        console.log('🔍 [ENSURE_TOKEN] Token comparison:', {
+          accessTokenLength: currentAccessToken?.length,
+          refreshTokenLength: refreshToken?.length,
+          tokensAreDifferent: currentAccessToken !== refreshToken,
+          refreshTokenIsValid: refreshToken && refreshToken.length > 0
+        });
+        
+        // Refresh access token
+        console.log('🌐 [ENSURE_TOKEN] Calling refresh token API...');
+        const response = await apiClient.refreshToken({ refreshToken });
+        const newExpiry = Date.now() + 15 * 60 * 1000;
+        
+        console.log('✅ [ENSURE_TOKEN] New access token received', response);
+        _setAccessToken(response.token, newExpiry);
+        
+        // Restore user state from session if not already set
+        const { user } = get();
+        if (!user && session.user_id) {
+          _setUser({
+            id: session.user_id,
+            email: session.email,
+            name: session.email.split('@')[0], // Fallback name
+            role: 'user'
+          });
+          console.log('✅ [ENSURE_TOKEN] User state restored from session', { 
+            userId: session.user_id,
+            email: session.email 
+          });
+        }
+        
+        // Update session
+        await upsertSessionRow({
+          access_exp: newExpiry,
+          updated_at: Date.now(),
+        });
+        
+        console.log('✅ [ENSURE_TOKEN] Token refresh complete');
+        return response.token;
+        
+      } catch (error) {
+        console.error('❌ [ENSURE_TOKEN] Token refresh failed:', error);
+        throw new Error('Failed to refresh access token');
+      } finally {
+        // Clear the promise guard
+        tokenRefreshPromise = null;
+      }
+    })();
     
-    if (!appKey) {
-      console.error('❌ [ENSURE_TOKEN] No app key available');
-      throw new Error('App key not available. Please unlock first.');
-    }
-    
-    // Get session and refresh token
-    console.log('🔍 [ENSURE_TOKEN] Getting session and refresh token...');
-    const session = await getSessionRow();
-    if (!session?.refresh_token_enc) {
-      console.error('❌ [ENSURE_TOKEN] No refresh token in session');
-      throw new Error('No refresh token available');
-    }
-    
-    try {
-      console.log('🔓 [ENSURE_TOKEN] Decrypting refresh token...');
-      // Decrypt refresh token
-      const { iv, data } = unpack(session.refresh_token_enc);
-      const refreshToken = await decryptString(data, iv, appKey);
-      console.log('✅ [ENSURE_TOKEN] Refresh token decrypted successfully');
-      console.log('🔍 [ENSURE_TOKEN] Refresh token info:', {
-        length: refreshToken?.length,
-        firstChars: refreshToken?.substring(0, 10) + '...',
-        lastChars: '...' + refreshToken?.substring(refreshToken.length - 10)
-      });
-      
-      // Compare with current access token to make sure they're different
-      const { accessToken: currentAccessToken } = get();
-      console.log('🔍 [ENSURE_TOKEN] Token comparison:', {
-        accessTokenLength: currentAccessToken?.length,
-        refreshTokenLength: refreshToken?.length,
-        tokensAreDifferent: currentAccessToken !== refreshToken,
-        refreshTokenIsValid: refreshToken && refreshToken.length > 0
-      });
-      
-      // Refresh access token
-      console.log('🌐 [ENSURE_TOKEN] Calling refresh token API...');
-      const response = await apiClient.refreshToken({ refreshToken });
-      const newExpiry = Date.now() + 15 * 60 * 1000;
-      
-      console.log('✅ [ENSURE_TOKEN] New access token received');
-      _setAccessToken(response.token, newExpiry);
-      
-      // Update session
-      await upsertSessionRow({
-        access_exp: newExpiry,
-        updated_at: Date.now(),
-      });
-      
-      console.log('✅ [ENSURE_TOKEN] Token refresh complete');
-      return response.token;
-      
-    } catch (error) {
-      console.error('❌ [ENSURE_TOKEN] Token refresh failed:', error);
-      throw new Error('Failed to refresh access token');
-    }
+    return await tokenRefreshPromise;
   },
 
   // Refresh subscription info

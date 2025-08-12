@@ -6,6 +6,8 @@ import { AnimatePresence } from 'framer-motion';
 import { Theme } from './types';
 import Header from './components/Header';
 import MyBooksView from './components/MyBooksView';
+import EditingBooksView from './components/EditingBooksView';
+import ReviewingBooksView from './components/ReviewingBooksView';
 import CreateBookModal from './components/CreateBookModal';
 import BookDetailsPage from './pages/BookDetails/BookDetailsPage';
 import BookForgePage from './pages/BookForge/BookForgePage';
@@ -20,10 +22,10 @@ import SignupPage from './pages/SignupPage';
 import { AuthGate } from './auth';
 import { BookContextProvider, useBookContext } from './contexts/BookContext';
 
-// Component that uses BookContext to provide books to MyBooksView
+// Component that uses BookContext to provide authored books to MyBooksView
 const MyBooksWithContext: React.FC = () => {
-    const { books } = useBookContext();
-    return <MyBooksView books={books} />;
+    const { authoredBooks } = useBookContext();
+    return <MyBooksView books={authoredBooks} />;
 };
 
 const MainLayout: React.FC<{
@@ -146,8 +148,8 @@ const App: React.FC = () => {
                   path="/book/:bookId/version/:versionId/character/:characterId" 
                   element={<CharacterDetailsPage theme={theme} setTheme={handleThemeChange} />} 
                 />
-                <Route path="/editing" element={<div className="flex items-center justify-center h-96 text-gray-500">Editing Content Area</div>} />
-                <Route path="/reviewing" element={<div className="flex items-center justify-center h-96 text-gray-500">Reviewing Content Area</div>} />
+                <Route path="/editing" element={<EditingBooksView />} />
+                <Route path="/reviewing" element={<ReviewingBooksView />} />
                 <Route path="/test-nodes" element={<CustomNodeTest />} />
                 <Route path="/test-whisper" element={<WhisperTestPage />} />
                 <Route path="/tools/name-generator" element={<NameGeneratorPage theme={theme} setTheme={handleThemeChange}/>} />

@@ -32,13 +32,15 @@ export async function runMigrations(db: Database): Promise<void> {
       )
     `);
 
-    // Migration 3: Books table with sync state
+    // Migration 3: Books table with sync state and encrypted metadata
     await db.execute(`
       CREATE TABLE IF NOT EXISTS books (
         book_id TEXT PRIMARY KEY,
         owner_user_id TEXT NOT NULL,
         title TEXT,
         is_shared INTEGER NOT NULL DEFAULT 0,
+        enc_metadata BLOB,
+        enc_schema TEXT,
         rev_local TEXT,
         rev_cloud TEXT,
         sync_state TEXT NOT NULL DEFAULT 'idle',
@@ -118,6 +120,23 @@ export async function runMigrations(db: Database): Promise<void> {
         updated_at INTEGER
       )
     `);
+
+    // Migration 7: Add encrypted metadata columns to existing books table
+    try {
+      await db.execute(`ALTER TABLE books ADD COLUMN enc_metadata BLOB`);
+      await appLog.info('migrations', 'Added enc_metadata column to books table');
+    } catch (error) {
+      // Column might already exist, which is fine
+      await appLog.info('migrations', 'enc_metadata column already exists or failed to add', { error });
+    }
+    
+    try {
+      await db.execute(`ALTER TABLE books ADD COLUMN enc_schema TEXT`);
+      await appLog.info('migrations', 'Added enc_schema column to books table');
+    } catch (error) {
+      // Column might already exist, which is fine
+      await appLog.info('migrations', 'enc_schema column already exists or failed to add', { error });
+    }
 
     // Create indexes
     await db.execute(`CREATE INDEX IF NOT EXISTS idx_books_owner ON books(owner_user_id)`);

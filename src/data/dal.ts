@@ -15,6 +15,24 @@ export async function initializeDatabase(): Promise<Database> {
   return db;
 }
 
+
+// Book metadata interface for encryption
+export interface BookMetadata {
+  description?: string;
+  synopsis?: string;
+  genre?: string;
+  subgenre?: string;
+  bookType?: string;
+  prose?: string;
+  language?: string;
+  publisher?: string;
+  publishedStatus?: string;
+  publisherLink?: string;
+  printISBN?: string;
+  ebookISBN?: string;
+}
+
+
 // User Keys operations
 export interface UserKeysRow {
   id: number;
@@ -47,6 +65,10 @@ export interface BookRow {
   owner_user_id: string;
   title: string;
   is_shared: number;
+  // Encrypted metadata fields
+  enc_metadata?: Uint8Array; // Contains description, synopsis, genre, etc.
+  enc_schema?: string; // Encryption scheme ('udek' | 'bsk')
+  // Sync and revision tracking
   rev_local?: string;
   rev_cloud?: string;
   sync_state: string;
@@ -73,11 +95,47 @@ export async function putBook(data: BookRow): Promise<void> {
   const database = await initializeDatabase();
   await database.execute(
     `INSERT OR REPLACE INTO books 
-     (book_id, owner_user_id, title, is_shared, rev_local, rev_cloud, sync_state, conflict_state, last_local_change, last_cloud_change, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [data.book_id, data.owner_user_id, data.title, data.is_shared, data.rev_local, data.rev_cloud, data.sync_state, data.conflict_state, data.last_local_change, data.last_cloud_change, data.updated_at]
+     (book_id, owner_user_id, title, is_shared, enc_metadata, enc_schema, rev_local, rev_cloud, sync_state, conflict_state, last_local_change, last_cloud_change, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [data.book_id, data.owner_user_id, data.title, data.is_shared, data.enc_metadata, data.enc_schema, data.rev_local, data.rev_cloud, data.sync_state, data.conflict_state, data.last_local_change, data.last_cloud_change, data.updated_at]
   );
   appLog.info('dal', 'Book updated', { bookId: data.book_id, syncState: data.sync_state });
+}
+
+// Get books that need syncing to cloud
+export async function getDirtyBooks(userId: string): Promise<BookRow[]> {
+  const database = await initializeDatabase();
+  const result = await database.select<BookRow[]>(
+    'SELECT * FROM books WHERE owner_user_id = ? AND sync_state = ?', 
+    [userId, 'dirty']
+  );
+  return result;
+}
+
+// Get books with conflicts
+export async function getConflictedBooks(userId: string): Promise<BookRow[]> {
+  const database = await initializeDatabase();
+  const result = await database.select<BookRow[]>(
+    'SELECT * FROM books WHERE owner_user_id = ? AND conflict_state != ?', 
+    [userId, 'none']
+  );
+  return result;
+}
+
+// Book metadata interface for encryption
+export interface BookMetadata {
+  description?: string;
+  synopsis?: string;
+  genre?: string;
+  subgenre?: string;
+  bookType?: string;
+  prose?: string;
+  language?: string;
+  publisher?: string;
+  publishedStatus?: string;
+  publisherLink?: string;
+  printISBN?: string;
+  ebookISBN?: string;
 }
 
 export async function deleteBook(bookId: string, userId: string): Promise<void> {
