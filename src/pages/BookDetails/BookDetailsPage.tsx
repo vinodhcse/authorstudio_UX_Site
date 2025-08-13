@@ -16,7 +16,7 @@ import { useBookContext } from '../../contexts/BookContext';
 const BookDetailsPage: React.FC = () => {
     const { bookId } = useParams<{ bookId: string }>();
     const navigate = useNavigate();
-    const { books, createVersion, updateBook, deleteBook } = useBookContext();
+    const { books, createVersion, updateBook, deleteBook, deleteVersion } = useBookContext();
     const [activeTab, setActiveTab] = useState<BookDetailsTab>('Versions');
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
@@ -97,12 +97,24 @@ const BookDetailsPage: React.FC = () => {
         }
     };
 
+    const handleDeleteVersion = async (versionId: string) => {
+        if (!book) return;
+        
+        try {
+            await deleteVersion(book.id, versionId);
+        } catch (error) {
+            console.error('Failed to delete version:', error);
+            // TODO: Show error message to user
+        }
+    };
+
     const renderTabContent = () => {
         switch (activeTab) {
             case 'Versions':
                 return <VersionTab 
                             versions={book.versions || []}
                             onOpenCreateModal={() => setCreateVersionModalOpen(true)}
+                            onDeleteVersion={handleDeleteVersion}
                         />;
             case 'Collaborators':
                 return <CollaboratorTab collaborators={book.collaborators || []} />;

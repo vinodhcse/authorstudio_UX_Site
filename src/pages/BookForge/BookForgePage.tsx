@@ -11,6 +11,7 @@ import FloatingActionButton from './components/FloatingActionButton';
 import { appLog } from '../../auth/fileLogger';
 import { useCurrentBookAndVersion } from '../../contexts/BookContext';
 import { useChapters } from '../../hooks/useChapters';
+import { toast } from '../../hooks/use-toast';
 
 interface BookForgePageProps {
     theme: Theme;
@@ -55,10 +56,86 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
     
     // Load chapters for the current book/version - only if we have valid IDs
     const shouldLoadChapters = Boolean(bookId && versionId);
-    const { chapters } = useChapters(
+    const { 
+        chapters, 
+        createChapter,
+        updateChapter,
+        deleteChapter,
+        saveChapterContent, 
+        syncToCloud, 
+        squashRevisions,
+        createAct,
+        deleteAct,
+        reorderChapter,
+        isLoading: chaptersLoading,
+        error: chaptersError 
+    } = useChapters(
         shouldLoadChapters ? bookId! : '', 
         shouldLoadChapters ? versionId! : ''
     );
+
+    // Current chapter state (shared between Editor and EditorFooter)
+    const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
+    const currentChapter = currentChapterId 
+        ? chapters.find(ch => ch.id === currentChapterId)
+        : null;
+
+    // Auto-select first chapter when chapters load
+    useEffect(() => {
+        if (chapters.length > 0 && !currentChapterId) {
+            setCurrentChapterId(chapters[0].id);
+        }
+    }, [chapters, currentChapterId]);
+
+    // Chapter management handlers for EditorFooter
+    const handleSaveToLocal = async () => {
+        if (!currentChapter) return;
+        
+        try {
+            // Create a major revision (manual save)
+            await saveChapterContent(currentChapter.id, currentChapter.content, false);
+            toast({
+                title: "Saved Locally",
+                description: `Chapter "${currentChapter.title}" saved to local storage`,
+            });
+        } catch (error) {
+            console.error('Failed to save to local:', error);
+            toast({
+                title: "Save Failed",
+                description: "Failed to save chapter to local storage",
+                variant: "destructive",
+            });
+        }
+    };
+
+    const handleSyncToCloud = async () => {
+        if (!currentChapter) return;
+        
+        try {
+            await syncToCloud(currentChapter.id);
+            toast({
+                title: "Synced to Cloud",
+                description: `Chapter "${currentChapter.title}" synced to cloud`,
+            });
+        } catch (error) {
+            console.error('Failed to sync to cloud:', error);
+            toast({
+                title: "Sync Failed",
+                description: "Failed to sync chapter to cloud",
+                variant: "destructive",
+            });
+        }
+    };
+
+    const handleSquashRevisions = async () => {
+        if (!currentChapter) return;
+        
+        try {
+            await squashRevisions(currentChapter.id);
+        } catch (error) {
+            console.error('Failed to squash revisions:', error);
+        }
+    };
 
     // Debug logging
     appLog.info('book-forge', 'URL params', { bookId, versionId });
@@ -200,6 +277,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                 book={compatibilityBook} 
                 version={compatibilityVersion} 
                 chapters={chapters || []}
+                currentChapter={currentChapter || undefined}
                 theme={theme} 
                 setTheme={setTheme}
                 onOpenTypographySettings={handleOpenTypographySettings}
@@ -212,6 +290,17 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                 onPlanningSubviewChange={setPlanningSubview}
                 planningSearchQuery={planningSearchQuery}
                 onPlanningSearchChange={setPlanningSearchQuery}
+                onUpdateChapter={updateChapter}
+                onCreateChapter={async (title: string, actId?: string) => {
+                    const newChapter = await createChapter(title, actId);
+                    if (newChapter) {
+                        setCurrentChapterId(newChapter.id);
+                    }
+                }}
+                onDeleteChapter={deleteChapter}
+                onCreateAct={createAct}
+                onDeleteAct={deleteAct}
+                onReorderChapter={reorderChapter}
             />
             <div className="flex-grow flex relative overflow-hidden">
                 <Editor 
@@ -233,6 +322,13 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                 mode={activeMode}
                 activePlanningTab={activePlanningTab}
                 onPlanningNavigation={handlePlanningNavigation}
+                currentChapterId={currentChapterId || undefined}
+                chapterSyncState={currentChapter?.syncState === 'pulling' ? 'pushing' : currentChapter?.syncState as any}
+                chapterWordCount={currentChapter?.wordCount || 0}
+                chapterCharCount={currentChapter?.content?.metadata?.totalCharacters || 0}
+                onSaveToLocal={handleSaveToLocal}
+                onSyncToCloud={handleSyncToCloud}
+                onSquashRevisions={handleSquashRevisions}
             />
                         <FloatingActionButton 
                 theme={theme} 

@@ -1845,7 +1845,9 @@ const Editor: React.FC<{
     const { 
         chapters, 
         createChapter,
-        saveChapterContent
+        saveChapterContent,
+        syncToCloud,
+        squashRevisions
     } = useChapters(bookId, versionId);
     
     const [isCreatingChapter, setIsCreatingChapter] = useState(false);
@@ -1870,6 +1872,12 @@ const Editor: React.FC<{
             const newChapter = await createChapter(title);
             if (newChapter) {
                 setCurrentChapterId(newChapter.id);
+                // Save the initial content immediately after creation
+                setTimeout(() => {
+                    if (newChapter.content) {
+                        saveChapterContent(newChapter.id, newChapter.content, false);
+                    }
+                }, 100);
             }
         } catch (error) {
             console.error('Failed to create chapter:', error);
@@ -2025,6 +2033,33 @@ const Editor: React.FC<{
                 class: 'prose dark:prose-invert prose-lg max-w-none focus:outline-none font-serif text-gray-800 dark:text-gray-300 leading-relaxed book-prose',
             },
             handleKeyDown(view, event) {
+            // Handle Ctrl+S / Cmd+S for manual save (major revision)
+            if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+                event.preventDefault();
+                if (currentChapter) {
+                    const content = editor?.getJSON();
+                    if (content) {
+                        saveChapterContent(currentChapter.id, content, false) // false = major revision
+                            .then(() => {
+                                toast({
+                                    title: "Chapter Saved",
+                                    description: "Your chapter has been saved as a major revision.",
+                                    variant: "default",
+                                });
+                            })
+                            .catch((error) => {
+                                toast({
+                                    title: "Save Failed",
+                                    description: "An error occurred while saving your chapter.",
+                                    variant: "destructive",
+                                });
+                                console.error('Manual save failed:', error);
+                            });
+                    }
+                }
+                return true;
+            }
+            
             // Handle Ctrl+C / Cmd+C
             if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
                 event.preventDefault();
@@ -2107,7 +2142,7 @@ const Editor: React.FC<{
     
     const handleContentChange = useCallback(() => {
         if (!editor || !currentChapter) return;
-        
+        console.log('HandleCContentChange', autoSaveTimeout);
         // Clear existing timeout
         if (autoSaveTimeout) {
             clearTimeout(autoSaveTimeout);
@@ -2117,7 +2152,8 @@ const Editor: React.FC<{
         const timeout = setTimeout(async () => {
             const content = editor.getJSON();
             try {
-                await saveChapterContent(currentChapter.id, content);
+                console.log('Chapter started saving changes:', currentChapter.id);
+                await saveChapterContent(currentChapter.id, content, true); // true = minor revision (auto-save)
                 console.log('Chapter auto-saved:', currentChapter.id);
             } catch (error) {
                 console.error('Auto-save failed:', error);

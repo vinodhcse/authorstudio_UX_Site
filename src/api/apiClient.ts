@@ -204,8 +204,8 @@ export class ApiClient {
     });
   }
 
-  // Plot structure endpoints
-  async getPlotNodes(bookId: string, versionId: string) {
+  // Plot structure endpoints - now returns narrative flow data
+  async getPlotNodes(bookId: string, versionId: string): Promise<{ nodes: any[]; edges: any[] }> {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}/plotCanvas`);
   }
 

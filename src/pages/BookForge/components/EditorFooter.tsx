@@ -11,12 +11,79 @@ interface EditorFooterProps {
     mode?: string;
     activePlanningTab?: string;
     onPlanningNavigation?: (tab: 'Plot Arcs' | 'World Building' | 'Characters') => void;
+    // Chapter management props
+    currentChapterId?: string;
+    chapterSyncState?: 'idle' | 'dirty' | 'pushing' | 'conflict';
+    chapterWordCount?: number;
+    chapterCharCount?: number;
+    onSaveToLocal?: () => Promise<void>;
+    onSyncToCloud?: () => Promise<void>;
+    onSquashRevisions?: () => Promise<void>;
 }
 
-const EditorFooter: React.FC<EditorFooterProps> = ({ book, mode, activePlanningTab, onPlanningNavigation }) => {
+const EditorFooter: React.FC<EditorFooterProps> = ({ 
+    book, 
+    mode, 
+    activePlanningTab, 
+    onPlanningNavigation,
+    currentChapterId,
+    chapterSyncState = 'idle',
+    chapterWordCount = 0,
+    chapterCharCount = 0,
+    onSaveToLocal,
+    onSyncToCloud,
+    onSquashRevisions
+}) => {
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
     const [jobProgress, setJobProgress] = useState<number | null>(null);
     const [isSaveMenuOpen, setSaveMenuOpen] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    // Update save status based on chapter sync state
+    useEffect(() => {
+        if (chapterSyncState === 'pushing') {
+            setSaveStatus('saving');
+        } else if (chapterSyncState === 'dirty') {
+            setSaveStatus('unsaved');
+        } else if (chapterSyncState === 'conflict') {
+            setSaveStatus('unsaved'); // Could add a 'conflict' status
+        } else {
+            setSaveStatus('saved');
+        }
+    }, [chapterSyncState]);
+
+    // Handle local save
+    const handleSaveToLocal = async () => {
+        if (!onSaveToLocal) return;
+        
+        try {
+            setIsSyncing(true);
+            await onSaveToLocal();
+            setSaveMenuOpen(false);
+        } catch (error) {
+            console.error('Failed to save to local:', error);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    // Handle cloud sync
+    const handleSyncToCloud = async () => {
+        if (!onSyncToCloud || !onSquashRevisions) return;
+        
+        try {
+            setIsSyncing(true);
+            // First squash revisions to clean up local history
+            await onSquashRevisions();
+            // Then sync to cloud
+            await onSyncToCloud();
+            setSaveMenuOpen(false);
+        } catch (error) {
+            console.error('Failed to sync to cloud:', error);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     // --- MOCK LOGIC ---
     // Mock job progress for demonstration
@@ -38,16 +105,7 @@ const EditorFooter: React.FC<EditorFooterProps> = ({ book, mode, activePlanningT
         return () => clearInterval(interval);
     }, []);
 
-    // Mock save status changes for demonstration
-    useEffect(() => {
-        const statusCycle: SaveStatus[] = ['saved', 'unsaved', 'saving'];
-        let currentIndex = 0;
-        const interval = setInterval(() => {
-            currentIndex = (currentIndex + 1) % statusCycle.length;
-            setSaveStatus(statusCycle[currentIndex]);
-        }, 5000);
-        return () => clearInterval(interval);
-    }, []);
+    // Remove mock save status changes - use real sync state only
     // --- END MOCK LOGIC ---
 
 
@@ -89,8 +147,8 @@ const EditorFooter: React.FC<EditorFooterProps> = ({ book, mode, activePlanningT
         // Default Writing mode
         return (
             <div className="flex items-center gap-6 text-xs text-white/70 dark:text-black/70 font-medium w-1/4">
-                <span>Words: 213</span>
-                <span>Characters: 1,189</span>
+                <span>Words: {chapterWordCount.toLocaleString()}</span>
+                <span>Characters: {chapterCharCount.toLocaleString()}</span>
             </div>
         );
     };
@@ -129,8 +187,22 @@ const EditorFooter: React.FC<EditorFooterProps> = ({ book, mode, activePlanningT
                                 exit={{ opacity: 0, y: 10 }}
                                 className="absolute bottom-full right-0 mb-2 w-48 bg-gradient-to-br from-gray-700 to-gray-900 dark:from-slate-50 dark:to-slate-100 rounded-lg shadow-lg p-2 z-50 border border-gray-600/50 dark:border-gray-300/50"
                               >
-                                <button className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <HardDriveIcon className="h-4 w-4"/> Save to Local</button>
-                                <button className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <CloudIcon className="h-4 w-4"/> Sync to Cloud</button>
+                                <button 
+                                    onClick={handleSaveToLocal}
+                                    disabled={isSyncing || !onSaveToLocal}
+                                    className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                                > 
+                                    <HardDriveIcon className="h-4 w-4"/> 
+                                    {isSyncing && onSaveToLocal ? 'Saving...' : 'Save to Local (Ctrl+S)'}
+                                </button>
+                                <button 
+                                    onClick={handleSyncToCloud}
+                                    disabled={isSyncing || !onSyncToCloud || chapterSyncState === 'idle'}
+                                    className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                                > 
+                                    <CloudIcon className="h-4 w-4"/> 
+                                    {isSyncing && onSyncToCloud ? 'Syncing...' : 'Sync to Cloud'}
+                                </button>
                             </motion.div>
                         )}
                     </AnimatePresence>
@@ -160,8 +232,22 @@ const EditorFooter: React.FC<EditorFooterProps> = ({ book, mode, activePlanningT
                             exit={{ opacity: 0, y: 10 }}
                             className="absolute bottom-full right-0 mb-2 w-48 bg-gradient-to-br from-gray-700 to-gray-900 dark:from-slate-50 dark:to-slate-100 rounded-lg shadow-lg p-2 z-50 border border-gray-600/50 dark:border-gray-300/50"
                           >
-                            <button className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <HardDriveIcon className="h-4 w-4"/> Save to Local</button>
-                            <button className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <CloudIcon className="h-4 w-4"/> Sync to Cloud</button>
+                            <button 
+                                onClick={handleSaveToLocal}
+                                disabled={isSyncing || !onSaveToLocal}
+                                className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                            > 
+                                <HardDriveIcon className="h-4 w-4"/> 
+                                {isSyncing && onSaveToLocal ? 'Saving...' : 'Save to Local (Ctrl+S)'}
+                            </button>
+                            <button 
+                                onClick={handleSyncToCloud}
+                                disabled={isSyncing || !onSyncToCloud || chapterSyncState !== 'dirty'}
+                                className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                            > 
+                                <CloudIcon className="h-4 w-4"/> 
+                                {isSyncing && onSyncToCloud ? 'Syncing...' : 'Sync to Cloud'}
+                            </button>
                         </motion.div>
                     )}
                 </AnimatePresence>

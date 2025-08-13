@@ -1,5 +1,6 @@
 
 import { WorldData } from './pages/BookForge/components/planning/types/WorldBuildingTypes';
+import { NarrativeFlowNode, NarrativeEdge } from './types/narrative-layout';
 
 // Asset System Types
 export type EntityType =
@@ -228,7 +229,13 @@ export interface Version {
         avatar: string;
     }
     characters: Character[];
-    plotArcs: PlotArc[];
+    // Legacy plotArcs for compatibility - should migrate to plotCanvas
+    plotArcs?: PlotArc[];
+    // New narrative structure for plot canvas
+    plotCanvas?: {
+        nodes: NarrativeFlowNode[];
+        edges: NarrativeEdge[];
+    };
     worlds: WorldData[];
     chapters: Chapter[];
     // New encrypted sync fields
@@ -336,7 +343,8 @@ export interface CollaborativeState {
   mergeConflicts: any[];
 }
 
-// Plot structure types (hierarchical)
+// Plot structure types (hierarchical) - DEPRECATED: Use NarrativeFlowNode instead
+/** @deprecated Use NarrativeFlowNode from narrative-layout.ts instead */
 export interface PlotNode {
   id: string;
   type: 'outline' | 'act' | 'chapter' | 'scene';

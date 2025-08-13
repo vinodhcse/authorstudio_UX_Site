@@ -145,7 +145,8 @@ Add chapter-level helpers parallel to your existing scene helpers (you already h
 ). New methods:
 
 getChapters(bookId, versionId): Promise<Chapter[]>
-
+getChapters(bookId, versionId): Promise<Chapter[]>
+ 
 createChapter(bookId, versionId, init?: Partial<Chapter>): Promise<Chapter>
 
 If this is the first chapter of the version: auto-create Outline → Act1 → Chapter1 → Scene1 plot nodes and link IDs.

@@ -3,7 +3,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useParams } from 'react-router-dom';
-import { Version, VersionStatus } from '../../../types';
+import { Version, VersionStatus, SyncState } from '../../../types';
 import { PlusIcon, TrashIcon, ExternalLinkIcon } from '../../../constants';
 
 const StatusBadge: React.FC<{ status: VersionStatus }> = ({ status }) => {
@@ -19,13 +19,53 @@ const StatusBadge: React.FC<{ status: VersionStatus }> = ({ status }) => {
     );
 };
 
+const SyncStatusBadge: React.FC<{ syncState?: SyncState; revLocal?: string; revCloud?: string }> = ({ 
+    syncState, 
+    revLocal, 
+    revCloud 
+}) => {
+    if (!syncState) return null;
+    
+    const getSyncDisplayInfo = () => {
+        switch (syncState) {
+            case 'idle':
+                return { label: 'Synced', color: 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' };
+            case 'dirty':
+                return { label: 'Local Changes', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300' };
+            case 'pushing':
+                return { label: 'Syncing Up', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300' };
+            case 'pulling':
+                return { label: 'Syncing Down', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300' };
+            case 'conflict':
+                return { label: 'Conflict', color: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300' };
+            default:
+                return { label: 'Unknown', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-300' };
+        }
+    };
+    
+    const { label, color } = getSyncDisplayInfo();
+    
+    return (
+        <span className={`px-2 py-1 text-xs font-medium rounded-full ${color}`} title={`Local: ${revLocal || 'none'}, Cloud: ${revCloud || 'none'}`}>
+            {label}
+        </span>
+    );
+};
+
 interface VersionTabProps {
     versions: Version[];
     onOpenCreateModal: () => void;
+    onDeleteVersion?: (versionId: string) => void;
 }
 
-const VersionTab: React.FC<VersionTabProps> = ({ versions, onOpenCreateModal }) => {
+const VersionTab: React.FC<VersionTabProps> = ({ versions, onOpenCreateModal, onDeleteVersion }) => {
     const { bookId } = useParams<{ bookId: string }>();
+
+    const handleDeleteVersion = (versionId: string, versionName: string) => {
+        if (window.confirm(`Are you sure you want to delete the version "${versionName}"? This action cannot be undone.`)) {
+            onDeleteVersion?.(versionId);
+        }
+    };
 
     const containerVariants = {
         hidden: { opacity: 0 },
@@ -84,7 +124,14 @@ const VersionTab: React.FC<VersionTabProps> = ({ versions, onOpenCreateModal }) 
                                 </div>
                                 <div className="flex-shrink-0 flex items-center gap-4 w-full sm:w-auto justify-between">
                                     <div className="flex items-center gap-4">
-                                        <StatusBadge status={version.status} />
+                                        <div className="flex flex-col gap-1">
+                                            <StatusBadge status={version.status} />
+                                            <SyncStatusBadge 
+                                                syncState={version.syncState} 
+                                                revLocal={version.revLocal} 
+                                                revCloud={version.revCloud} 
+                                            />
+                                        </div>
                                         <p className="text-sm text-gray-600 dark:text-gray-300 w-28 text-right">{version.wordCount.toLocaleString()} words</p>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -92,7 +139,11 @@ const VersionTab: React.FC<VersionTabProps> = ({ versions, onOpenCreateModal }) 
                                             <ExternalLinkIcon className="w-4 h-4" />
                                             Open
                                         </Link>
-                                        <button className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1">
+                                        <button 
+                                            onClick={() => handleDeleteVersion(version.id, version.name)}
+                                            className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1"
+                                            title={`Delete version "${version.name}"`}
+                                        >
                                             <TrashIcon className="w-5 h-5" />
                                         </button>
                                     </div>

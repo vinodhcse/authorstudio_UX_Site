@@ -443,8 +443,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       try {
         console.log('🔐 [UNLOCK] Initializing encryption service...');
         const { encryptionService } = await import('../services/encryptionService');
+        console.log('🔐 [UNLOCK] Encryption service imported, checking current state:', {
+          isInitialized: encryptionService.isInitialized(),
+          userId: session.user_id
+        });
+        
         await encryptionService.initialize(session.user_id, passphrase);
-        console.log('✅ [UNLOCK] Encryption service initialized successfully');
+        
+        console.log('🔐 [UNLOCK] Encryption service initialization completed, checking state:', {
+          isInitialized: encryptionService.isInitialized()
+        });
+        
+        if (encryptionService.isInitialized()) {
+          console.log('✅ [UNLOCK] Encryption service initialized successfully');
+        } else {
+          console.error('❌ [UNLOCK] Encryption service initialization failed - service not initialized after initialize() call');
+        }
       } catch (encryptionError) {
         console.error('❌ [UNLOCK] Failed to initialize encryption service:', encryptionError);
         // Continue with unlock even if encryption service fails

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { Book, Version, Character, PlotArc, Scene } from '../types';
+import { Book, Version, Character, PlotArc, Scene, Chapter } from '../types';
+import { NarrativeFlowNode, NarrativeEdge } from '../types/narrative-layout';
 import { WorldData, Location, WorldObject, Lore, MagicSystem } from '../pages/BookForge/components/planning/types/WorldBuildingTypes';
 import { appLog } from '../auth/fileLogger';
 import { 
@@ -8,10 +9,14 @@ import {
   getBook as getBookFromDB,
   getScenesByBook,
   getScene,
+  getChaptersByVersion as getChaptersByVersionDAL,
+  getChapter,
   putBook,
   deleteBook as deleteBookFromDB,
   BookRow,
-  BookMetadata
+  BookMetadata,
+  putVersion,
+  VersionRow
 } from '../data/dal';
 import { useAuthStore } from '../auth/useAuthStore';
 import { encryptionService } from '../services/encryptionService';
@@ -82,6 +87,7 @@ interface BookContextType {
   getVersion: (bookId: string, versionId: string) => Version | null;
   updateVersion: (bookId: string, versionId: string, updates: Partial<Version>) => void;
   createVersion: (bookId: string, versionData: Omit<Version, 'id'>) => Promise<Version>;
+  deleteVersion: (bookId: string, versionId: string) => Promise<void>;
   
   // Character operations
   getCharacters: (bookId: string, versionId: string) => Character[];
@@ -96,6 +102,10 @@ interface BookContextType {
   createPlotArc: (bookId: string, versionId: string, plotArcData: Omit<PlotArc, 'id'>) => Promise<PlotArc>;
   updatePlotArc: (bookId: string, versionId: string, plotArcId: string, updates: Partial<PlotArc>) => void;
   deletePlotArc: (bookId: string, versionId: string, plotArcId: string) => void;
+
+  // Plot Canvas operations (Narrative Structure)
+  getPlotCanvas: (bookId: string, versionId: string) => { nodes: NarrativeFlowNode[]; edges: NarrativeEdge[] } | null;
+  updatePlotCanvas: (bookId: string, versionId: string, plotCanvas: { nodes: NarrativeFlowNode[]; edges: NarrativeEdge[] }) => void;
   
   // World operations
   getWorlds: (bookId: string, versionId: string) => WorldData[];
@@ -137,6 +147,11 @@ interface BookContextType {
   updateSceneContent: (sceneId: string, content: string) => Promise<void>;
   createScene: (bookId: string, versionId: string, chapterId: string, title: string, content?: string) => Promise<Scene>;
   getBookScenes: (bookId: string) => Promise<Scene[]>;
+  
+  // Chapter operations (encrypted content with local storage)
+  getChapterContent: (chapterId: string) => Promise<any>;
+  saveChapterContentLocal: (chapterId: string, bookId: string, versionId: string, content: any) => Promise<void>;
+  getChaptersByVersion: (bookId: string, versionId: string) => Promise<Chapter[]>;
   
   // Book CRUD operations
   createBook: (bookData: Omit<Book, 'id'>) => Promise<Book>;
@@ -735,6 +750,46 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
       throw new Error('Book not found');
     }
 
+    // Get current user for database operations
+    const authState = useAuthStore.getState();
+    if (!authState.user?.id) {
+      throw new Error('User not authenticated');
+    }
+
+    // Save version to local database
+    try {
+      const versionRow: VersionRow = {
+        version_id: newVersion.id,
+        book_id: bookId,
+        owner_user_id: authState.user.id,
+        title: newVersion.name,
+        description: `Version created: ${newVersion.name}`,
+        is_current: (currentBook.versions?.length || 0) === 0 ? 1 : 0, // First version is current
+        enc_scheme: 'udek',
+        has_proposals: 0,
+        pending_ops: 0,
+        sync_state: 'dirty',
+        conflict_state: 'none',
+        created_at: Date.now(),
+        updated_at: Date.now()
+      };
+      
+      await putVersion(versionRow);
+      await appLog.info('book-context', 'Version saved to local database', { 
+        bookId, 
+        versionId: newVersion.id,
+        title: newVersion.name 
+      });
+    } catch (dbError) {
+      await appLog.error('book-context', 'Failed to save version to local database', { 
+        bookId, 
+        versionId: newVersion.id, 
+        error: dbError 
+      });
+      throw dbError; // Don't continue if local save fails
+    }
+
+    // Update in-memory book state
     const updatedVersions = [...(currentBook.versions || []), newVersion];
     await updateBook(bookId, { versions: updatedVersions });
 
@@ -759,6 +814,43 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     }
 
     return newVersion;
+  };
+
+  const deleteVersion = async (bookId: string, versionId: string): Promise<void> => {
+    await appLog.info('book-context', 'Deleting version', { bookId, versionId });
+    
+    try {
+      // Remove version from local state
+      setBooks(prevBooks => 
+        prevBooks.map(book => 
+          book.id === bookId 
+            ? { ...book, versions: book.versions?.filter(v => v.id !== versionId) }
+            : book
+        )
+      );
+
+      // Sync deletion to cloud if authenticated
+      const authState = useAuthStore.getState();
+      if (authState.isAuthenticated && authState.user) {
+        try {
+          await apiClient.deleteVersion(bookId, versionId);
+          await appLog.info('book-context', 'Version deleted from cloud successfully', { bookId, versionId });
+        } catch (cloudError) {
+          await appLog.warn('book-context', 'Failed to delete version from cloud', { bookId, versionId, error: cloudError });
+          // Note: We still keep the local deletion even if cloud sync fails
+        }
+      } else {
+        await appLog.warn('book-context', 'Skipping cloud deletion for version - user not authenticated', { 
+          isAuthenticated: authState.isAuthenticated,
+          hasUser: !!authState.user
+        });
+      }
+      
+      await appLog.success('book-context', 'Version deleted successfully', { bookId, versionId });
+    } catch (error) {
+      await appLog.error('book-context', 'Failed to delete version', { bookId, versionId, error });
+      throw error;
+    }
   };
 
   // Character operations
@@ -826,7 +918,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
 
   const getPlotArc = (bookId: string, versionId: string, plotArcId: string): PlotArc | null => {
     const version = getVersion(bookId, versionId);
-    return version?.plotArcs.find(arc => arc.id === plotArcId) || null;
+    return version?.plotArcs?.find(arc => arc.id === plotArcId) || null;
   };
 
   const createPlotArc = async (bookId: string, versionId: string, plotArcData: Omit<PlotArc, 'id'>): Promise<PlotArc> => {
@@ -837,7 +929,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
 
     const version = getVersion(bookId, versionId);
     if (version) {
-      const updatedPlotArcs = [...version.plotArcs, newPlotArc];
+      const updatedPlotArcs = [...(version.plotArcs || []), newPlotArc];
       updateVersion(bookId, versionId, { plotArcs: updatedPlotArcs });
     }
 
@@ -859,7 +951,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
 
   const updatePlotArc = (bookId: string, versionId: string, plotArcId: string, updates: Partial<PlotArc>): void => {
     const version = getVersion(bookId, versionId);
-    if (version) {
+    if (version && version.plotArcs) {
       const updatedPlotArcs = version.plotArcs.map(arc =>
         arc.id === plotArcId ? { ...arc, ...updates } : arc
       );
@@ -869,10 +961,20 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
 
   const deletePlotArc = (bookId: string, versionId: string, plotArcId: string): void => {
     const version = getVersion(bookId, versionId);
-    if (version) {
+    if (version && version.plotArcs) {
       const updatedPlotArcs = version.plotArcs.filter(arc => arc.id !== plotArcId);
       updateVersion(bookId, versionId, { plotArcs: updatedPlotArcs });
     }
+  };
+
+  // Plot Canvas operations (Narrative Structure)
+  const getPlotCanvas = (bookId: string, versionId: string): { nodes: NarrativeFlowNode[]; edges: NarrativeEdge[] } | null => {
+    const version = getVersion(bookId, versionId);
+    return version?.plotCanvas || null;
+  };
+
+  const updatePlotCanvas = (bookId: string, versionId: string, plotCanvas: { nodes: NarrativeFlowNode[]; edges: NarrativeEdge[] }): void => {
+    updateVersion(bookId, versionId, { plotCanvas });
   };
 
   // World operations
@@ -1285,6 +1387,127 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
 
     } catch (error) {
       await appLog.error('book-context', 'Failed to get book scenes', { bookId, error });
+      return [];
+    }
+  };
+
+  // Chapter operations (encrypted content with local storage)
+  const getChapterContent = async (chapterId: string): Promise<any> => {
+    try {
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      if (!encryptionService.isInitialized()) {
+        throw new Error('Encryption service not initialized');
+      }
+
+      const content = await encryptionService.loadChapterContent(chapterId, user.id);
+      appLog.debug('book-context', 'Chapter content loaded', { chapterId });
+      return content;
+    } catch (error) {
+      appLog.error('book-context', 'Failed to load chapter content', { chapterId, error });
+      return null;
+    }
+  };
+
+  const saveChapterContentLocal = async (chapterId: string, bookId: string, versionId: string, content: any): Promise<void> => {
+    try {
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      if (!encryptionService.isInitialized()) {
+        throw new Error('Encryption service not initialized');
+      }
+
+      await encryptionService.saveChapterContent(chapterId, bookId, versionId, user.id, content);
+      appLog.success('book-context', 'Chapter content saved locally', { chapterId, bookId, versionId });
+    } catch (error) {
+      appLog.error('book-context', 'Failed to save chapter content locally', { chapterId, error });
+      throw error;
+    }
+  };
+
+  const getChaptersByVersion = async (bookId: string, versionId: string): Promise<Chapter[]> => {
+    try {
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const chapterRows = await getChaptersByVersionDAL(bookId, versionId, user.id);
+      
+      // Convert ChapterRow[] to Chapter[] - need to load content for each
+      const chapters: Chapter[] = await Promise.all(
+        chapterRows.map(async (row) => {
+          let content = null;
+          try {
+            content = await encryptionService.loadChapterContent(row.chapter_id, user.id);
+          } catch (err) {
+            appLog.warn('book-context', `Failed to load content for chapter ${row.chapter_id}`, err);
+          }
+
+          return {
+            id: row.chapter_id,
+            title: row.title || 'Untitled Chapter',
+            position: row.order_index || 0,
+            createdAt: new Date(row.updated_at || Date.now()).toISOString(),
+            updatedAt: new Date(row.updated_at || Date.now()).toISOString(),
+            
+            // Content
+            content: content || {
+              type: 'doc',
+              content: [],
+              metadata: {
+                totalCharacters: 0,
+                totalWords: 0,
+                lastEditedAt: new Date().toISOString(),
+                lastEditedBy: user.id
+              }
+            },
+            
+            // Sync state
+            syncState: (row.sync_state as any) || 'idle',
+            revLocal: row.rev_local,
+            revCloud: row.rev_cloud,
+            
+            // Chapter metadata
+            wordCount: row.word_count || 0,
+            hasProposals: Boolean(row.has_proposals),
+            characters: [],
+            isComplete: false,
+            status: 'DRAFT',
+            authorId: user.id,
+            lastModifiedBy: user.id,
+            
+            // Plot structure references (will be set by useChapters)
+            linkedPlotNodeId: '',
+            linkedAct: '',
+            linkedOutline: '',
+            linkedScenes: [],
+            
+            // Revision and collaboration (empty for now)
+            revisions: [],
+            currentRevisionId: '',
+            collaborativeState: {
+              pendingChanges: [],
+              needsReview: false,
+              reviewerIds: [],
+              approvedBy: [],
+              rejectedBy: [],
+              mergeConflicts: []
+            }
+          };
+        })
+      );
+
+      return chapters.sort((a, b) => a.position - b.position);
+
+    } catch (error) {
+      await appLog.error('book-context', 'Failed to get chapters by version', { bookId, versionId, error });
       return [];
     }
   };
@@ -1774,6 +1997,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     getVersion,
     updateVersion,
     createVersion,
+    deleteVersion,
     
     // Character operations
     getCharacters,
@@ -1788,6 +2012,10 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     createPlotArc,
     updatePlotArc,
     deletePlotArc,
+    
+    // Plot Canvas operations (Narrative Structure)
+    getPlotCanvas,
+    updatePlotCanvas,
     
     // World operations
     getWorlds,
@@ -1829,6 +2057,11 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     updateSceneContent,
     createScene,
     getBookScenes,
+    
+    // Chapter operations (encrypted content with local storage)
+    getChapterContent,
+    saveChapterContentLocal,
+    getChaptersByVersion,
     
     // Book CRUD operations
     createBook,
