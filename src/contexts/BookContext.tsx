@@ -86,49 +86,49 @@ interface BookContextType {
   // Character operations
   getCharacters: (bookId: string, versionId: string) => Character[];
   getCharacter: (bookId: string, versionId: string, characterId: string) => Character | null;
-  createCharacter: (bookId: string, versionId: string, characterData: Omit<Character, 'id'>) => Character;
+  createCharacter: (bookId: string, versionId: string, characterData: Omit<Character, 'id'>) => Promise<Character>;
   updateCharacter: (bookId: string, versionId: string, characterId: string, updates: Partial<Character>) => void;
   deleteCharacter: (bookId: string, versionId: string, characterId: string) => void;
   
   // Plot Arc operations
   getPlotArcs: (bookId: string, versionId: string) => PlotArc[];
   getPlotArc: (bookId: string, versionId: string, plotArcId: string) => PlotArc | null;
-  createPlotArc: (bookId: string, versionId: string, plotArcData: Omit<PlotArc, 'id'>) => PlotArc;
+  createPlotArc: (bookId: string, versionId: string, plotArcData: Omit<PlotArc, 'id'>) => Promise<PlotArc>;
   updatePlotArc: (bookId: string, versionId: string, plotArcId: string, updates: Partial<PlotArc>) => void;
   deletePlotArc: (bookId: string, versionId: string, plotArcId: string) => void;
   
   // World operations
   getWorlds: (bookId: string, versionId: string) => WorldData[];
   getWorld: (bookId: string, versionId: string, worldId: string) => WorldData | null;
-  createWorld: (bookId: string, versionId: string, worldData: Omit<WorldData, 'id'>) => WorldData;
+  createWorld: (bookId: string, versionId: string, worldData: Omit<WorldData, 'id'>) => Promise<WorldData>;
   updateWorld: (bookId: string, versionId: string, worldId: string, updates: Partial<WorldData>) => void;
   deleteWorld: (bookId: string, versionId: string, worldId: string) => void;
   
   // Location operations
   getLocations: (bookId: string, versionId: string, worldId: string) => Location[];
   getLocation: (bookId: string, versionId: string, worldId: string, locationId: string) => Location | null;
-  createLocation: (bookId: string, versionId: string, worldId: string, locationData: Omit<Location, 'id' | 'parentWorldId'>) => Location;
+  createLocation: (bookId: string, versionId: string, worldId: string, locationData: Omit<Location, 'id' | 'parentWorldId'>) => Promise<Location>;
   updateLocation: (bookId: string, versionId: string, worldId: string, locationId: string, updates: Partial<Location>) => void;
   deleteLocation: (bookId: string, versionId: string, worldId: string, locationId: string) => void;
   
   // World Object operations
   getWorldObjects: (bookId: string, versionId: string, worldId: string) => WorldObject[];
   getWorldObject: (bookId: string, versionId: string, worldId: string, objectId: string) => WorldObject | null;
-  createWorldObject: (bookId: string, versionId: string, worldId: string, objectData: Omit<WorldObject, 'id' | 'parentWorldId'>) => WorldObject;
+  createWorldObject: (bookId: string, versionId: string, worldId: string, objectData: Omit<WorldObject, 'id' | 'parentWorldId'>) => Promise<WorldObject>;
   updateWorldObject: (bookId: string, versionId: string, worldId: string, objectId: string, updates: Partial<WorldObject>) => void;
   deleteWorldObject: (bookId: string, versionId: string, worldId: string, objectId: string) => void;
   
   // Lore operations
   getLore: (bookId: string, versionId: string, worldId: string) => Lore[];
   getLoreItem: (bookId: string, versionId: string, worldId: string, loreId: string) => Lore | null;
-  createLore: (bookId: string, versionId: string, worldId: string, loreData: Omit<Lore, 'id' | 'parentWorldId'>) => Lore;
+  createLore: (bookId: string, versionId: string, worldId: string, loreData: Omit<Lore, 'id' | 'parentWorldId'>) => Promise<Lore>;
   updateLore: (bookId: string, versionId: string, worldId: string, loreId: string, updates: Partial<Lore>) => void;
   deleteLore: (bookId: string, versionId: string, worldId: string, loreId: string) => void;
   
   // Magic System operations
   getMagicSystems: (bookId: string, versionId: string, worldId: string) => MagicSystem[];
   getMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemId: string) => MagicSystem | null;
-  createMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemData: Omit<MagicSystem, 'id' | 'parentWorldId'>) => MagicSystem;
+  createMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemData: Omit<MagicSystem, 'id' | 'parentWorldId'>) => Promise<MagicSystem>;
   updateMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemId: string, updates: Partial<MagicSystem>) => void;
   deleteMagicSystem: (bookId: string, versionId: string, worldId: string, magicSystemId: string) => void;
   
@@ -751,7 +751,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
           return newVersion;
         }
         
-        await apiClient.createVersion(bookId, versionData, createTokenGetter());
+        await apiClient.createVersion(bookId, newVersion, createTokenGetter());
         await appLog.info('book-context', 'Version synced to cloud successfully', { bookId, versionId: newVersion.id });
       } catch (cloudError) {
         await appLog.warn('book-context', 'Failed to sync version to cloud, will retry later', { bookId, versionId: newVersion.id, error: cloudError });
@@ -772,7 +772,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     return version?.characters.find(char => char.id === characterId) || null;
   };
 
-  const createCharacter = (bookId: string, versionId: string, characterData: Omit<Character, 'id'>): Character => {
+  const createCharacter = async (bookId: string, versionId: string, characterData: Omit<Character, 'id'>): Promise<Character> => {
     const newCharacter: Character = {
       ...characterData,
       id: generateId(),
@@ -782,6 +782,19 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     if (version) {
       const updatedCharacters = [...version.characters, newCharacter];
       updateVersion(bookId, versionId, { characters: updatedCharacters });
+    }
+
+    // Try to sync to cloud if online and authenticated
+    if (navigator.onLine) {
+      try {
+        const authState = useAuthStore.getState();
+        if (authState.isAuthenticated && authState.user) {
+          await apiClient.createCharacter(bookId, versionId, newCharacter, createTokenGetter());
+          await appLog.info('book-context', 'Character synced to cloud successfully', { bookId, versionId, characterId: newCharacter.id });
+        }
+      } catch (cloudError) {
+        await appLog.warn('book-context', 'Failed to sync character to cloud, will retry later', { bookId, versionId, characterId: newCharacter.id, error: cloudError });
+      }
     }
 
     return newCharacter;
@@ -816,7 +829,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     return version?.plotArcs.find(arc => arc.id === plotArcId) || null;
   };
 
-  const createPlotArc = (bookId: string, versionId: string, plotArcData: Omit<PlotArc, 'id'>): PlotArc => {
+  const createPlotArc = async (bookId: string, versionId: string, plotArcData: Omit<PlotArc, 'id'>): Promise<PlotArc> => {
     const newPlotArc: PlotArc = {
       ...plotArcData,
       id: generateId(),
@@ -826,6 +839,19 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     if (version) {
       const updatedPlotArcs = [...version.plotArcs, newPlotArc];
       updateVersion(bookId, versionId, { plotArcs: updatedPlotArcs });
+    }
+
+    // Try to sync to cloud if online and authenticated
+    if (navigator.onLine) {
+      try {
+        const authState = useAuthStore.getState();
+        if (authState.isAuthenticated && authState.user) {
+          await apiClient.createPlotArc(bookId, versionId, newPlotArc, createTokenGetter());
+          await appLog.info('book-context', 'PlotArc synced to cloud successfully', { bookId, versionId, plotArcId: newPlotArc.id });
+        }
+      } catch (cloudError) {
+        await appLog.warn('book-context', 'Failed to sync plotArc to cloud, will retry later', { bookId, versionId, plotArcId: newPlotArc.id, error: cloudError });
+      }
     }
 
     return newPlotArc;
@@ -860,7 +886,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     return version?.worlds.find(world => world.id === worldId) || null;
   };
 
-  const createWorld = (bookId: string, versionId: string, worldData: Omit<WorldData, 'id'>): WorldData => {
+  const createWorld = async (bookId: string, versionId: string, worldData: Omit<WorldData, 'id'>): Promise<WorldData> => {
     const newWorld: WorldData = {
       ...worldData,
       id: generateId(),
@@ -870,6 +896,19 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     if (version) {
       const updatedWorlds = [...version.worlds, newWorld];
       updateVersion(bookId, versionId, { worlds: updatedWorlds });
+    }
+
+    // Try to sync to cloud if online and authenticated
+    if (navigator.onLine) {
+      try {
+        const authState = useAuthStore.getState();
+        if (authState.isAuthenticated && authState.user) {
+          await apiClient.createWorldData(bookId, versionId, newWorld, createTokenGetter());
+          await appLog.info('book-context', 'World synced to cloud successfully', { bookId, versionId, worldId: newWorld.id });
+        }
+      } catch (cloudError) {
+        await appLog.warn('book-context', 'Failed to sync world to cloud, will retry later', { bookId, versionId, worldId: newWorld.id, error: cloudError });
+      }
     }
 
     return newWorld;
@@ -904,7 +943,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     return world?.locations.find(loc => loc.id === locationId) || null;
   };
 
-  const createLocation = (bookId: string, versionId: string, worldId: string, locationData: Omit<Location, 'id' | 'parentWorldId'>): Location => {
+  const createLocation = async (bookId: string, versionId: string, worldId: string, locationData: Omit<Location, 'id' | 'parentWorldId'>): Promise<Location> => {
     const newLocation: Location = {
       ...locationData,
       id: generateId(),
@@ -915,6 +954,19 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     if (world) {
       const updatedLocations = [...world.locations, newLocation];
       updateWorld(bookId, versionId, worldId, { locations: updatedLocations });
+    }
+
+    // Try to sync to cloud if online and authenticated
+    if (navigator.onLine) {
+      try {
+        const authState = useAuthStore.getState();
+        if (authState.isAuthenticated && authState.user) {
+          await apiClient.createLocation(bookId, versionId, worldId, newLocation, createTokenGetter());
+          await appLog.info('book-context', 'Location synced to cloud successfully', { bookId, versionId, worldId, locationId: newLocation.id });
+        }
+      } catch (cloudError) {
+        await appLog.warn('book-context', 'Failed to sync location to cloud, will retry later', { bookId, versionId, worldId, locationId: newLocation.id, error: cloudError });
+      }
     }
 
     return newLocation;
@@ -949,7 +1001,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     return world?.objects.find(obj => obj.id === objectId) || null;
   };
 
-  const createWorldObject = (bookId: string, versionId: string, worldId: string, objectData: Omit<WorldObject, 'id' | 'parentWorldId'>): WorldObject => {
+  const createWorldObject = async (bookId: string, versionId: string, worldId: string, objectData: Omit<WorldObject, 'id' | 'parentWorldId'>): Promise<WorldObject> => {
     const newObject: WorldObject = {
       ...objectData,
       id: generateId(),
@@ -960,6 +1012,19 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     if (world) {
       const updatedObjects = [...world.objects, newObject];
       updateWorld(bookId, versionId, worldId, { objects: updatedObjects });
+    }
+
+    // Try to sync to cloud if online and authenticated
+    if (navigator.onLine) {
+      try {
+        const authState = useAuthStore.getState();
+        if (authState.isAuthenticated && authState.user) {
+          await apiClient.createWorldObject(bookId, versionId, worldId, newObject, createTokenGetter());
+          await appLog.info('book-context', 'WorldObject synced to cloud successfully', { bookId, versionId, worldId, objectId: newObject.id });
+        }
+      } catch (cloudError) {
+        await appLog.warn('book-context', 'Failed to sync worldObject to cloud, will retry later', { bookId, versionId, worldId, objectId: newObject.id, error: cloudError });
+      }
     }
 
     return newObject;
@@ -994,7 +1059,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     return world?.lore.find(lore => lore.id === loreId) || null;
   };
 
-  const createLore = (bookId: string, versionId: string, worldId: string, loreData: Omit<Lore, 'id' | 'parentWorldId'>): Lore => {
+  const createLore = async (bookId: string, versionId: string, worldId: string, loreData: Omit<Lore, 'id' | 'parentWorldId'>): Promise<Lore> => {
     const newLore: Lore = {
       ...loreData,
       id: generateId(),
@@ -1005,6 +1070,19 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     if (world) {
       const updatedLore = [...world.lore, newLore];
       updateWorld(bookId, versionId, worldId, { lore: updatedLore });
+    }
+
+    // Try to sync to cloud if online and authenticated
+    if (navigator.onLine) {
+      try {
+        const authState = useAuthStore.getState();
+        if (authState.isAuthenticated && authState.user) {
+          await apiClient.createLore(bookId, versionId, worldId, newLore, createTokenGetter());
+          await appLog.info('book-context', 'Lore synced to cloud successfully', { bookId, versionId, worldId, loreId: newLore.id });
+        }
+      } catch (cloudError) {
+        await appLog.warn('book-context', 'Failed to sync lore to cloud, will retry later', { bookId, versionId, worldId, loreId: newLore.id, error: cloudError });
+      }
     }
 
     return newLore;
@@ -1039,7 +1117,7 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     return world?.magicSystems.find(magic => magic.id === magicSystemId) || null;
   };
 
-  const createMagicSystem = (bookId: string, versionId: string, worldId: string, magicSystemData: Omit<MagicSystem, 'id' | 'parentWorldId'>): MagicSystem => {
+  const createMagicSystem = async (bookId: string, versionId: string, worldId: string, magicSystemData: Omit<MagicSystem, 'id' | 'parentWorldId'>): Promise<MagicSystem> => {
     const newMagicSystem: MagicSystem = {
       ...magicSystemData,
       id: generateId(),
@@ -1050,6 +1128,19 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
     if (world) {
       const updatedMagicSystems = [...world.magicSystems, newMagicSystem];
       updateWorld(bookId, versionId, worldId, { magicSystems: updatedMagicSystems });
+    }
+
+    // Try to sync to cloud if online and authenticated
+    if (navigator.onLine) {
+      try {
+        const authState = useAuthStore.getState();
+        if (authState.isAuthenticated && authState.user) {
+          await apiClient.createMagicSystem(bookId, versionId, worldId, newMagicSystem, createTokenGetter());
+          await appLog.info('book-context', 'MagicSystem synced to cloud successfully', { bookId, versionId, worldId, magicSystemId: newMagicSystem.id });
+        }
+      } catch (cloudError) {
+        await appLog.warn('book-context', 'Failed to sync magicSystem to cloud, will retry later', { bookId, versionId, worldId, magicSystemId: newMagicSystem.id, error: cloudError });
+      }
     }
 
     return newMagicSystem;
@@ -1185,8 +1276,8 @@ export const BookContextProvider: React.FC<BookContextProviderProps> = ({ childr
         encScheme: row.enc_scheme as any,
         syncState: row.sync_state as any,
         conflictState: row.conflict_state as any,
-        updatedAt: row.updated_at,
-        wordCount: row.word_count,
+        updatedAt: row.updated_at || Date.now(),
+        wordCount: row.word_count || 0,
         hasProposals: Boolean(row.has_proposals)
       }));
 

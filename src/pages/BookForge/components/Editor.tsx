@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useEditor, EditorContent, Editor as TipTapEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -27,10 +27,10 @@ import TaskItem from '@tiptap/extension-task-item';
 import Placeholder from '@tiptap/extension-placeholder';
 import { motion, AnimatePresence } from 'framer-motion';
 
-import { chapterContent } from '../../../data/chapterContent';
-import { Theme, Book, Version, Chapter } from '../../../types';
+import { Theme, Book, Version } from '../../../types';
 import PlanningPage from './PlanningPage';
-import { useBookContext } from '../../../contexts/BookContext';
+import CreateChapterPage from './CreateChapterPage';
+import { useChapters } from '../../../hooks/useChapters';
 
 // Tool Window System Imports
 import DockSidebar from '../../../components/DockSidebar';
@@ -1838,16 +1838,53 @@ const Editor: React.FC<{
     planningSearchQuery = ''
 }) => {
     
-    // Remove the internal state since it's now managed by parent
-    // const [showTypographySettings, setShowTypographySettings] = useState(false);
-
     const { copyToClipboard, canCopy } = useClipboard();
     const { setCurrentContext } = useToolWindowStore();
+    
+    // Chapter management
+    const { 
+        chapters, 
+        createChapter,
+        saveChapterContent
+    } = useChapters(bookId, versionId);
+    
+    const [isCreatingChapter, setIsCreatingChapter] = useState(false);
+    const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
+    
+    // Get current chapter content
+    const currentChapter = currentChapterId 
+        ? chapters.find(ch => ch.id === currentChapterId)
+        : chapters[0]; // Default to first chapter
+    
+    // Set current chapter when chapters load
+    useEffect(() => {
+        if (chapters.length > 0 && !currentChapterId) {
+            setCurrentChapterId(chapters[0].id);
+        }
+    }, [chapters, currentChapterId]);
+    
+    // Handle chapter creation
+    const handleCreateChapter = async (title: string) => {
+        setIsCreatingChapter(true);
+        try {
+            const newChapter = await createChapter(title);
+            if (newChapter) {
+                setCurrentChapterId(newChapter.id);
+            }
+        } catch (error) {
+            console.error('Failed to create chapter:', error);
+        } finally {
+            setIsCreatingChapter(false);
+        }
+    };
     
     // Initialize tool window context
     useEffect(() => {
         setCurrentContext(bookId, versionId);
     }, [bookId, versionId, setCurrentContext]);
+    
+    // Get initial content for editor
+    const editorContent = currentChapter?.content || '';
     
     // Expose the function to parent components through useEffect
     useEffect(() => {
@@ -1879,6 +1916,8 @@ const Editor: React.FC<{
                 strike: false,
                 horizontalRule: false,
                 blockquote: false,
+                // Disable link if we're adding Link extension separately
+                link: false,
             }),
             // Text formatting
             Underline,
@@ -1980,7 +2019,7 @@ const Editor: React.FC<{
                 placeholder: 'Start writing your masterpiece...',
             }),
         ],
-        content: chapterContent,
+        content: editorContent,
         editorProps: {
             attributes: {
                 class: 'prose dark:prose-invert prose-lg max-w-none focus:outline-none font-serif text-gray-800 dark:text-gray-300 leading-relaxed book-prose',
@@ -2062,6 +2101,56 @@ const Editor: React.FC<{
             onEditorReady(editor);
         }
     }, [editor, onEditorReady]);
+
+    // Auto-save functionality with debouncing
+    const [autoSaveTimeout, setAutoSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+    
+    const handleContentChange = useCallback(() => {
+        if (!editor || !currentChapter) return;
+        
+        // Clear existing timeout
+        if (autoSaveTimeout) {
+            clearTimeout(autoSaveTimeout);
+        }
+        
+        // Set new timeout for auto-save
+        const timeout = setTimeout(async () => {
+            const content = editor.getJSON();
+            try {
+                await saveChapterContent(currentChapter.id, content);
+                console.log('Chapter auto-saved:', currentChapter.id);
+            } catch (error) {
+                console.error('Auto-save failed:', error);
+            }
+        }, 2000); // 2 second debounce
+        
+        setAutoSaveTimeout(timeout);
+    }, [editor, currentChapter, saveChapterContent, autoSaveTimeout]);
+    
+    // Set up content change listener for auto-save
+    useEffect(() => {
+        if (!editor) return;
+        
+        const handleUpdate = () => {
+            handleContentChange();
+        };
+        
+        editor.on('update', handleUpdate);
+        
+        return () => {
+            editor.off('update', handleUpdate);
+        };
+    }, [editor, handleContentChange]);
+    
+    // Update editor content when current chapter changes
+    useEffect(() => {
+        if (editor && currentChapter) {
+            const content = currentChapter.content || '';
+            if (JSON.stringify(editor.getJSON()) !== JSON.stringify(content)) {
+                editor.commands.setContent(content, { emitUpdate: false });
+            }
+        }
+    }, [editor, currentChapter]);
 
     return (
         <>
@@ -2295,15 +2384,25 @@ const Editor: React.FC<{
                     />
                 ) : (
                     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-16">
-                        <EditorContent editor={editor} />
-                        
-                        {/* Tool Manager - Show tools available for this book/version */}
-                        <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                                Available Tools
-                            </h3>
-                            <ToolManager bookId={bookId} versionId={versionId} />
-                        </div>
+                        {/* Show CreateChapterPage if no chapters exist */}
+                        {chapters.length === 0 ? (
+                            <CreateChapterPage 
+                                onCreateChapter={handleCreateChapter}
+                                isCreating={isCreatingChapter}
+                            />
+                        ) : (
+                            <>
+                                <EditorContent editor={editor} />
+                                
+                                {/* Tool Manager - Show tools available for this book/version */}
+                                <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
+                                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                                        Available Tools
+                                    </h3>
+                                    <ToolManager bookId={bookId} versionId={versionId} />
+                                </div>
+                            </>
+                        )}
                     </div>
                 )}
 

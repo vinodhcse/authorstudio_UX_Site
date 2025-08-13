@@ -304,32 +304,127 @@ export type Theme = 'light' | 'dark' | 'system';
 export type ActiveTab = 'My Books' | 'Editing' | 'Reviewing' | 'WhisperTest';
 export type BookDetailsTab = 'Versions' | 'Collaborators' | 'Recent Activity';
 
-// New encrypted data types
+// Revision tracking types
+export interface Revision {
+  id: string;
+  timestamp: string;
+  authorId: string;
+  authorName: string;
+  content: any; // TipTap JSON content
+  changes: ChangeEvent[];
+  isMinor: boolean; // true for auto-saves, false for major commits
+  parentRevisionId?: string;
+  message?: string; // Optional commit message
+}
+
+export interface ChangeEvent {
+  type: 'insert' | 'delete' | 'format' | 'move';
+  position: number;
+  length?: number;
+  content?: any;
+  metadata?: any;
+  timestamp: string;
+  authorId: string;
+}
+
+export interface CollaborativeState {
+  pendingChanges: ChangeEvent[];
+  needsReview: boolean;
+  reviewerIds: string[];
+  approvedBy: string[];
+  rejectedBy: string[];
+  mergeConflicts: any[];
+}
+
+// Plot structure types (hierarchical)
+export interface PlotNode {
+  id: string;
+  type: 'outline' | 'act' | 'chapter' | 'scene';
+  title: string;
+  description?: string;
+  position: number;
+  parentId?: string; // Links to parent node
+  childIds: string[]; // Links to child nodes
+  metadata?: any;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Enhanced Chapter type with all scene-level fields moved here
 export interface Chapter {
   id: string;
   title: string;
-  orderIndex?: number;
+  position: number; // Order within the book
+  createdAt: string;
+  updatedAt: string;
+  image?: string; // Chapter header image
+  
+  // Plot structure references
+  linkedPlotNodeId: string; // Reference to plot node
+  linkedAct: string; // Reference to act node
+  linkedOutline: string; // Reference to outline node
+  linkedScenes: string[]; // Array of scene node IDs
+  
+  // Content - TipTap 3.0.7 JSON structure
+  content: {
+    type: 'doc';
+    content?: any[]; // TipTap blocks/nodes
+    metadata: {
+      totalCharacters: number;
+      totalWords: number;
+      readingTime?: number;
+      lastEditedBy?: string;
+      lastEditedAt?: string;
+    };
+  };
+  
+  // Revision and collaboration
+  revisions: Revision[];
+  currentRevisionId: string;
+  collaborativeState: CollaborativeState;
+  
+  // Sync state for encrypted content
   revLocal?: string;
   revCloud?: string;
   syncState?: SyncState;
   conflictState?: ConflictState;
-  updatedAt?: number;
-  scenes: Scene[];
-}
-
-export interface Scene {
-  id: string;
-  title: string;
-  encScheme: EncryptionScheme;
+  
+  // Scene-level fields moved to chapter
+  encScheme?: EncryptionScheme;
   contentEnc?: string; // base64 encrypted content
   contentIv?: string;  // base64 IV
-  revLocal?: string;
-  revCloud?: string;
-  syncState?: SyncState;
-  conflictState?: ConflictState;
-  updatedAt?: number;
-  wordCount?: number;
-  hasProposals?: boolean;
+  wordCount: number;
+  hasProposals: boolean;
+  
+  // Chapter-specific metadata
+  summary?: string;
+  goals?: string;
+  characters: string[]; // Character IDs that appear in this chapter
+  tags?: string[];
+  notes?: string;
+  isComplete: boolean;
+  
+  // Status tracking
+  status: 'DRAFT' | 'IN_PROGRESS' | 'REVIEW' | 'APPROVED' | 'PUBLISHED';
+  authorId: string;
+  lastModifiedBy: string;
+}
+
+// Simplified Scene type (now just a content section within a chapter)
+export interface SceneSection {
+  id: string;
+  type: 'scene' | 'break' | 'separator';
+  title?: string;
+  plotNodeId?: string; // Reference to scene plot node
+  content?: any; // TipTap content for this section
+  metadata?: {
+    characters?: string[];
+    location?: string;
+    timeOfDay?: string;
+    mood?: string;
+    summary?: string;
+    goals?: string;
+  };
 }
 
 // User key management
@@ -351,4 +446,16 @@ export interface Grant {
   revoked: boolean;
   issuedAt: number;
   updatedAt: number;
+}
+
+// Scene interface for encrypted content
+export interface Scene {
+  id: string;
+  title: string;
+  encScheme: 'udek' | 'bsk';
+  syncState: 'idle' | 'dirty' | 'syncing' | 'conflict';
+  conflictState: 'none' | 'local_wins' | 'cloud_wins';
+  updatedAt: number;
+  wordCount: number;
+  hasProposals?: boolean;
 }

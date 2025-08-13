@@ -2,7 +2,7 @@
 import { appLog } from '../auth/fileLogger';
 
 // API base URL - update this to match your backend
-const API_BASE_URL = process.env.VITE_API_BASE_URL || 'https://api.authorstudio.app';
+const API_BASE_URL = process.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
 
 export class ApiClient {
   private accessToken: string | null = null;
@@ -86,6 +86,13 @@ export class ApiClient {
     });
   }
 
+  async createBook(bookData: any) {
+    return this.makeRequest('/books', {
+      method: 'POST',
+      body: JSON.stringify(bookData)
+    });
+  }
+
   // Version endpoints
   async getVersion(bookId: string, versionId: string) {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}`);
@@ -94,6 +101,13 @@ export class ApiClient {
   async putVersion(bookId: string, versionId: string, versionData: any) {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}`, {
       method: 'PUT',
+      body: JSON.stringify(versionData)
+    });
+  }
+
+  async createVersion(bookId: string, versionData: any) {
+    return this.makeRequest(`/books/${bookId}/versions`, {
+      method: 'POST',
       body: JSON.stringify(versionData)
     });
   }
@@ -159,8 +173,76 @@ export class ApiClient {
     });
   }
 
+  // Chapter management endpoints
+  async getChapters(bookId: string, versionId: string) {
+    return this.makeRequest(`/books/${bookId}/versions/${versionId}/chapters`);
+  }
+
+  async createChapter(bookId: string, versionId: string, chapterData: {
+    id?: string; // Allow client-generated ID
+    title: string;
+    position: number;
+    linkedActId?: string;
+    linkedOutlineId?: string;
+  }) {
+    return this.makeRequest(`/books/${bookId}/versions/${versionId}/chapters`, {
+      method: 'POST',
+      body: JSON.stringify(chapterData)
+    });
+  }
+
+  async updateChapter(bookId: string, versionId: string, chapterId: string, chapterData: any) {
+    return this.makeRequest(`/books/${bookId}/versions/${versionId}/chapters/${chapterId}`, {
+      method: 'PUT',
+      body: JSON.stringify(chapterData)
+    });
+  }
+
+  async deleteChapter(bookId: string, versionId: string, chapterId: string) {
+    return this.makeRequest(`/books/${bookId}/versions/${versionId}/chapters/${chapterId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // Plot structure endpoints
+  async getPlotNodes(bookId: string, versionId: string) {
+    return this.makeRequest(`/books/${bookId}/versions/${versionId}/plotCanvas`);
+  }
+
+  async createPlotNode(bookId: string, versionId: string, plotNodeData: {
+    id?: string; // Allow client-generated ID
+    type: 'outline' | 'act' | 'chapter' | 'scene';
+    title: string;
+    description?: string;
+    parentId?: string;
+    position: number;
+  }) {
+    return this.makeRequest(`/books/${bookId}/versions/${versionId}/plotCanvas`, {
+      method: 'POST',
+      body: JSON.stringify(plotNodeData)
+    });
+  }
+
+  // Revision management
+  async saveRevision(bookId: string, versionId: string, chapterId: string, revisionData: {
+    id?: string; // Allow client-generated ID
+    content: any;
+    isMinor: boolean;
+    message?: string;
+  }) {
+    return this.makeRequest(`/books/${bookId}/versions/${versionId}/chapters/${chapterId}/revisions`, {
+      method: 'POST',
+      body: JSON.stringify(revisionData)
+    });
+  }
+
+  async getRevisions(bookId: string, versionId: string, chapterId: string) {
+    return this.makeRequest(`/books/${bookId}/versions/${versionId}/chapters/${chapterId}/revisions`);
+  }
+
   // Sharing endpoints
   async createGrant(bookId: string, grantData: {
+    id?: string; // Allow client-generated ID
     collaboratorUserId: string;
     perms: string;
     bskWrapForCollab: string;

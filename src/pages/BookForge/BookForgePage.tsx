@@ -10,6 +10,7 @@ import EditorFooter from './components/EditorFooter';
 import FloatingActionButton from './components/FloatingActionButton';
 import { appLog } from '../../auth/fileLogger';
 import { useCurrentBookAndVersion } from '../../contexts/BookContext';
+import { useChapters } from '../../hooks/useChapters';
 
 interface BookForgePageProps {
     theme: Theme;
@@ -51,10 +52,18 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
     
     // Use BookContext to get current book and version data
     const { currentBook, currentVersion, loading, error } = useCurrentBookAndVersion();
+    
+    // Load chapters for the current book/version - only if we have valid IDs
+    const shouldLoadChapters = Boolean(bookId && versionId);
+    const { chapters } = useChapters(
+        shouldLoadChapters ? bookId! : '', 
+        shouldLoadChapters ? versionId! : ''
+    );
 
     // Debug logging
     appLog.info('book-forge', 'URL params', { bookId, versionId });
     appLog.info('book-forge', 'Context data', { currentBook, currentVersion, loading, error });
+    appLog.info('book-forge', 'Chapters data', { chapters: chapters || [], chaptersLength: chapters?.length || 0 });
     appLog.info('book-forge', 'URL mode and tab', { mode: modeFromUrl, tab: tabFromUrl });
     appLog.info('book-forge', 'State values', { activeMode, activePlanningTab });
     
@@ -190,6 +199,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
             <EditorHeader 
                 book={compatibilityBook} 
                 version={compatibilityVersion} 
+                chapters={chapters || []}
                 theme={theme} 
                 setTheme={setTheme}
                 onOpenTypographySettings={handleOpenTypographySettings}

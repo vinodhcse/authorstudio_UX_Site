@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Book, Version, Theme } from '../../../types';
+import { Book, Version, Theme, Chapter } from '../../../types';
 import { SunIcon, MoonIcon, ChevronDownIcon, TrashIcon, UserIcon, MagnifyingGlassIcon, Squares2X2Icon, GlobeAltIcon, PencilIcon, CogIcon, ComputerDesktopIcon, Bars3BottomLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import ChapterSettingsModal from './ChapterSettingsModal';
 import { useToolWindowStore } from '../../../stores/toolWindowStore';
@@ -33,18 +33,39 @@ const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNo
   );
 };
 
-const ChapterProgressBar: React.FC<{ book: Book, onOpenSettings: () => void, onOpenTypographySettings: () => void }> = ({ book, onOpenSettings, onOpenTypographySettings }) => {
+const ChapterProgressBar: React.FC<{ book: Book, chapters: Chapter[], onOpenSettings: () => void, onOpenTypographySettings: () => void }> = ({ book, chapters, onOpenSettings, onOpenTypographySettings }) => {
     const [isOpen, setIsOpen] = useState(false);
     const triggerRef = useRef<HTMLDivElement>(null);
 
-    // Mock data for acts and chapters
-    const structure = {
-        'Act I': ['Chapter 1: The Beginning', 'Chapter 2: A New Friend'],
-        'Act II': ['Chapter 3: The Discovery', 'Chapter 4: The Challenge', 'Chapter 5: Turning Point'],
-        'Act III': ['Chapter 6: The Climax', 'Chapter 7: Resolution', 'Chapter 8: Epilogue', 'Chapter 9: Another Chapter', 'Chapter 10: One More'],
+    // Ensure chapters is always an array
+    const safeChapters = chapters || [];
+
+    // Group chapters by Act from the real chapters data
+    const structure = safeChapters.reduce((acc, chapter) => {
+        // Use linkedAct or fallback to default grouping by position
+        let actName = chapter.linkedAct || 'Act I';
+        
+        // If no linkedAct, group by position (simple fallback)
+        if (!chapter.linkedAct) {
+            if (chapter.position <= 3) actName = 'Act I';
+            else if (chapter.position <= 7) actName = 'Act II';
+            else actName = 'Act III';
+        }
+        
+        if (!acc[actName]) {
+            acc[actName] = [];
+        }
+        
+        acc[actName].push(chapter.title);
+        return acc;
+    }, {} as Record<string, string[]>);
+
+    // If no chapters exist, show a placeholder structure
+    const displayStructure = Object.keys(structure).length > 0 ? structure : {
+        'Act I': ['No chapters yet']
     };
 
-    const chapterCompletion = 25; // mock percentage
+    const chapterCompletion = 25; // mock percentage for now
 
     return (
         <div className="relative group w-full" ref={triggerRef}>
@@ -66,7 +87,10 @@ const ChapterProgressBar: React.FC<{ book: Book, onOpenSettings: () => void, onO
                     </motion.button>
                     <div onClick={() => setIsOpen(!isOpen)} className="flex-grow flex items-center justify-center gap-2 cursor-pointer h-full min-w-0">
                         <p className="font-bold truncate text-sm leading-tight text-shadow-sm">
-                            <span className="mr-2">{book.title}:</span><span className="font-normal opacity-80">{structure['Act I'][0]}</span>
+                            <span className="mr-2">{book.title}:</span>
+                            <span className="font-normal opacity-80">
+                                {displayStructure['Act I']?.[0] || 'No chapters yet'}
+                            </span>
                         </p>
                     </div>
                     <motion.button 
@@ -93,7 +117,7 @@ const ChapterProgressBar: React.FC<{ book: Book, onOpenSettings: () => void, onO
                     exit={{ opacity: 0, y: -10, scale: 0.95 }}
                     className="absolute top-full -translate-x-1/2 mt-2 w-[30rem] bg-gradient-to-br from-black to-gray-800 dark:from-slate-100 dark:to-slate-200 rounded-lg shadow-lg p-2 z-50 border border-gray-700/50 dark:border-gray-200/50 max-h-80 overflow-y-auto no-scrollbar"
                  >
-                     {Object.entries(structure).map(([act, chapters]) => (
+                     {Object.entries(displayStructure).map(([act, chapterList]) => (
                          <div key={act} className="mb-1">
                              <div className="flex items-center justify-between px-2 py-1 group/act">
                                 <div className="flex items-center gap-2">
@@ -112,9 +136,9 @@ const ChapterProgressBar: React.FC<{ book: Book, onOpenSettings: () => void, onO
                                     </DropdownMenu>
                                 </div>
                              </div>
-                             {chapters.map(chapter => (
-                                 <a key={chapter} href="#" className="group/chapter flex items-center justify-between pl-8 pr-2 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">
-                                     <span>{chapter}</span>
+                             {chapterList.map(chapterTitle => (
+                                 <a key={chapterTitle} href="#" className="group/chapter flex items-center justify-between pl-8 pr-2 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">
+                                     <span>{chapterTitle}</span>
                                      <div className="flex items-center gap-1 opacity-0 group-hover/chapter:opacity-100 transition-opacity">
                                         <button className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"><Bars3BottomLeftIcon className="w-4 h-4 text-gray-400 dark:text-gray-500"/></button>
                                         <button className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"><CogIcon className="w-4 h-4 text-gray-400 dark:text-gray-500"/></button>
@@ -477,6 +501,7 @@ const PlanningHeader: React.FC<{
 interface EditorHeaderProps {
     book: Book;
     version: Version;
+    chapters?: Chapter[];
     theme: Theme;
     setTheme: (theme: Theme) => void;
     onOpenTypographySettings: () => void;
@@ -494,6 +519,7 @@ interface EditorHeaderProps {
 const EditorHeader: React.FC<EditorHeaderProps> = ({ 
     book, 
     version, 
+    chapters = [],
     theme, 
     setTheme, 
     onOpenTypographySettings, 
@@ -510,7 +536,6 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
     const { openTool, broadcastThemeChange } = useToolWindowStore();
     const { logout } = useAuthStore();
-    const navigate = useNavigate();
 
     const handleOpenTool = async (toolName: string) => {
         try {
@@ -571,6 +596,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                                 ) : (
                                     <ChapterProgressBar 
                                         book={book} 
+                                        chapters={chapters}
                                         onOpenSettings={() => setChapterSettingsOpen(true)}
                                         onOpenTypographySettings={onOpenTypographySettings}
                                     />

@@ -507,6 +507,56 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // Individual entity creation methods (for ID synchronization)
+  async createCharacter(bookId: string, versionId: string, characterData: any, tokenGetter?: () => Promise<string>): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}/versions/${versionId}/characters`, {
+      method: 'POST',
+      body: JSON.stringify(characterData),
+    }, tokenGetter);
+  }
+
+  async createWorldData(bookId: string, versionId: string, worldData: any, tokenGetter?: () => Promise<string>): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}/versions/${versionId}/worlds`, {
+      method: 'POST',
+      body: JSON.stringify(worldData),
+    }, tokenGetter);
+  }
+
+  async createLocation(bookId: string, versionId: string, worldId: string, locationData: any, tokenGetter?: () => Promise<string>): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}/versions/${versionId}/worlds/${worldId}/locations`, {
+      method: 'POST',
+      body: JSON.stringify(locationData),
+    }, tokenGetter);
+  }
+
+  async createWorldObject(bookId: string, versionId: string, worldId: string, objectData: any, tokenGetter?: () => Promise<string>): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}/versions/${versionId}/worlds/${worldId}/objects`, {
+      method: 'POST',
+      body: JSON.stringify(objectData),
+    }, tokenGetter);
+  }
+
+  async createLore(bookId: string, versionId: string, worldId: string, loreData: any, tokenGetter?: () => Promise<string>): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}/versions/${versionId}/worlds/${worldId}/lore`, {
+      method: 'POST',
+      body: JSON.stringify(loreData),
+    }, tokenGetter);
+  }
+
+  async createMagicSystem(bookId: string, versionId: string, worldId: string, magicSystemData: any, tokenGetter?: () => Promise<string>): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}/versions/${versionId}/worlds/${worldId}/magicSystems`, {
+      method: 'POST',
+      body: JSON.stringify(magicSystemData),
+    }, tokenGetter);
+  }
+
+  async createPlotArc(bookId: string, versionId: string, plotArcData: any, tokenGetter?: () => Promise<string>): Promise<any> {
+    return this.makeAuthenticatedRequest(`/books/${bookId}/versions/${versionId}/plotArcs`, {
+      method: 'POST',
+      body: JSON.stringify(plotArcData),
+    }, tokenGetter);
+  }
 }
 
 export const apiClient = new ApiClient();
