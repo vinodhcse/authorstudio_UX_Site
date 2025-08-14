@@ -1815,10 +1815,12 @@ const Editor: React.FC<{
     versionId?: string;
     book?: Book;
     version?: Version;
+    currentChapterId?: string; // Add this prop to specify which chapter to load
     showTypographySettings?: boolean;
     onCloseTypographySettings?: () => void;
     onOpenTypographySettings?: () => void;
     onEditorReady?: (editor: TipTapEditor) => void;
+    onChapterCreated?: (chapterId: string) => void; // Add callback for chapter creation
     theme?: Theme;
     activeMode?: string;
     planningTab?: 'Plot Arcs' | 'World Building' | 'Characters';
@@ -1828,10 +1830,12 @@ const Editor: React.FC<{
     versionId = 'v1',
     book,
     version,
+    currentChapterId, // Use the prop name directly
     showTypographySettings = false, 
     onCloseTypographySettings, 
     onOpenTypographySettings, 
     onEditorReady,
+    onChapterCreated, // Receive callback from parent
     theme = 'dark',
     activeMode = 'Writing',
     planningTab = 'Plot Arcs',
@@ -1845,25 +1849,19 @@ const Editor: React.FC<{
     const { 
         chapters, 
         createChapter,
-        saveChapterContent,
-        syncToCloud,
-        squashRevisions
+        saveChapterContent
     } = useChapters(bookId, versionId);
     
     const [isCreatingChapter, setIsCreatingChapter] = useState(false);
-    const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
     
-    // Get current chapter content
+    // Use the chapter ID from parent prop directly - no fallback needed
+    // The parent (BookForgePage) is responsible for chapter selection and URL management
     const currentChapter = currentChapterId 
         ? chapters.find(ch => ch.id === currentChapterId)
-        : chapters[0]; // Default to first chapter
+        : null; // Don't default to first chapter - let parent handle initial selection
     
-    // Set current chapter when chapters load
-    useEffect(() => {
-        if (chapters.length > 0 && !currentChapterId) {
-            setCurrentChapterId(chapters[0].id);
-        }
-    }, [chapters, currentChapterId]);
+    // No fallback chapter selection needed - parent handles all chapter management
+    // Remove the automatic chapter selection logic since parent manages URL-based navigation
     
     // Handle chapter creation
     const handleCreateChapter = async (title: string) => {
@@ -1871,13 +1869,18 @@ const Editor: React.FC<{
         try {
             const newChapter = await createChapter(title);
             if (newChapter) {
-                setCurrentChapterId(newChapter.id);
-                // Save the initial content immediately after creation
-                setTimeout(() => {
-                    if (newChapter.content) {
-                        saveChapterContent(newChapter.id, newChapter.content, false);
-                    }
-                }, 100);
+                // Save the initial content immediately (no timeout needed)
+                if (newChapter.content) {
+                    await saveChapterContent(newChapter.id, newChapter.content, false);
+                }
+                
+                // Always notify parent component that a new chapter was created
+                // The parent will handle navigation to the new chapter
+                if (onChapterCreated) {
+                    onChapterCreated(newChapter.id);
+                } else {
+                    console.warn('No onChapterCreated callback provided - chapter created but no navigation will occur');
+                }
             }
         } catch (error) {
             console.error('Failed to create chapter:', error);

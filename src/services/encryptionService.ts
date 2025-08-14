@@ -367,6 +367,13 @@ import {
         return null;
       }
 
+      // Check for empty content arrays that can't be decrypted
+      const hasValidContent = (chapterRow.content_enc.length > 0 && chapterRow.content_iv.length > 0);
+      if (!hasValidContent) {
+        appLog.debug('encryption', 'Empty content arrays found for chapter', { chapterId });
+        return null;
+      }
+
       // Determine encryption scheme and get appropriate key
       const isShared = chapterRow.enc_scheme === 'bsk';
       const key = await this.getBookKey(userId, chapterRow.book_id, isShared);

@@ -22,6 +22,7 @@ import SceneEditModal from './SceneEditModal';
 
 
 
+
 // Import narrative components
 import { 
     OutlineNodeComponent,
@@ -72,6 +73,9 @@ import {
     NarrativeNode
 } from '../../../../types/narrative-layout';
 
+import { useBookContext, useCurrentBookAndVersion } from '../../../../contexts/BookContext';
+
+
 interface PlotArcsBoardProps {
     book: Book;
     version: Version;
@@ -93,6 +97,12 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const location = useLocation();
+    const { getBook, getPlotCanvas } = useBookContext();
+    const { bookId, versionId } = useCurrentBookAndVersion();
+
+    const plotCanvas = bookId && versionId ? getPlotCanvas(bookId, versionId) : null;
+    
+    
     
     // Get current layout from URL or default to 'narrative'
     const currentLayout = searchParams.get('layout') || 'narrative';
@@ -217,13 +227,15 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
 
     // Initialize with sample data
     useEffect(() => {
-        const { nodes: sampleNodes, edges: sampleEdges } = generateSampleNarrativeData();
         
         // Apply hierarchical layout with collision avoidance
-        const layoutNodes = generateHierarchicalLayout(sampleNodes);
-        
+        const narrativeNodes = plotCanvas?.nodes || [];
+        const narrativeEdges = plotCanvas?.edges || [];
+        console.log('Initialized narrative nodes and edges', narrativeNodes, narrativeEdges);
+        const layoutNodes = generateHierarchicalLayout(narrativeNodes);        
+        console.log('Generated layout nodes:', layoutNodes);
         setNarrativeNodes(layoutNodes);
-        setNarrativeEdges(sampleEdges);
+        setNarrativeEdges(narrativeEdges);
         // Don't load AI suggestions on initialization
         setAiSuggestions([]);
     }, []);

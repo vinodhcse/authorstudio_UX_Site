@@ -246,6 +246,20 @@ export interface Version {
     updatedAt?: number;
 }
 
+// Database content data structure for versions
+export interface VersionContentData {
+    chapters?: Chapter[]; // Store chapter metadata for quick access
+    plotCanvas?: {
+        nodes: NarrativeFlowNode[];
+        edges: NarrativeEdge[];
+    };
+    characters?: Character[];
+    worlds?: WorldData[];
+    plotArcs?: PlotArc[]; // Legacy support
+    // Additional content can be added here in the future
+    version?: string; // For schema versioning
+}
+
 export type ActivityAction = 'created version' | 'updated details' | 'invited collaborator' | 'deleted version' | 'reviewed version';
 
 export interface Activity {

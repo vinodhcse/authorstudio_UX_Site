@@ -1,7 +1,7 @@
 // Data Access Layer for encrypted book data
 import Database from '@tauri-apps/plugin-sql';
 import { appLog } from '../auth/fileLogger';
-import { Book, Version, Chapter, Scene, Grant, UserKeys, SyncState, ConflictState } from '../types';
+import { Book, Version, Chapter, Scene, Grant, UserKeys, SyncState, ConflictState, VersionContentData } from '../types';
 import { runMigrations } from './migrations';
 
 let db: Database | null = null;
@@ -367,6 +367,7 @@ export interface VersionRow {
   conflict_state: string;
   created_at: number;
   updated_at: number;
+  content_data?: string; // JSON blob for plot canvas, characters, worlds, etc.
 }
 
 export async function getVersion(versionId: string, userId: string): Promise<VersionRow | null> {
@@ -418,7 +419,8 @@ export async function putVersion(data: VersionRow): Promise<void> {
         data.sync_state, 
         data.conflict_state, 
         data.created_at, 
-        data.updated_at
+        data.updated_at,
+        data.content_data || null // JSON blob for plot canvas, characters, etc.
       ];
       
       appLog.info('dal', 'SQL parameters prepared', { params });
@@ -426,8 +428,8 @@ export async function putVersion(data: VersionRow): Promise<void> {
       // Use a single atomic operation (autocommit mode)
       const result = await database.execute(
         `INSERT OR REPLACE INTO versions 
-         (version_id, book_id, owner_user_id, title, description, is_current, parent_version_id, branch_point, enc_scheme, has_proposals, rev_local, rev_cloud, pending_ops, sync_state, conflict_state, created_at, updated_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (version_id, book_id, owner_user_id, title, description, is_current, parent_version_id, branch_point, enc_scheme, has_proposals, rev_local, rev_cloud, pending_ops, sync_state, conflict_state, created_at, updated_at, content_data) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         params
       );
       
@@ -465,6 +467,158 @@ export async function putVersion(data: VersionRow): Promise<void> {
       stack: error instanceof Error ? error.stack : undefined,
       versionId: data.version_id, 
       bookId: data.book_id 
+    });
+    throw error;
+  }
+}
+
+// Helper functions for managing version content data
+export async function getVersionContentData(versionId: string, userId: string): Promise<VersionContentData | null> {
+  try {
+    const version = await getVersion(versionId, userId);
+    if (!version || !version.content_data) {
+      return null;
+    }
+    
+    const contentData = JSON.parse(version.content_data) as VersionContentData;
+    appLog.info('dal', 'Retrieved version content data', { versionId, dataKeys: Object.keys(contentData) });
+    return contentData;
+  } catch (error) {
+    appLog.error('dal', 'Failed to parse version content data', { versionId, error });
+    return null;
+  }
+}
+
+export async function updateVersionContentData(
+  versionId: string, 
+  userId: string, 
+  updates: Partial<VersionContentData>
+): Promise<void> {
+  try {
+    // Get existing version
+    const existingVersion = await getVersion(versionId, userId);
+    if (!existingVersion) {
+      throw new Error(`Version not found: ${versionId}`);
+    }
+
+    // Parse existing content data or create new
+    let contentData: VersionContentData = {};
+    if (existingVersion.content_data) {
+      try {
+        contentData = JSON.parse(existingVersion.content_data);
+      } catch (error) {
+        appLog.warn('dal', 'Failed to parse existing content data, creating new', { versionId, error });
+      }
+    }
+
+    // Merge updates
+    contentData = {
+      ...contentData,
+      ...updates,
+      version: '1.0' // Schema version for future migrations
+    };
+
+    // Update the version row with new content data
+    const updatedVersionRow: VersionRow = {
+      ...existingVersion,
+      content_data: JSON.stringify(contentData),
+      updated_at: Date.now()
+    };
+
+    await putVersion(updatedVersionRow);
+    appLog.info('dal', 'Updated version content data', { 
+      versionId, 
+      updateKeys: Object.keys(updates),
+      totalDataSize: updatedVersionRow.content_data?.length || 0
+    });
+
+  } catch (error) {
+    appLog.error('dal', 'Failed to update version content data', { versionId, error });
+    throw error;
+  }
+}
+
+// Helper function to sync chapters from chapters table to version content_data
+export async function syncChaptersToVersionData(
+  bookId: string, 
+  versionId: string, 
+  userId: string
+): Promise<void> {
+  try {
+    // Get all chapters from the chapters table
+    const chapterRows = await getChaptersByVersion(bookId, versionId, userId);
+    
+    appLog.info('dal', 'Retrieved chapter rows for sync', {
+      bookId,
+      versionId,
+      chapterCount: chapterRows.length,
+      titles: chapterRows.map(row => ({ id: row.chapter_id, title: row.title }))
+    });
+    
+    // Convert chapter rows to Chapter objects (we need to decrypt content to get full data)
+    // For now, we'll store basic metadata in version content_data
+    const chapterMetadata: Chapter[] = chapterRows.map(row => ({
+      id: row.chapter_id,
+      title: row.title || 'Untitled Chapter',
+      position: row.order_index || 0,
+      createdAt: new Date(row.created_at || Date.now()).toISOString(),
+      updatedAt: new Date(row.updated_at || Date.now()).toISOString(),
+      linkedPlotNodeId: '', // Will be populated from narrative flow
+      linkedAct: '', // Will be populated from narrative flow 
+      linkedOutline: '', // Will be populated from narrative flow
+      linkedScenes: [], // Will be populated from narrative flow
+      content: {
+        type: 'doc' as const,
+        content: [],
+        metadata: {
+          totalWords: row.word_count || 0,
+          totalCharacters: row.character_count || 0
+        }
+      },
+      revisions: [],
+      currentRevisionId: '',
+      collaborativeState: {
+        pendingChanges: [],
+        needsReview: false,
+        reviewerIds: [],
+        approvedBy: [],
+        rejectedBy: [],
+        mergeConflicts: []
+      },
+      syncState: row.sync_state as SyncState,
+      conflictState: row.conflict_state as ConflictState,
+      wordCount: row.word_count || 0,
+      hasProposals: row.has_proposals === 1,
+      characters: [],
+      isComplete: false,
+      status: 'DRAFT' as const,
+      authorId: userId,
+      lastModifiedBy: userId
+    }));
+
+    appLog.info('dal', 'Converted chapter rows to metadata', {
+      bookId,
+      versionId,
+      chapterMetadata: chapterMetadata.map(ch => ({ id: ch.id, title: ch.title, position: ch.position }))
+    });
+
+    // Update version content_data with chapter metadata
+    await updateVersionContentData(versionId, userId, {
+      chapters: chapterMetadata.sort((a, b) => a.position - b.position)
+    });
+
+    appLog.info('dal', 'Synced chapters to version content_data', { 
+      bookId, 
+      versionId, 
+      chapterCount: chapterMetadata.length,
+      finalTitles: chapterMetadata.sort((a, b) => a.position - b.position).map(ch => ch.title)
+    });
+
+  } catch (error) {
+    appLog.error('dal', 'Failed to sync chapters to version data', { 
+      bookId, 
+      versionId, 
+      error 
     });
     throw error;
   }
@@ -557,35 +711,6 @@ export async function ensureVersionInDatabase(versionId: string, bookId: string,
   }
 }
 
-// Diagnostic function to check database state
-export async function diagnoseDatabaseState(): Promise<void> {
-  try {
-    const database = await initializeDatabase();
-    
-    // Check if versions table exists
-    const tableInfo = await database.select('SELECT name FROM sqlite_master WHERE type="table" AND name="versions"') as any[];
-    appLog.info('dal', 'Versions table check', { tableExists: tableInfo.length > 0 });
-    
-    // Check table schema
-    if (tableInfo.length > 0) {
-      const schema = await database.select('PRAGMA table_info(versions)') as any[];
-      appLog.info('dal', 'Versions table schema', { schema });
-      
-      // Count all versions
-      const versionCount = await database.select('SELECT COUNT(*) as count FROM versions') as any[];
-      appLog.info('dal', 'Total versions in database', { count: versionCount[0]?.count || 0 });
-      
-      // List all versions
-      const allVersions = await database.select('SELECT version_id, book_id, title, created_at FROM versions ORDER BY created_at DESC LIMIT 10') as any[];
-      appLog.info('dal', 'Recent versions in database', { versions: allVersions });
-    }
-  } catch (error) {
-    appLog.error('dal', 'Database diagnosis failed', { 
-      error: error instanceof Error ? error.message : 'Unknown error' 
-    });
-  }
-}
-
 // Utility function to force database unlock and checkpoint
 export async function forceUnlockDatabase(): Promise<void> {
   try {
@@ -639,6 +764,14 @@ export async function putChapter(data: ChapterRow): Promise<void> {
   try {
     const database = await initializeDatabase();
     
+    // Log the title being saved
+    appLog.info('dal', 'putChapter called with data', {
+      chapterId: data.chapter_id,
+      title: data.title,
+      bookId: data.book_id,
+      versionId: data.version_id
+    });
+    
     // Ensure required fields have values (schema requires NOT NULL)
     const now = Date.now();
     
@@ -664,6 +797,12 @@ export async function putChapter(data: ChapterRow): Promise<void> {
       data.created_at || now, // Ensure NOT NULL constraint is satisfied
       data.updated_at || now  // Ensure NOT NULL constraint is satisfied
     ];
+    
+    appLog.info('dal', 'putChapter final title value', {
+      chapterId: data.chapter_id,
+      originalTitle: data.title,
+      finalTitle: data.title || 'Untitled Chapter'
+    });
     
     await database.execute(
       `INSERT OR REPLACE INTO chapters 

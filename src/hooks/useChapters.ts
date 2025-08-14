@@ -8,7 +8,8 @@ import {
   putChapter, 
   ChapterRow,
   ensureDefaultVersion,
-  ensureVersionInDatabase 
+  ensureVersionInDatabase,
+  syncChaptersToVersionData
 } from '../data/dal';
 import { useAuthStore } from '../auth/useAuthStore';
 // Note: encryptionService is imported dynamically to ensure singleton consistency
@@ -43,7 +44,18 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
   const [error, setError] = useState<string | null>(null);
 
   const { user } = useAuthStore();
-  const { getPlotCanvas, updatePlotCanvas } = useBookContext();
+  const { getPlotCanvas, updatePlotCanvas, updateVersion, getVersion } = useBookContext();
+
+  // Log hook initialization and parameter changes
+  useEffect(() => {
+    appLog.info('useChapters', 'Hook initialized or parameters changed', {
+      bookId,
+      versionId,
+      userId: user?.id,
+      currentChapterCount: chapters.length,
+      isLoading
+    });
+  }, [bookId, versionId, user?.id]);
 
   const loadChapters = useCallback(async () => {
     if (!bookId || !versionId) {
@@ -65,7 +77,58 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       const chaptersData: Chapter[] = [];
       for (const row of chapterRows) {
         try {
-          const decryptedContent = user?.id ? await encryptionService.loadChapterContent(row.chapter_id, user.id) : null;
+          let decryptedContent = null;
+          
+          // Only try to decrypt if there's actually encrypted content
+          if (user?.id && row.content_enc && row.content_enc.length > 0) {
+            try {
+              decryptedContent = await encryptionService.loadChapterContent(row.chapter_id, user.id);
+            } catch (decryptError) {
+              console.warn('Failed to decrypt chapter content, using fallback:', decryptError);
+              // Use fallback content for chapters with empty/corrupted content
+              decryptedContent = {
+                type: "doc" as const,
+                content: [
+                  {
+                    type: 'heading',
+                    attrs: { level: 2 },
+                    content: [{ type: 'text', text: row.title || 'Untitled Chapter' }]
+                  },
+                  {
+                    type: 'paragraph',
+                    content: [{ type: 'text', text: 'Start writing your chapter here...' }]
+                  }
+                ],
+                metadata: {
+                  totalCharacters: 0,
+                  totalWords: 0,
+                  lastEditedAt: new Date().toISOString()
+                }
+              };
+            }
+          } else {
+            // No encrypted content, use default content
+            decryptedContent = {
+              type: "doc" as const,
+              content: [
+                {
+                  type: 'heading',
+                  attrs: { level: 2 },
+                  content: [{ type: 'text', text: row.title || 'Untitled Chapter' }]
+                },
+                {
+                  type: 'paragraph',
+                  content: [{ type: 'text', text: 'Start writing your chapter here...' }]
+                }
+              ],
+              metadata: {
+                totalCharacters: 0,
+                totalWords: 0,
+                lastEditedAt: new Date().toISOString()
+              }
+            };
+          }
+          
           console.log('🔓 [LOAD] Decrypted chapter content:', decryptedContent);
           chaptersData.push({
             id: row.chapter_id,
@@ -140,7 +203,12 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
 
       setChapters(chaptersData);
       
-      appLog.info('useChapters', `Loaded ${chaptersData.length} chapters from local storage`);
+      appLog.info('useChapters', 'Loaded chapters from local storage', {
+        bookId,
+        versionId,
+        chapterCount: chaptersData.length,
+        chapterTitles: chaptersData.map(ch => ({ id: ch.id, title: ch.title, position: ch.position }))
+      });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load chapters';
       setError(errorMessage);
@@ -151,7 +219,12 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
   }, [bookId, versionId, user?.id, getPlotCanvas]);
 
   const createChapter = useCallback(async (title: string, actId?: string): Promise<Chapter | null> => {
-    if (!bookId || !user?.id) return null;
+    appLog.info('useChapters', 'createChapter called', { title, actId, bookId, userId: user?.id, versionId });
+    
+    if (!bookId || !user?.id) {
+      appLog.warn('useChapters', 'createChapter: Missing required parameters', { bookId, userId: user?.id });
+      return null;
+    }
 
     try {
       setError(null);
@@ -167,11 +240,18 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         appLog.info('useChapters', 'Ensured version exists in database', { bookId, versionId: finalVersionId });
       }
       
+      appLog.info('useChapters', 'Version validation completed', { finalVersionId });
+      
       // Generate IDs early
       const chapterId = generateId();
+      appLog.info('useChapters', 'Generated chapter ID', { chapterId });
       
       // Get current plot canvas
       const plotCanvas = getPlotCanvas(bookId, finalVersionId);
+      appLog.info('useChapters', 'Retrieved plot canvas', { 
+        hasPlotCanvas: !!plotCanvas, 
+        nodeCount: plotCanvas?.nodes?.length || 0 
+      });
       let narrativeNodes = plotCanvas?.nodes || [];
       let narrativeEdges = plotCanvas?.edges || [];
       
@@ -343,12 +423,12 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
             content: [{ type: 'text', text: title }]
           },
           {
-            type: 'sceneMetaSection',
+            type: 'sceneBeatExtension',
             attrs: {
+              sceneId: sceneNodeId,
               summary: '',
               goals: '',
               characters: [],
-              plotNodeId: sceneNodeId,
               collapsed: false
             }
           },
@@ -387,22 +467,53 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       };
 
       // Save to local database (will be updated by encryptionService)
+      appLog.info('useChapters', 'About to save chapter to database', { 
+        chapterId, 
+        title: chapterRow.title,
+        titleFromInput: title,
+        bookId,
+        versionId: finalVersionId
+      });
       await putChapter(chapterRow);
+      appLog.info('useChapters', 'Chapter saved to database successfully', { 
+        chapterId, 
+        titleSaved: chapterRow.title 
+      });
       
       // Dynamic import to ensure singleton consistency
       const { encryptionService } = await import('../services/encryptionService');
-      console.log('🔓 [LOAD] Decrypted chapter content:', encryptionService);
-      // Check if encryption service is initialized before saving content
-      if (!encryptionService.isInitialized()) {
-        appLog.error('useChapters', 'Encryption service not initialized - skipping content save', {
+      console.log('🔓 [CREATE] Encryption service state:', {
+        isInitialized: encryptionService.isInitialized(),
+        chapterId,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Always try to save content, but handle errors gracefully
+      try {
+        if (encryptionService.isInitialized()) {
+          await encryptionService.saveChapterContent(chapterId, bookId, finalVersionId, user.id, initialContent);
+        } else {
+          // If encryption service isn't ready, save a simple JSON version to the database
+          const contentJson = JSON.stringify(initialContent);
+          const { initializeDatabase } = await import('../data/dal');
+          const database = await initializeDatabase();
+          await database.execute(
+            'UPDATE chapters SET content_enc = ?, content_iv = ? WHERE chapter_id = ?',
+            [new TextEncoder().encode(contentJson), new Uint8Array(), chapterId]
+          );
+          appLog.warn('useChapters', 'Saved unencrypted content - encryption service not ready', {
+            chapterId,
+            bookId,
+            userId: user.id
+          });
+        }
+      } catch (contentError) {
+        appLog.error('useChapters', 'Failed to save chapter content - continuing with chapter creation', {
           chapterId,
           bookId,
-          userId: user.id
+          userId: user.id,
+          error: contentError
         });
-        // Continue without encrypted content - can be saved later when service is initialized
-      } else {
-        // Save content to encrypted local storage
-        await encryptionService.saveChapterContent(chapterId, bookId, finalVersionId, user.id, initialContent);
       }
 
       // Create Chapter object for UI state
@@ -436,8 +547,48 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         lastModifiedBy: user.id
       };
 
-      // Update local state
-      setChapters(prev => [...prev, newChapter]);
+      // Update local state immediately
+      const newChaptersState = [...chapters, newChapter];
+      setChapters(newChaptersState);
+      
+      appLog.info('useChapters', 'Updated local state with new chapter', {
+        chapterId: newChapter.id,
+        title: newChapter.title,
+        totalChapters: newChaptersState.length,
+        chapterTitles: newChaptersState.map(ch => ch.title)
+      });
+      
+      // Sync chapters to version content_data so BookContext can see them
+      if (bookId && finalVersionId) {
+        try {
+          await syncChaptersToVersionData(bookId, finalVersionId, user.id);
+          appLog.info('useChapters', 'Synced chapters to version content_data', { 
+            bookId, 
+            versionId: finalVersionId,
+            chapterId: newChapter.id,
+            title: newChapter.title
+          });
+
+          // Mark chapter as properly synced locally since it was successfully saved and synced
+          const syncedChapterRow: ChapterRow = {
+            ...chapterRow,
+            sync_state: 'idle' // Mark as successfully committed locally
+          };
+          await putChapter(syncedChapterRow);
+          
+          appLog.info('useChapters', 'Chapter marked as locally synced', {
+            chapterId: newChapter.id,
+            title: newChapter.title
+          });
+        } catch (error) {
+          appLog.warn('useChapters', 'Failed to sync chapters to version data, but chapter was created', { 
+            bookId, 
+            versionId: finalVersionId,
+            chapterId: newChapter.id,
+            error 
+          });
+        }
+      }
       
       appLog.info('useChapters', `Created chapter: ${title} with narrative nodes`, { 
         chapterId: newChapter.id,
@@ -446,11 +597,42 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         actId: actNode!.id,
         outlineId: outlineNode!.id
       });
+      
+      // Dispatch event to notify other components (like EditorHeader) to refresh
+      window.dispatchEvent(new CustomEvent('chapterCreated', { 
+        detail: { 
+          chapter: newChapter,
+          bookId,
+          versionId: finalVersionId
+        } 
+      }));
+
+      // Trigger immediate sync to cloud in background (don't wait for it)
+      setTimeout(async () => {
+        try {
+          // For now, just log the intent to sync
+          // TODO: Implement background chapter sync when cloud API is ready
+          appLog.info('useChapters', 'Chapter ready for background sync', { chapterId: newChapter.id });
+        } catch (error) {
+          appLog.warn('useChapters', 'Background chapter sync setup failed', { chapterId: newChapter.id, error });
+        }
+      }, 1000); // Delay to ensure local save is complete
+      
       return newChapter;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create chapter';
       setError(errorMessage);
-      appLog.error('useChapters', 'Failed to create chapter', err);
+      appLog.error('useChapters', 'Failed to create chapter', { 
+        error: err,
+        errorMessage,
+        title,
+        actId,
+        bookId,
+        versionId,
+        userId: user?.id,
+        stack: err instanceof Error ? err.stack : undefined
+      });
+      console.error('Chapter creation failed:', err);
       return null;
     }
   }, [bookId, versionId, user?.id, chapters.length, getPlotCanvas, updatePlotCanvas]);
@@ -489,7 +671,38 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
           : chapter
       ));
       
+      // Sync chapters to version content_data after update
+      if (bookId && versionId) {
+        try {
+          await syncChaptersToVersionData(bookId, versionId, user.id);
+          appLog.info('useChapters', 'Synced chapters to version content_data after update', { 
+            bookId, 
+            versionId,
+            chapterId,
+            updates
+          });
+        } catch (error) {
+          appLog.warn('useChapters', 'Failed to sync chapters to version data after update', { 
+            bookId, 
+            versionId,
+            chapterId,
+            updates,
+            error 
+          });
+        }
+      }
+      
       appLog.info('useChapters', `Updated chapter: ${chapterId}`, { updates });
+      
+      // Dispatch event to notify other components to refresh
+      window.dispatchEvent(new CustomEvent('chapterUpdated', { 
+        detail: { 
+          chapterId,
+          updates,
+          bookId,
+          versionId
+        } 
+      }));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to update chapter';
       setError(errorMessage);
@@ -514,7 +727,35 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       // Update local state
       setChapters(prev => prev.filter(chapter => chapter.id !== chapterId));
       
+      // Sync chapters to version content_data after deletion
+      if (bookId && versionId) {
+        try {
+          await syncChaptersToVersionData(bookId, versionId, user.id);
+          appLog.info('useChapters', 'Synced chapters to version content_data after deletion', { 
+            bookId, 
+            versionId,
+            deletedChapterId: chapterId
+          });
+        } catch (error) {
+          appLog.warn('useChapters', 'Failed to sync chapters to version data after deletion', { 
+            bookId, 
+            versionId,
+            deletedChapterId: chapterId,
+            error 
+          });
+        }
+      }
+      
       appLog.info('useChapters', `Deleted chapter: ${chapterId}`);
+      
+      // Dispatch event to notify other components to refresh
+      window.dispatchEvent(new CustomEvent('chapterDeleted', { 
+        detail: { 
+          chapterId,
+          bookId,
+          versionId
+        } 
+      }));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete chapter';
       setError(errorMessage);
@@ -549,6 +790,25 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       
       // Save content to encrypted local storage
       await encryptionService.saveChapterContent(chapterId, bookId, versionId, user.id, content);
+
+      // Update database row to mark as dirty (needs sync)
+      const existingChapterRow = await getChapter(chapterId, user.id);
+      if (existingChapterRow) {
+        const updatedChapterRow: ChapterRow = {
+          ...existingChapterRow,
+          word_count: content.metadata?.totalWords || 0,
+          character_count: content.metadata?.totalCharacters || 0,
+          updated_at: Date.now(),
+          sync_state: 'dirty' // Mark as needing sync after content change
+        };
+        await putChapter(updatedChapterRow);
+        
+        appLog.info('useChapters', 'Chapter database row updated after content save', {
+          chapterId,
+          wordCount: updatedChapterRow.word_count,
+          syncState: updatedChapterRow.sync_state
+        });
+      }
 
       // Update local chapter content
       setChapters(prev => prev.map(chapter => 

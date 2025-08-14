@@ -205,6 +205,15 @@ export async function runMigrations(db: Database): Promise<void> {
     await db.execute('CREATE INDEX IF NOT EXISTS idx_links_entity ON file_asset_links(entity_type, entity_id)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_links_asset ON file_asset_links(asset_id)');
 
+    // Add content_data column to versions table for storing plot canvas, characters, worlds as JSON
+    try {
+      await db.execute('ALTER TABLE versions ADD COLUMN content_data TEXT');
+      await appLog.info('migrations', 'Added content_data column to versions table');
+    } catch (error) {
+      // Column might already exist, ignore error
+      await appLog.info('migrations', 'content_data column already exists or failed to add', { error });
+    }
+
     await appLog.success('migrations', 'All database tables created successfully');
   } catch (error) {
     await appLog.error('migrations', 'Failed to create database tables', error);

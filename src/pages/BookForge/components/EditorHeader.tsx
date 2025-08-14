@@ -1,21 +1,40 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Book, Version, Theme, Chapter } from '../../../types';
-import { SunIcon, MoonIcon, ChevronDownIcon, TrashIcon, UserIcon, MagnifyingGlassIcon, Squares2X2Icon, GlobeAltIcon, PencilIcon, CogIcon, ComputerDesktopIcon, Bars3BottomLeftIcon, SparklesIcon, PlusIcon, DocumentIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { SunIcon, MoonIcon, ChevronDownIcon, TrashIcon, UserIcon, MagnifyingGlassIcon, Squares2X2Icon, GlobeAltIcon, PencilIcon, CogIcon, ComputerDesktopIcon, Bars3BottomLeftIcon, SparklesIcon, PlusIcon, DocumentIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import ChapterSettingsModal from './ChapterSettingsModal';
+import CreateChapterModal from './CreateChapterModal';
 import { useToolWindowStore } from '../../../stores/toolWindowStore';
 import { useBookContext, useCurrentBookAndVersion } from '../../../contexts/BookContext';
 import { useAuthStore } from '../../../auth';
 import { appLog } from '../../../auth/fileLogger';
-import { useChapterNavigation, getNextChapter, getPreviousChapter } from '../../../hooks/useChapterNavigation';
 
 const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNode; className?: string }> = ({ trigger, children, className }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as HTMLElement)) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
   return (
-    <div className="relative" onMouseEnter={() => setIsOpen(true)} onMouseLeave={() => setIsOpen(false)}>
-      <div className="flex items-center">
+    <div className="relative" ref={dropdownRef}>
+      <div className="flex items-center" onClick={() => setIsOpen(!isOpen)}>
         {trigger}
       </div>
       <AnimatePresence>
@@ -24,7 +43,8 @@ const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNo
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className={`absolute top-full right-0 mt-2 w-48 bg-gradient-to-br from-gray-800 to-black dark:from-slate-100 dark:to-slate-200 rounded-lg shadow-lg p-2 z-50 border border-gray-700/50 dark:border-gray-200/50 ${className}`}
+            className={`absolute top-full right-0 mt-2 w-48 bg-gradient-to-br from-gray-800 to-black dark:from-slate-100 dark:to-slate-200 rounded-lg shadow-lg p-2 z-[60] border border-gray-700/50 dark:border-gray-200/50 ${className}`}
+            onClick={(e) => e.stopPropagation()}
           >
             {children}
           </motion.div>
@@ -36,8 +56,8 @@ const DropdownMenu: React.FC<{ trigger: React.ReactNode; children: React.ReactNo
 
 const ChapterProgressBar: React.FC<{ 
     book: Book, 
-    chapters: Chapter[], 
     currentChapter?: Chapter,
+    chapters?: Chapter[],
     onOpenSettings: () => void, 
     onOpenTypographySettings: () => void,
     onCreateChapter?: (title: string, actId?: string) => Promise<void>,
@@ -46,11 +66,12 @@ const ChapterProgressBar: React.FC<{
     onCreateAct?: (title: string) => Promise<void>,
     onDeleteAct?: (actId: string) => Promise<void>,
     onReorderChapter?: (chapterId: string, newPosition: number, newActId?: string) => Promise<void>,
-    onNavigateToChapter?: (chapterId: string) => void
+    onNavigateToChapter?: (chapterId: string) => void,
+    isChapterLoading?: boolean
 }> = ({ 
     book, 
-    chapters, 
     currentChapter,
+    chapters = [],
     onOpenSettings, 
     onOpenTypographySettings, 
     onCreateChapter, 
@@ -58,42 +79,163 @@ const ChapterProgressBar: React.FC<{
     onDeleteChapter,
     onCreateAct,
     onDeleteAct,
-    onNavigateToChapter
+    onReorderChapter,
+    onNavigateToChapter,
+    isChapterLoading = false
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
     const [selectedChapterForSettings, setSelectedChapterForSettings] = useState<Chapter | null>(null);
+    const [showCreateChapterModal, setShowCreateChapterModal] = useState(false);
+    const [selectedActForNewChapter, setSelectedActForNewChapter] = useState<string>('');
     const triggerRef = useRef<HTMLDivElement>(null);
     const { bookId, versionId } = useCurrentBookAndVersion();
+    const { getPlotCanvas } = useBookContext();
+    const [actNodes, setActNodes] = useState<any[]>([]);
 
-    // Use the chapter navigation hook for better organization
-    const navigationData = useChapterNavigation(bookId, versionId, chapters, currentChapter);
+    // Sort chapters from props by position
+    const allChapters = [...chapters].sort((a, b) => a.position - b.position);
 
-    // Ensure chapters is always an array and sort by position
-    const safeChapters = (chapters || []).sort((a, b) => a.position - b.position);
-
-    // Use navigation data for structure, but keep fallback for backward compatibility
-    const displayStructure = navigationData.acts.length > 0 
-      ? navigationData.acts.reduce((acc, act) => {
-          acc[act.id] = {
-            name: act.name,
-            chapters: act.chapters
-          };
-          return acc;
-        }, {} as Record<string, { name: string; chapters: Chapter[] }>)
-      : {
-          'act-1': { name: 'Act I', chapters: [] },
-          'act-2': { name: 'Act II', chapters: [] },
-          'act-3': { name: 'Act III', chapters: [] }
+    // Fetch narrative nodes for acts
+    useEffect(() => {
+        const fetchActData = async () => {
+            if (!bookId || !versionId) return;
+            
+            try {
+                // Get narrative flow nodes to resolve act titles
+                const plotCanvas = getPlotCanvas(bookId, versionId);
+                console.log('Debug - plotCanvas:', plotCanvas);
+                
+                const narrativeNodes = plotCanvas?.nodes || [];
+                const acts = narrativeNodes.filter((node: any) => node.type === 'act');
+                console.log('Debug - actNodes:', acts);
+                setActNodes(acts);
+            } catch (error) {
+                console.error('Error fetching act data:', error);
+            }
         };
 
-    // Use navigation data for completion percentage
-    const chapterCompletion = navigationData.completionPercentage;
+        fetchActData();
+    }, [bookId, versionId]);
 
-    const handleCreateChapterInAct = async (actId: string) => {
-        const title = prompt('Enter chapter title:');
-        if (title?.trim() && onCreateChapter) {
-            await onCreateChapter(title.trim(), actId);
+    // Listen for act CRUD events to refresh act data
+    useEffect(() => {
+        const handleActRefresh = () => {
+            // Refresh act data when acts are created/updated/deleted
+            if (bookId && versionId) {
+                const refreshActData = async () => {
+                    try {
+                        const plotCanvas = getPlotCanvas(bookId, versionId);
+                        const narrativeNodes = plotCanvas?.nodes || [];
+                        const acts = narrativeNodes.filter((node: any) => node.type === 'act');
+                        setActNodes(acts);
+                    } catch (error) {
+                        console.error('Error refreshing act data:', error);
+                    }
+                };
+                refreshActData();
+            }
+        };
+
+        // Listen for custom events from act CRUD operations
+        window.addEventListener('chapterCreated', handleActRefresh);
+        window.addEventListener('chapterDeleted', handleActRefresh);
+        window.addEventListener('chapterUpdated', handleActRefresh);
+        window.addEventListener('actCreated', handleActRefresh);
+        window.addEventListener('actDeleted', handleActRefresh);
+
+        return () => {
+            window.removeEventListener('chapterCreated', handleActRefresh);
+            window.removeEventListener('chapterDeleted', handleActRefresh);
+            window.removeEventListener('chapterUpdated', handleActRefresh);
+            window.removeEventListener('actCreated', handleActRefresh);
+            window.removeEventListener('actDeleted', handleActRefresh);
+        };
+    }, [bookId, versionId]); // Only depend on stable IDs
+    // Group chapters by their linkedAct property
+    const groupedChapters = useMemo(() => {
+        const groups: Record<string, { actNode: any; chapters: Chapter[] }> = {};
+        
+        // First, create groups for all act nodes
+        actNodes.forEach((actNode: any) => {
+            groups[actNode.id] = {
+                actNode,
+                chapters: []
+            };
+        });
+
+        // If no act nodes exist but we have chapters, create a default act
+        if (actNodes.length === 0 && allChapters.length > 0) {
+            const defaultActId = 'default-act';
+            groups[defaultActId] = {
+                actNode: {
+                    id: defaultActId,
+                    data: { title: 'Default Act' }
+                },
+                chapters: []
+            };
+        }
+
+        // Then assign chapters to their linked acts
+        allChapters.forEach(chapter => {
+            if (chapter.linkedAct && groups[chapter.linkedAct]) {
+                groups[chapter.linkedAct].chapters.push(chapter);
+            } else {
+                // Handle orphaned chapters - assign to first available act or create default
+                const firstActId = actNodes[0]?.id || 'default-act';
+                if (groups[firstActId]) {
+                    groups[firstActId].chapters.push(chapter);
+                }
+            }
+        });
+
+        // Sort chapters within each act by position
+        Object.values(groups).forEach(group => {
+            group.chapters.sort((a, b) => a.position - b.position);
+        });
+
+        console.log('Debug - groupedChapters:', groups);
+        return groups;
+    }, [allChapters, actNodes]);
+
+    // Calculate completion percentage based on chapters with content
+    const chapterCompletion = useMemo(() => {
+        if (allChapters.length === 0) return 10;
+        const chaptersWithContent = allChapters.filter(chapter => 
+            chapter.content?.content && chapter.content.content.length > 0
+        );
+        return Math.max(10, Math.round((chaptersWithContent.length / allChapters.length) * 20));
+    }, [allChapters]);
+
+    // Navigation data for current chapter
+    const currentChapterIndex = allChapters.findIndex(ch => ch.id === currentChapter?.id);
+    const totalChapters = allChapters.length;
+
+    const handleCreateChapterInAct = async (actKey: string) => {
+        if (onCreateChapter) {
+            // Check if we have any acts, if not create one
+            if (actNodes.length === 0) {
+                // Create default act firsthandleChapterChange
+                if (onCreateAct) {
+                    try {
+                        await onCreateAct('Act 1');
+                        // Dispatch event to refresh data
+                        window.dispatchEvent(new CustomEvent('actCreated'));
+                        // Wait a bit for the act to be created, then proceed with chapter creation
+                        setTimeout(() => {
+                            setSelectedActForNewChapter(actKey);
+                            setShowCreateChapterModal(true);
+                        }, 100);
+                        return;
+                    } catch (error) {
+                        console.error('Failed to create default act:', error);
+                    }
+                }
+            }
+            
+            // Use the modal instead of prompt
+            setSelectedActForNewChapter(actKey);
+            setShowCreateChapterModal(true);
         }
     };
 
@@ -101,11 +243,67 @@ const ChapterProgressBar: React.FC<{
         const title = prompt('Enter act title:');
         if (title?.trim() && onCreateAct) {
             await onCreateAct(title.trim());
+            // Dispatch event to refresh the dropdown
+            window.dispatchEvent(new CustomEvent('actCreated'));
+        }
+    };
+
+    const handleReorderChapter = async (chapter: Chapter) => {
+        if (!onReorderChapter) return;
+        
+        const options = [
+            'Move to Top',
+            'Move Up',
+            'Move Down', 
+            'Move to Bottom',
+            'Move to Different Act'
+        ];
+        
+        const choice = prompt(`Choose reorder option for "${chapter.title}":\n${options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}\n\nEnter number (1-${options.length}):`);
+        const choiceNum = parseInt(choice || '');
+        
+        if (isNaN(choiceNum) || choiceNum < 1 || choiceNum > options.length) return;
+        
+        const currentPosition = chapter.position;
+        const totalChapters = allChapters.length;
+        
+        try {
+            switch (choiceNum) {
+                case 1: // Move to Top
+                    await onReorderChapter(chapter.id, 1);
+                    break;
+                case 2: // Move Up
+                    if (currentPosition > 1) {
+                        await onReorderChapter(chapter.id, currentPosition - 1);
+                    }
+                    break;
+                case 3: // Move Down
+                    if (currentPosition < totalChapters) {
+                        await onReorderChapter(chapter.id, currentPosition + 1);
+                    }
+                    break;
+                case 4: // Move to Bottom
+                    await onReorderChapter(chapter.id, totalChapters);
+                    break;
+                case 5: // Move to Different Act
+                    const actNames = actNodes.map((act, index) => `${index + 1}. ${act.data?.title || `Act ${index + 1}`}`).join('\n');
+                    const actChoice = prompt(`Choose target act:\n${actNames}\n\nEnter number:`);
+                    const actIndex = parseInt(actChoice || '') - 1;
+                    if (actIndex >= 0 && actIndex < actNodes.length) {
+                        await onReorderChapter(chapter.id, currentPosition, actNodes[actIndex].id);
+                    }
+                    break;
+            }
+            // Dispatch event to refresh
+            window.dispatchEvent(new CustomEvent('chapterUpdated'));
+        } catch (error) {
+            console.error('Failed to reorder chapter:', error);
         }
     };
 
     const handleDeleteAct = async (actId: string) => {
-        const actChapters = displayStructure[actId]?.chapters || [];
+        const actGroup = groupedChapters[actId];
+        const actChapters = actGroup?.chapters || [];
         if (actChapters.length > 0) {
             const confirmed = confirm(`This act contains ${actChapters.length} chapter(s). They will be moved to the next act. Continue?`);
             if (!confirmed) return;
@@ -116,6 +314,8 @@ const ChapterProgressBar: React.FC<{
         
         if (onDeleteAct) {
             await onDeleteAct(actId);
+            // Dispatch event to refresh the dropdown
+            window.dispatchEvent(new CustomEvent('actDeleted'));
         }
     };
 
@@ -127,6 +327,8 @@ const ChapterProgressBar: React.FC<{
     const handleUpdateChapterFromModal = async (chapterId: string, updates: Partial<Chapter>) => {
         if (onUpdateChapter) {
             await onUpdateChapter(chapterId, updates);
+            // Dispatch event to refresh the dropdown
+            window.dispatchEvent(new CustomEvent('chapterUpdated'));
         }
         setChapterSettingsOpen(false);
         setSelectedChapterForSettings(null);
@@ -135,19 +337,51 @@ const ChapterProgressBar: React.FC<{
     const handleDeleteChapter = async (chapter: Chapter) => {
         const confirmed = confirm(`Are you sure you want to delete "${chapter.title}"?`);
         if (confirmed && onDeleteChapter) {
+            // Check if this is the current chapter
+            const isCurrentChapter = currentChapter?.id === chapter.id;
+            
+            // Find next chapter to navigate to
+            let nextChapter: Chapter | null = null;
+            if (isCurrentChapter) {
+                const currentIndex = allChapters.findIndex(ch => ch.id === chapter.id);
+                // Try next chapter first, then previous, then null
+                if (currentIndex < allChapters.length - 1) {
+                    nextChapter = allChapters[currentIndex + 1];
+                } else if (currentIndex > 0) {
+                    nextChapter = allChapters[currentIndex - 1];
+                }
+            }
+            
             await onDeleteChapter(chapter.id);
+            
+            // Dispatch custom event to refresh the dropdown
+            window.dispatchEvent(new CustomEvent('chapterDeleted'));
+            
+            // Navigate to next chapter or back to book state
+            if (isCurrentChapter && onNavigateToChapter) {
+                if (nextChapter) {
+                    onNavigateToChapter(nextChapter.id);
+                } else {
+                    // Navigate to fresh book state (no chapter selected)
+                    onNavigateToChapter('');
+                }
+            }
         }
     };
 
     const getCurrentChapterDisplay = () => {
         if (currentChapter) {
-            return currentChapter.title;
+            return currentChapter.title === 'Untitled Chapter' 
+                ? `Chapter ${currentChapter.position || 'Untitled'}` 
+                : currentChapter.title;
         }
         
         // Show first chapter if available
-        const firstChapter = safeChapters[0];
+        const firstChapter = allChapters[0];
         if (firstChapter) {
-            return firstChapter.title;
+            return firstChapter.title === 'Untitled Chapter' 
+                ? `Chapter ${firstChapter.position || 'Untitled'}` 
+                : firstChapter.title;
         }
         
         return 'No chapters yet';
@@ -175,87 +409,11 @@ const ChapterProgressBar: React.FC<{
                     {/* Enhanced Chapter Navigation */}
                     <div className="flex-grow flex items-center justify-center gap-3 min-w-0">
                         {/* Previous Chapter Button */}
-                        {(() => {
-                            const prevChapter = getPreviousChapter(chapters, currentChapter);
-                            return (
-                                <motion.button
-                                    onClick={() => prevChapter && onNavigateToChapter?.(prevChapter.id)}
-                                    disabled={!prevChapter}
-                                    className={`p-1 rounded-full transition-colors ${
-                                        prevChapter 
-                                            ? 'text-white/70 dark:text-black/70 hover:text-white dark:hover:text-black hover:bg-white/10 dark:hover:bg-black/10' 
-                                            : 'text-white/30 dark:text-black/30 cursor-not-allowed'
-                                    }`}
-                                    whileHover={prevChapter ? { scale: 1.1 } : {}}
-                                    whileTap={prevChapter ? { scale: 0.95 } : {}}
-                                    title={prevChapter ? `Previous: ${prevChapter.title}` : 'No previous chapter'}
-                                >
-                                    <ChevronLeftIcon className="w-4 h-4" />
-                                </motion.button>
-                            );
-                        })()}
+                       
 
-                        {/* Chapter Progress Dots */}
-                        <div className="flex items-center gap-1 max-w-64 overflow-x-auto">
-                            {navigationData.acts.map((act, actIndex) => (
-                                <div key={act.id} className="flex items-center gap-1">
-                                    {actIndex > 0 && (
-                                        <div className="w-1 h-px bg-white/20 dark:bg-black/20 mx-1" />
-                                    )}
-                                    {act.chapters.map((chapter) => {
-                                        const isCurrentChapter = currentChapter?.id === chapter.id;
-                                        const isCompleted = chapter.isComplete;
-                                        
-                                        return (
-                                            <motion.button
-                                                key={chapter.id}
-                                                onClick={() => onNavigateToChapter?.(chapter.id)}
-                                                className={`relative w-2 h-2 rounded-full transition-all ${
-                                                    isCurrentChapter
-                                                        ? 'bg-white dark:bg-black ring-1 ring-white/50 dark:ring-black/50'
-                                                        : isCompleted
-                                                        ? 'bg-green-400 hover:bg-green-300'
-                                                        : 'bg-white/30 dark:bg-black/30 hover:bg-white/50 dark:hover:bg-black/50'
-                                                }`}
-                                                whileHover={{ scale: 1.5 }}
-                                                whileTap={{ scale: 0.9 }}
-                                                title={`${chapter.title} ${isCompleted ? '(Complete)' : '(In Progress)'}`}
-                                            >
-                                                {isCurrentChapter && (
-                                                    <motion.div
-                                                        className="absolute inset-0 bg-white dark:bg-black rounded-full"
-                                                        initial={{ scale: 0 }}
-                                                        animate={{ scale: 1 }}
-                                                        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                                                    />
-                                                )}
-                                            </motion.button>
-                                        );
-                                    })}
-                                </div>
-                            ))}
-                        </div>
+                      
 
-                        {/* Next Chapter Button */}
-                        {(() => {
-                            const nextChapter = getNextChapter(chapters, currentChapter);
-                            return (
-                                <motion.button
-                                    onClick={() => nextChapter && onNavigateToChapter?.(nextChapter.id)}
-                                    disabled={!nextChapter}
-                                    className={`p-1 rounded-full transition-colors ${
-                                        nextChapter 
-                                            ? 'text-white/70 dark:text-black/70 hover:text-white dark:hover:text-black hover:bg-white/10 dark:hover:bg-black/10' 
-                                            : 'text-white/30 dark:text-black/30 cursor-not-allowed'
-                                    }`}
-                                    whileHover={nextChapter ? { scale: 1.1 } : {}}
-                                    whileTap={nextChapter ? { scale: 0.95 } : {}}
-                                    title={nextChapter ? `Next: ${nextChapter.title}` : 'No next chapter'}
-                                >
-                                    <ChevronRightIcon className="w-4 h-4" />
-                                </motion.button>
-                            );
-                        })()}
+                      
 
                         {/* Current Chapter Title and Counter */}
                         <div className="flex items-center gap-2 min-w-0">
@@ -266,9 +424,12 @@ const ChapterProgressBar: React.FC<{
                                         {getCurrentChapterDisplay()}
                                     </span>
                                 </p>
+                                {isChapterLoading && (
+                                    <ArrowPathIcon className="w-3 h-3 ml-2 animate-spin text-white/60 dark:text-black/60" />
+                                )}
                             </div>
                             <div className="text-xs text-white/60 dark:text-black/60 whitespace-nowrap">
-                                {navigationData.currentChapterIndex >= 0 ? navigationData.currentChapterIndex + 1 : 0} / {navigationData.totalChapters}
+                                {currentChapterIndex >= 0 ? currentChapterIndex + 1 : 0} / {totalChapters}
                             </div>
                         </div>
                     </div>
@@ -297,81 +458,145 @@ const ChapterProgressBar: React.FC<{
                     exit={{ opacity: 0, y: -10, scale: 0.95 }}
                     className="absolute top-full -translate-x-1/2 mt-2 w-[30rem] bg-gradient-to-br from-black to-gray-800 dark:from-slate-100 dark:to-slate-200 rounded-lg shadow-lg p-2 z-50 border border-gray-700/50 dark:border-gray-200/50 max-h-80 overflow-y-auto no-scrollbar"
                  >
-                     {Object.entries(displayStructure).map(([actId, actData]) => (
-                         <div key={actId} className="mb-1">
-                             <div className="flex items-center justify-between px-2 py-1 group/act">
-                                <div className="flex items-center gap-2">
-                                    <Bars3BottomLeftIcon className="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-grab" />
-                                    <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">{actData.name}</h4>
-                                </div>
-                                <div className="opacity-0 group-hover/act:opacity-100 transition-opacity">
-                                    <DropdownMenu 
-                                        className="w-56"
-                                        trigger={<button className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:bg-white/10 dark:hover:bg-black/10 hover:text-white dark:hover:text-black"><CogIcon className="w-4 h-4"/></button>}
-                                    >
-                                        <button 
-                                            onClick={() => handleCreateChapterInAct(actId)}
-                                            className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                     {Object.entries(groupedChapters).length > 0 ? (
+                         Object.entries(groupedChapters).map(([actId, actGroup], index) => (
+                             <div key={actId} className="mb-1">
+                                 <div className="flex items-center justify-between px-2 py-1 group/act">
+                                    <div className="flex items-center gap-2">
+                                        <Bars3BottomLeftIcon className="w-4 h-4 text-gray-400 dark:text-gray-500 cursor-grab" />
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                                            {actGroup.actNode.data?.title || `Act ${index + 1}`}
+                                        </h4>
+                                    </div>
+                                    <div className="opacity-0 group-hover/act:opacity-100 transition-opacity">
+                                        <DropdownMenu 
+                                            className="w-56"
+                                            trigger={<button className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:bg-white/10 dark:hover:bg-black/10 hover:text-white dark:hover:text-black"><CogIcon className="w-4 h-4"/></button>}
                                         >
-                                            <PlusIcon className="w-4 h-4" />
-                                            Add New Chapter
-                                        </button>
-                                        <button className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">
-                                            <DocumentIcon className="w-4 h-4" />
-                                            Import Chapter
-                                        </button>
-                                        <button 
-                                            onClick={handleCreateNewAct}
-                                            className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
-                                        >
-                                            <PlusIcon className="w-4 h-4" />
-                                            Add New Act
-                                        </button>
-                                        <div className="my-1 h-px bg-gray-600 dark:bg-gray-300/50"></div>
-                                        <button 
-                                            onClick={() => handleDeleteAct(actId)}
-                                            className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-red-400 dark:text-red-500 hover:bg-red-500/20 dark:hover:bg-red-500/20"
-                                        >
-                                            <TrashIcon className="w-4 h-4" />
-                                            Delete Act
-                                        </button>
-                                    </DropdownMenu>
-                                </div>
-                             </div>
-                             {actData.chapters.map(chapter => (
-                                 <div key={chapter.id} className={`group/chapter flex items-center justify-between pl-8 pr-2 py-1.5 text-sm rounded-md hover:bg-white/10 dark:hover:bg-black/10 cursor-pointer ${
-                                     currentChapter?.id === chapter.id ? 'bg-white/20 dark:bg-black/20 text-white dark:text-black' : 'text-gray-300 dark:text-gray-700'
-                                 }`}>
-                                     <span className="flex-1 truncate">{chapter.title}</span>
-                                     <div className="flex items-center gap-1 opacity-0 group-hover/chapter:opacity-100 transition-opacity">
-                                        <button 
-                                            className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"
-                                            title="Reorder Chapter"
-                                        >
-                                            <Bars3BottomLeftIcon className="w-4 h-4 text-gray-400 dark:text-gray-500"/>
-                                        </button>
-                                        <button 
-                                            onClick={() => handleOpenChapterSettings(chapter)}
-                                            className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"
-                                            title="Chapter Settings"
-                                        >
-                                            <CogIcon className="w-4 h-4 text-gray-400 dark:text-gray-500"/>
-                                        </button>
-                                        <button 
-                                            onClick={() => handleDeleteChapter(chapter)}
-                                            className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"
-                                            title="Delete Chapter"
-                                        >
-                                            <TrashIcon className="w-4 h-4 text-gray-400 dark:text-gray-500 hover:text-red-400 dark:hover:text-red-500"/>
-                                        </button>
-                                     </div>
+                                            <button 
+                                                onClick={() => handleCreateChapterInAct(actId)}
+                                                className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                                            >
+                                                <PlusIcon className="w-4 h-4" />
+                                                Add New Chapter
+                                            </button>
+                                            <button className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">
+                                                <DocumentIcon className="w-4 h-4" />
+                                                Import Chapter
+                                            </button>
+                                            <button 
+                                                onClick={handleCreateNewAct}
+                                                className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                                            >
+                                                <PlusIcon className="w-4 h-4" />
+                                                Add New Act
+                                            </button>
+                                            <div className="my-1 h-px bg-gray-600 dark:bg-gray-300/50"></div>
+                                            <button 
+                                                onClick={() => handleDeleteAct(actId)}
+                                                className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-red-400 dark:text-red-500 hover:bg-red-500/20 dark:hover:bg-red-500/20"
+                                            >
+                                                <TrashIcon className="w-4 h-4" />
+                                                Delete Act
+                                            </button>
+                                        </DropdownMenu>
+                                    </div>
                                  </div>
-                             ))}
+                                 {actGroup.chapters.map((chapter: Chapter) => (
+                                     <div 
+                                         key={chapter.id} 
+                                         className={`group/chapter flex items-center justify-between pl-8 pr-2 py-1.5 text-sm rounded-md hover:bg-white/10 dark:hover:bg-black/10 cursor-pointer ${
+                                             currentChapter?.id === chapter.id ? 'bg-white/20 dark:bg-black/20 text-white dark:text-black' : 'text-gray-300 dark:text-gray-700'
+                                         }`}
+                                         onClick={() => onNavigateToChapter && onNavigateToChapter(chapter.id)}
+                                     >
+                                         <span className="flex-1 truncate">
+                                             {chapter.title === 'Untitled Chapter' 
+                                                 ? <em className="text-gray-400 dark:text-gray-600">Chapter {chapter.position || 'Untitled'}</em>
+                                                 : chapter.title
+                                             }
+                                         </span>
+                                         <div className="flex items-center gap-1 opacity-0 group-hover/chapter:opacity-100 transition-opacity">
+                                            <button 
+                                                onClick={() => handleReorderChapter(chapter)}
+                                                className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"
+                                                title="Reorder Chapter"
+                                            >
+                                                <Bars3BottomLeftIcon className="w-4 h-4 text-gray-400 dark:text-gray-500"/>
+                                            </button>
+                                            <button 
+                                                onClick={() => handleOpenChapterSettings(chapter)}
+                                                className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"
+                                                title="Chapter Settings"
+                                            >
+                                                <CogIcon className="w-4 h-4 text-gray-400 dark:text-gray-500"/>
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDeleteChapter(chapter)}
+                                                className="p-1 rounded-md hover:bg-white/20 dark:hover:bg-black/20"
+                                                title="Delete Chapter"
+                                            >
+                                                <TrashIcon className="w-4 h-4 text-gray-400 dark:text-gray-500 hover:text-red-400 dark:hover:text-red-500"/>
+                                            </button>
+                                         </div>
+                                     </div>
+                                 ))}
+                             </div>
+                         ))
+                     ) : (
+                         // Empty state - no chapters exist yet
+                         <div className="p-4 text-center">
+                             <div className="text-gray-400 dark:text-gray-500 mb-4">
+                                 <DocumentIcon className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                                 <p className="text-sm font-medium">No chapters yet</p>
+                                 <p className="text-xs opacity-75">Start by creating your first act and chapter</p>
+                             </div>
+                             <div className="space-y-2">
+                                 <button 
+                                     onClick={handleCreateNewAct}
+                                     className="flex items-center gap-2 w-full justify-center px-3 py-2 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                                 >
+                                     <PlusIcon className="w-4 h-4" />
+                                     Create First Act
+                                 </button>
+                                 <button 
+                                     onClick={() => handleCreateChapterInAct('')}
+                                     className="flex items-center gap-2 w-full justify-center px-3 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 border border-gray-600 dark:border-gray-300"
+                                 >
+                                     <DocumentIcon className="w-4 h-4" />
+                                     Create Chapter (Default Act)
+                                 </button>
+                             </div>
                          </div>
-                     ))}
+                     )}
                  </motion.div>
             )}
             </AnimatePresence>
+            
+            {/* Create Chapter Modal */}
+            <AnimatePresence>
+                {showCreateChapterModal && (
+                    <CreateChapterModal
+                        isOpen={showCreateChapterModal}
+                        onClose={() => {
+                            setShowCreateChapterModal(false);
+                            setSelectedActForNewChapter('');
+                        }}
+                        onCreateChapter={async (title: string, actId?: string) => {
+                            const targetActId = actId || selectedActForNewChapter;
+                            if (onCreateChapter) {
+                                await onCreateChapter(title, targetActId);
+                                // Dispatch event to refresh the dropdown
+                                window.dispatchEvent(new CustomEvent('chapterCreated'));
+                            }
+                            setShowCreateChapterModal(false);
+                            setSelectedActForNewChapter('');
+                        }}
+                        actId={selectedActForNewChapter}
+                    />
+                )}
+            </AnimatePresence>
+            
             <AnimatePresence>
                 {isChapterSettingsOpen && selectedChapterForSettings && (
                     <ChapterSettingsModal
@@ -735,8 +960,8 @@ const PlanningHeader: React.FC<{
 interface EditorHeaderProps {
     book: Book;
     version: Version;
-    chapters?: Chapter[];
     currentChapter?: Chapter;
+    chapters?: Chapter[];
     theme: Theme;
     setTheme: (theme: Theme) => void;
     onOpenTypographySettings: () => void;
@@ -755,13 +980,15 @@ interface EditorHeaderProps {
     onCreateAct?: (title: string) => Promise<void>;
     onDeleteAct?: (actId: string) => Promise<void>;
     onReorderChapter?: (chapterId: string, newPosition: number, newActId?: string) => Promise<void>;
+    onNavigateToChapter?: (chapterId: string) => void;
+    isChapterLoading?: boolean;
 }
 
 const EditorHeader: React.FC<EditorHeaderProps> = ({ 
     book, 
     version, 
-    chapters = [],
     currentChapter,
+    chapters = [],
     theme, 
     setTheme, 
     onOpenTypographySettings, 
@@ -779,7 +1006,9 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
     onDeleteChapter,
     onCreateAct,
     onDeleteAct,
-    onReorderChapter
+    onReorderChapter,
+    onNavigateToChapter,
+    isChapterLoading = false
 }) => {
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
     const { openTool, broadcastThemeChange } = useToolWindowStore();
@@ -844,8 +1073,8 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                                 ) : (
                                     <ChapterProgressBar 
                                         book={book} 
-                                        chapters={chapters}
                                         currentChapter={currentChapter}
+                                        chapters={chapters}
                                         onOpenSettings={() => setChapterSettingsOpen(true)}
                                         onOpenTypographySettings={onOpenTypographySettings}
                                         onCreateChapter={onCreateChapter}
@@ -854,6 +1083,8 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                                         onCreateAct={onCreateAct}
                                         onDeleteAct={onDeleteAct}
                                         onReorderChapter={onReorderChapter}
+                                        onNavigateToChapter={onNavigateToChapter}
+                                        isChapterLoading={isChapterLoading}
                                     />
                                 )}
                             </div>

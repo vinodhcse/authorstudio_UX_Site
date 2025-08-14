@@ -18,7 +18,7 @@ const Toast: React.FC<ToastProps> = ({ title, description, variant = 'default', 
   React.useEffect(() => {
     const timer = setTimeout(() => {
       onClose?.();
-    }, 60000); // Auto-dismiss after 1 minute (60 seconds)
+    }, 3000); // Auto-dismiss after 3 seconds
 
     return () => clearTimeout(timer);
   }, [onClose]);
