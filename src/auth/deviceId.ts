@@ -8,7 +8,7 @@ export interface DeviceConfig {
 
 /**
  * Get or create device ID from {appConfigDir}/device.json
- * This is the only file stored in appConfigDir - everything else goes to SQLite
+ * This is the only file stored in appConfigDir - everything else goes to the local database
  */
 export async function getOrCreateDeviceId(): Promise<string> {
   try {

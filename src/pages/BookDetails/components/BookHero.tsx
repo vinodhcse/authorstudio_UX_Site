@@ -4,6 +4,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-mo
 import { Book } from '../../../types';
 import { PenIcon, ExternalLinkIcon, CloudIcon, RefreshIcon, CheckCircleIcon } from '../../../constants';
 import CoverPicker from '../../../components/CoverPicker';
+import { appLog } from '../../../auth/fileLogger';
 import { AssetService } from '../../../services/AssetService';
 import { useBookContext } from '../../../contexts/BookContext';
 
@@ -160,7 +161,7 @@ const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void,
     };
 
     // Load cover image from asset system
-    useEffect(() => {
+                    useEffect(() => {
         const loadCoverImage = async () => {
             if (currentCoverId) {
                 try {
@@ -169,15 +170,20 @@ const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void,
                         // Try to get data URL for local files
                         const imageUrl = await AssetService.getLocalImageDataUrl(fileRef);
                         setCoverImageUrl(imageUrl);
+                        // Debug log: show snippet of the resolved URL (data: or remote)
+                        appLog.info('book-hero', 'Resolved cover image URL', { coverId: currentCoverId, urlSnippet: imageUrl ? imageUrl.slice(0, 120) : null });
                     }
                 } catch (error) {
                     console.warn('Failed to load cover image from assets:', error);
+                    appLog.error('book-hero', 'Failed to load cover image', { coverId: currentCoverId, error });
                     // Fallback to book.coverImage if available
                     setCoverImageUrl(book.coverImage);
+                    appLog.info('book-hero', 'Fallback cover image used', { coverUrl: book.coverImage ? String(book.coverImage).slice(0, 120) : null });
                 }
             } else {
                 // Use legacy cover image if no asset reference
                 setCoverImageUrl(book.coverImage);
+                appLog.info('book-hero', 'Using legacy cover image', { coverUrl: book.coverImage ? String(book.coverImage).slice(0, 120) : null });
             }
         };
 

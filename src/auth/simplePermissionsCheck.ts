@@ -9,7 +9,6 @@ if (isTauri) {
   
   // Test basic imports
   Promise.all([
-    import('@tauri-apps/plugin-sql').then(() => console.log('✅ SQL plugin loaded')).catch(e => console.log('❌ SQL plugin failed:', e.message)),
     import('@tauri-apps/plugin-fs').then(() => console.log('✅ FS plugin loaded')).catch(e => console.log('❌ FS plugin failed:', e.message)),
     import('@tauri-apps/plugin-http').then(() => console.log('✅ HTTP plugin loaded')).catch(e => console.log('❌ HTTP plugin failed:', e.message))
   ]).then(() => {

@@ -42,7 +42,7 @@
 ### 2. 💾 Data Persistence Layer
 
 #### `dal.ts` (Data Access Layer - 933 lines)
-- **Purpose**: SQLite database interface with transaction management
+- **Purpose**: Local database interface with transaction management
 - **Key Tables**: 
   - `books` - Book metadata and sync state
   - `versions` - Book versions with encrypted content
@@ -77,7 +77,7 @@
   - `getCharacters(bookId, versionId)` - Character management
   - `syncAllBooks()` - Background sync with server
   - `getDirtyBooks()` / `getConflictedBooks()` - Transaction state monitoring
-- **Data Sources**: Combines local SQLite + remote API + encrypted content
+- **Data Sources**: Combines local SurrealDB + remote API + encrypted content
 
 ### 4. 📚 Chapter Management
 

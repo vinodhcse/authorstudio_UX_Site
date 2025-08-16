@@ -60,12 +60,12 @@ export class EncryptionService {
         // Load existing keys
         appLog.info('encryption', 'Loading existing encryption keys');
         
-        // Handle potential JSON string format from SQLite
-        const rawWrappedData = userKeys.udek_wrap_appkey as any; // SQLite may return as string
+  // Handle potential JSON string format if present
+  const rawWrappedData = userKeys.udek_wrap_appkey as any;
         let wrappedUDEK: Uint8Array;
         
         if (typeof rawWrappedData === 'string') {
-          // Handle JSON string format from SQLite
+          // Handle JSON string format if present
           wrappedUDEK = new Uint8Array(JSON.parse(rawWrappedData));
         } else {
           wrappedUDEK = new Uint8Array(rawWrappedData);

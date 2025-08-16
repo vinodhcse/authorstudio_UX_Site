@@ -50,6 +50,8 @@ const BookDetailsPage: React.FC = () => {
                 coverImageRef: coverId ? { assetId: coverId } as any : undefined
             };
             await updateBook(book.id, updatedData);
+            console.log('Book cover updated:', book.id, coverId);
+            
         } catch (error) {
             console.error('Failed to update book cover:', error);
         }

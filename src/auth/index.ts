@@ -85,7 +85,7 @@ export {
  * ```
  * 
  * Features:
- * - Tauri-only authentication with SQLite storage
+ * - Tauri-only authentication with encrypted local storage
  * - AES-GCM encryption for all sensitive data
  * - Device ID management
  * - Offline/online detection

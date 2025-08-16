@@ -237,7 +237,8 @@ export class AssetService {
           // Read file from local storage as bytes
           const relativePath = fileRef.localPath.split('/books/')[1]; // Extract relative path
           if (relativePath) {
-            const fileBytes = await readFile(`books/${relativePath}`, { baseDir: BaseDirectory.AppConfig });
+              const fileBytes = await readFile(`books/${relativePath}`, { baseDir: BaseDirectory.AppConfig });
+              await appLog.info('asset-service', 'Reading local image bytes', { relativePath, bytesLength: fileBytes.length });
             
             // Convert to base64 data URL using proper method for large files
             let binary = '';
@@ -270,6 +271,7 @@ export class AssetService {
         const relativePath = fileRef.localPath.split('/books/')[1]; // Extract relative path
         if (relativePath) {
           const fileBytes = await readFile(`books/${relativePath}`, { baseDir: BaseDirectory.AppConfig });
+          await appLog.info('asset-service', 'Reading local image bytes (online flow)', { relativePath, bytesLength: fileBytes.length });
           
           // Convert to base64 data URL using proper method for large files
           let binary = '';

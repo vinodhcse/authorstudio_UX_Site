@@ -5,6 +5,7 @@ import { Routes, Route, Outlet } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Theme } from './types';
 import Header from './components/Header';
+import DbClient from './components/DbClient';
 import MyBooksView from './components/MyBooksView';
 import EditingBooksView from './components/EditingBooksView';
 import ReviewingBooksView from './components/ReviewingBooksView';
@@ -63,6 +64,7 @@ const MainLayout: React.FC<{
 const App: React.FC = () => {
   const [theme, setTheme] = useState<Theme>('dark');
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const [isDbClientOpen, setDbClientOpen] = useState(false);
 
   useEffect(() => {
     const applyTheme = (t: Theme) => {
@@ -83,6 +85,17 @@ const App: React.FC = () => {
         setTheme(initialTheme);
         applyTheme(initialTheme);
     }
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Ctrl+Shift+D to toggle DB inspector
+      if (e.key.toLowerCase() === 'd' && e.ctrlKey && e.shiftKey) {
+        setDbClientOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   const handleThemeChange = (newTheme: Theme) => {
@@ -172,6 +185,7 @@ const App: React.FC = () => {
               </Routes>
             </BookContextProvider>
           </ErrorBoundary>
+            <DbClient open={isDbClientOpen} onClose={() => setDbClientOpen(false)} />
         </div>
       </div>
     </AuthGate>

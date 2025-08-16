@@ -9,7 +9,6 @@
 
 /**
  * 1. RUST BACKEND INTEGRATION
- * - Added tauri-plugin-sql with SQLite support to Cargo.toml
  * - Added tauri-plugin-fs for file operations to Cargo.toml  
  * - Added tauri-plugin-http for HTTP requests to Cargo.toml
  * - Updated lib.rs to initialize all authentication plugins
@@ -17,7 +16,7 @@
 
 /**
  * 2. FRONTEND INTEGRATION
- * - Installed @tauri-apps/plugin-sql, @tauri-apps/plugin-fs, zustand packages
+ * - Installed @tauri-apps/plugin-fs, zustand packages
  * - Created complete authentication system in src/auth/ directory
  * - Replaced old AuthProvider/ProtectedRoute with new AuthGate system
  * - Updated App.tsx to use AuthGate wrapper
@@ -27,7 +26,7 @@
 
 /**
  * 3. AUTHENTICATION FEATURES IMPLEMENTED
- * - SQLite database with encrypted session storage
+ * - Encrypted local session storage
  * - AES-GCM + PBKDF2 encryption for all sensitive data
  * - Device ID management with secure storage
  * - JWT token management with auto-refresh
@@ -119,14 +118,12 @@
 
 /**
  * Tauri Configuration (src-tauri/Cargo.toml):
- * - tauri-plugin-sql = { version = "2.0", features = ["sqlite"] }
  * - tauri-plugin-fs = "2.0"  
  * - tauri-plugin-http = "2.0"
  */
 
 /**
  * Package Dependencies (package.json):
- * - @tauri-apps/plugin-sql
  * - @tauri-apps/plugin-fs
  * - @tauri-apps/plugin-http
  * - zustand (state management)

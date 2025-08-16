@@ -1,11 +1,9 @@
-// SQLite database operations for Tauri authentication
-import Database from '@tauri-apps/plugin-sql';
+// Surreal-backed authentication storage via Tauri commands
+import { invoke } from '@tauri-apps/api/core';
 import { appLog } from './fileLogger';
 
-let db: Database | null = null;
-
 export interface SessionRow {
-  id?: number;
+  id?: string;
   user_id: string;
   email: string;
   name: string;
@@ -29,94 +27,86 @@ export interface DeviceRow {
   device_id: string;
 }
 
-export async function openDb(): Promise<Database> {
-  if (db) return db;
-  
-  db = await Database.load("sqlite:app.db");
-  await db.execute("PRAGMA journal_mode=WAL;");
-  
-  // Create session table
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS session (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      user_id TEXT NOT NULL,
-      email TEXT NOT NULL,
-      name TEXT NOT NULL,
-      device_id TEXT NOT NULL,
-      refresh_token_enc BLOB,
-      device_private_key_enc BLOB,
-      appkey_wrap_salt BLOB,
-      appkey_wrap_iters INTEGER,
-      appkey_probe BLOB,
-      access_exp INTEGER,
-      subscription_status TEXT,
-      subscription_expires_at INTEGER,
-      subscription_last_checked_at INTEGER,
-      session_state TEXT DEFAULT 'active' CHECK (session_state IN ('active', 'sealed')),
-      sealed_at INTEGER,
-      updated_at INTEGER
-    )
-  `);
-  
-  // Add migration for existing databases that might not have the new columns
-  try {
-    await db.execute(`
-      ALTER TABLE session ADD COLUMN session_state TEXT DEFAULT 'active' CHECK (session_state IN ('active', 'sealed'))
-    `);
-    appLog.info('migration', 'Added session_state column');
-  } catch (error) {
-    // Column already exists, ignore error
-    appLog.info('migration', 'session_state column already exists');
-  }
+// No-op shim to keep API compatible
+export async function openDb(): Promise<void> { return; }
+
+export async function getSessionRow(userEmail?: string, userId?: string): Promise<SessionRow | null> {
+  appLog.info('sqlite', 'Retrieving session from database...', { userEmail: !!userEmail, userId: !!userId });
   
   try {
-    await db.execute(`
-      ALTER TABLE session ADD COLUMN sealed_at INTEGER
-    `);
-    appLog.info('migration', 'Added sealed_at column');
+    // Use our new DAL system to get session
+    const session = await invoke<any>('app_get_session');
+    appLog.info('sqlite', 'Session retrieved from database', { session });
+    if (session) {
+      // Convert from our new Session format to SessionRow format
+      const result: SessionRow = {
+        id: session.id,
+        user_id: session.userId,
+        email: session.email,
+        name: session.name,
+        device_id: session.device_id,
+        refresh_token_enc: session.refresh_token_enc,
+        device_private_key_enc: session.device_private_key_enc,
+        appkey_wrap_salt: session.appkey_wrap_salt,
+        appkey_wrap_iters: session.appkey_wrap_iters,
+        appkey_probe: session.appkey_probe,
+        access_exp: session.access_exp,
+        subscription_status: session.subscription_status,
+        subscription_expires_at: session.subscription_expires_at,
+        subscription_last_checked_at: session.subscription_last_checked_at,
+        session_state: session.session_state,
+        sealed_at: session.sealed_at,
+        updated_at: session.updated_at,
+      };
+      
+      // Filter by email or userId if provided
+      if (userEmail && result.email !== userEmail) {
+        appLog.info('sqlite', 'Session found but email does not match', { 
+          sessionEmail: result.email, 
+          requestedEmail: userEmail 
+        });
+        return null;
+      } else if (userId && result.user_id !== userId) {
+        appLog.info('sqlite', 'Session found but user ID does not match', { 
+          sessionUserId: result.user_id, 
+          requestedUserId: userId 
+        });
+        return null;
+      }
+      
+      appLog.info('sqlite', 'Session retrieved successfully', {
+        user_id: result.user_id,
+        email: result.email,
+        state: result.session_state,
+        sealed_at: result.sealed_at
+      });
+      
+      return result;
+    }
+    
+    appLog.info('sqlite', 'No session found');
+    return null;
+    
   } catch (error) {
-    // Column already exists, ignore error
-    appLog.info('migration', 'sealed_at column already exists');
+    appLog.error('sqlite', 'Failed to get session', { error: String(error) });
+    return null;
   }
-  
-  // Create device table
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS device (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      device_id TEXT NOT NULL UNIQUE
-    )
-  `);
-  
-  // Create kv table for future secrets
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS kv (
-      k TEXT PRIMARY KEY,
-      v BLOB NOT NULL
-    )
-  `);
-  
-  return db;
 }
 
-export async function getSessionRow(): Promise<SessionRow | null> {
-  appLog.info('sqlite', 'Retrieving session from database...');
-  const database = await openDb();
+
+export async function clearsession1(userEmail?: string, userId?: string): Promise<Boolean | null> {
+  appLog.info('sqlite', 'Retrieving session from database...', { userEmail: !!userEmail, userId: !!userId });
   
-  const result = await database.select<SessionRow[]>(
-    "SELECT * FROM session WHERE id = 1"
-  );
-  
-  if (result.length > 0) {
-    appLog.info('sqlite', 'Session found', {
-      user_id: result[0].user_id,
-      email: result[0].email,
-      state: result[0].session_state,
-      sealed_at: result[0].sealed_at
-    });
-    return result[0];
-  } else {
-    appLog.info('sqlite', 'No session found in database');
-    return null;
+  try {
+    // Use our new DAL system to get session
+    const response = await invoke<any>('app_clear_session');
+    appLog.info('sqlite', 'Session cleared response', response);
+
+    return true;
+    
+  } catch (error) {
+    appLog.error('sqlite', 'Failed to get session', { error: String(error) });
+    return true;
   }
 }
 
@@ -127,59 +117,48 @@ export async function upsertSessionRow(data: Partial<SessionRow>): Promise<void>
     hasEmail: !!data.email,
     sessionState: data.session_state
   });
-  const database = await openDb();
-  
-  // Check if row exists
-  const existing = await getSessionRow();
-  
-  if (existing) {
-    appLog.info('sqlite', 'Updating existing session...');
-    // Update existing row
-    const updateFields: string[] = [];
-    const values: any[] = [];
-    
-    Object.entries(data).forEach(([key, value]) => {
-      if (key !== 'id' && value !== undefined) {
-        updateFields.push(`${key} = ?`);
-        values.push(value);
-      }
-    });
-    
-    if (updateFields.length > 0) {
-      values.push(1); // WHERE id = 1
-      console.log('📊 [SQLITE] Executing UPDATE with fields:', updateFields);
-      await database.execute(
-        `UPDATE session SET ${updateFields.join(', ')} WHERE id = 1`,
-        values
-      );
-      console.log('✅ [SQLITE] Session updated successfully');
-    } else {
-      console.log('⚠️ [SQLITE] No fields to update');
-    }
-  } else {
-    console.log('➕ [SQLITE] Creating new session...');
-    // Insert new row
-    const fields = ['id', ...Object.keys(data).filter(k => data[k as keyof SessionRow] !== undefined)];
-    const placeholders = fields.map(() => '?').join(', ');
-    const values = [1, ...Object.values(data).filter(v => v !== undefined)];
-    
-    await database.execute(
-      `INSERT INTO session (${fields.join(', ')}) VALUES (${placeholders})`,
-      values
-    );
+  console.log('🔄 Upserting session data:', data);
+  try {
+    // Convert SessionRow format to our new Session format
+    const sessionData = {
+      user_id: data.user_id,
+      email: data.email,
+      device_id: data.device_id,
+      name: data.name,
+      refresh_token_enc: data.refresh_token_enc,
+      device_private_key_enc: data.device_private_key_enc,
+      appkey_wrap_salt: data.appkey_wrap_salt,
+      appkey_wrap_iters: data.appkey_wrap_iters,
+      appkey_probe: data.appkey_probe,
+      access_exp: data.access_exp,
+      subscription_status: data.subscription_status,
+      subscription_expires_at: data.subscription_expires_at,
+      subscription_last_checked_at: data.subscription_last_checked_at,
+      session_state: data.session_state,
+      sealed_at: data.sealed_at,
+      updated_at: data.updated_at,
+    };
+
+    /* const sessionData = {
+      user_id: data.user_id,
+      email: data.email,
+      name: data.name
+     
+    };*/
+
+    // Use our new DAL system
+    await invoke('app_save_session', { session: sessionData });
+    appLog.success('sqlite', 'Session upserted successfully', { userId: data.user_id });
+  } catch (err) {
+    appLog.error('sqlite', 'Failed to upsert session', { error: err, data });
+    throw err;
   }
 }
 
 export async function clearSession(): Promise<void> {
   console.log('🗑️ Clearing session completely...');
-  const database = await openDb();
-  
-  // Clear session data
-  await database.execute("DELETE FROM session WHERE id = 1");
-  
-  // Clear all KV secrets
-  await database.execute("DELETE FROM kv");
-  
+  await invoke('app_clear_session');
+  // Also clear kv entirely is handled by callers via kv_delete per key if needed
   console.log('✅ Session cleared completely');
 }
 
@@ -188,18 +167,8 @@ export async function clearSession(): Promise<void> {
  */
 export async function sealSession(): Promise<void> {
   appLog.info('sqlite', 'Starting session sealing process...');
-  const database = await openDb();
-  
-  console.log('📊 [SQLITE] Updating session table to sealed state...');
-  await database.execute(`
-    UPDATE session 
-    SET session_state = 'sealed', 
-        sealed_at = ?1, 
-        access_exp = NULL,
-        updated_at = ?2
-    WHERE id = 1
-  `, [Date.now(), Date.now()]);
-  
+  console.log('📊 Updating session to sealed state in Surreal...');
+  await invoke('session_seal');
   appLog.success('sqlite', 'Session sealed successfully - data preserved but access locked');
 }
 
@@ -207,91 +176,35 @@ export async function sealSession(): Promise<void> {
  * Activate (unseal) the session for the same user
  */
 export async function activateSession(userId: string): Promise<boolean> {
-  console.log('🔓 [SQLITE] Starting session activation for user:', userId);
-  const database = await openDb();
-  
-  // Check if session exists and belongs to the same user
-  console.log('📋 [SQLITE] Checking existing session for user match...');
-  const session = await getSessionRow();
-  if (!session) {
-    console.log('❌ [SQLITE] No session found to activate');
-    return false;
-  }
-  
-  console.log('🔍 [SQLITE] Session found - verifying user match:', {
-    sessionUserId: session.user_id,
-    requestedUserId: userId,
-    currentState: session.session_state
-  });
-  
-  if (session.user_id !== userId) {
-    console.log('❌ [SQLITE] Session belongs to different user - keeping sealed');
-    return false;
-  }
-  
-  console.log('📊 [SQLITE] Updating session to active state...');
-  await database.execute(`
-    UPDATE session 
-    SET session_state = 'active', 
-        sealed_at = NULL,
-        updated_at = ?1
-    WHERE id = 1
-  `, [Date.now()]);
-  
-  console.log('✅ [SQLITE] Session activated successfully for user:', userId);
-  return true;
+  console.log('🔓 Starting session activation for user:', userId);
+  const ok = await invoke<boolean>('session_activate', { userId });
+  console.log('✅ Session activation result:', ok);
+  return ok;
 }
 
 export async function getDeviceRow(): Promise<DeviceRow | null> {
-  const database = await openDb();
-  
-  const result = await database.select<DeviceRow[]>(
-    "SELECT * FROM device WHERE id = 1"
-  );
-  
-  return result.length > 0 ? result[0] : null;
+  return await invoke<DeviceRow | null>('device_get');
 }
 
 export async function upsertDeviceRow(deviceId: string): Promise<void> {
-  const database = await openDb();
-  
-  await database.execute(
-    `INSERT OR REPLACE INTO device (id, device_id) VALUES (1, ?)`,
-    [deviceId]
-  );
+  await invoke('device_upsert', { deviceId });
 }
 
 // KV operations for future encrypted secrets
 export async function setKV(key: string, value: Uint8Array): Promise<void> {
-  const database = await openDb();
-  
-  await database.execute(
-    "INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)",
-    [key, value]
-  );
+  await invoke('kv_set', { k: key, v: Array.from(value) });
 }
 
 export async function getKV(key: string): Promise<Uint8Array | null> {
-  const database = await openDb();
-  
-  const result = await database.select<{ v: Uint8Array }[]>(
-    "SELECT v FROM kv WHERE k = ?",
-    [key]
-  );
-  
-  return result.length > 0 ? result[0].v : null;
+  const v = await invoke<number[] | null>('kv_get', { k: key });
+  return v ? new Uint8Array(v) : null;
 }
 
 export async function deleteKV(key: string): Promise<void> {
-  const database = await openDb();
-  
-  await database.execute("DELETE FROM kv WHERE k = ?", [key]);
+  await invoke('kv_delete', { k: key });
 }
 
 // Close database connection
 export async function closeDb(): Promise<void> {
-  if (db) {
-    await db.close();
-    db = null;
-  }
+  // no-op for Surreal client
 }

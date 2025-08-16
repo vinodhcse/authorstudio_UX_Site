@@ -1,5 +1,5 @@
 
-use tauri::{State, Emitter};
+use tauri::{Manager, State, Emitter};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use sysinfo::{System};
@@ -34,6 +34,38 @@ use audio_test_generator::{
 mod whisper_diagnostics;
 use whisper_diagnostics::{
     test_whisper_silence, test_whisper_noise, test_whisper_microphone_noise
+};
+
+// SurrealDB backend
+mod surreal;
+use surreal::{
+    surreal_init_db,
+    surreal_query,
+    book_create, book_get_by_user, book_get, book_put, book_delete, book_mark_sync, book_get_dirty,
+    version_get, versions_by_book, version_put, version_content_get, version_content_update,
+    chapter_get, chapter_put, chapters_by_version, chapter_mark_sync, chapter_mark_conflict, chapters_get_dirty,
+    scene_get, scenes_by_book, scene_put, scenes_get_dirty, scene_mark_sync, scene_mark_conflict,
+    user_keys_get, user_keys_set,
+    session_get, session_get_by_email, session_get_by_user_id, session_upsert, session_clear, session_seal, session_activate,
+    device_get, device_upsert,
+    kv_set, kv_get, kv_delete,
+    asset_create, asset_get, asset_get_by_sha256, asset_update, assets_by_status, asset_delete,
+    link_create, link_upsert, links_by_entity, links_by_entity_role, links_by_asset, link_delete, links_delete_by_entity_role, links_delete_by_asset,
+    get_config_dir, asset_list_all, link_list_all,
+};
+
+// App Database (main implementation)
+mod app_surreal;
+use app_surreal::{
+    AppDatabase,
+    app_create_book, app_get_books, app_get_book_by_id, app_update_book, app_delete_book,
+    app_create_version, app_get_versions_by_book,
+    app_create_chapter, app_get_chapters_by_version,
+    app_create_character, app_get_characters_by_book,
+    app_delete_all_data,
+    // Session and user keys commands
+    app_get_session, app_save_session, app_clear_session,
+    app_get_user_keys, app_save_user_keys,
 };
 
 // Asset system commands
@@ -158,7 +190,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
         .manage(WindowRegistry::default())
-        .plugin(tauri_plugin_sql::Builder::default().build())
+    // Removed SQL plugin; SurrealDB is used for local storage
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![
@@ -167,6 +199,85 @@ pub fn run() {
             controlled_copy_to_clipboard,
             get_current_user_role,
             get_cpu_gpu_specs,
+            // App database commands (main implementation)
+            app_create_book,
+            app_get_books,
+            app_get_book_by_id,
+            app_update_book,
+            app_delete_book,
+            app_create_version,
+            app_get_versions_by_book,
+            app_create_chapter,
+            app_get_chapters_by_version,
+            app_create_character,
+            app_get_characters_by_book,
+            app_delete_all_data,
+            app_get_session,
+            app_save_session,
+            app_clear_session,
+            app_get_user_keys,
+            app_save_user_keys,
+            // Surreal commands (legacy)
+            surreal_init_db,
+            surreal_query,
+            book_create,
+            book_get_by_user,
+            book_get,
+            book_put,
+            book_delete,
+            book_mark_sync,
+            book_get_dirty,
+            version_get,
+            versions_by_book,
+            version_put,
+            version_content_get,
+            version_content_update,
+            chapter_get,
+            chapter_put,
+            chapters_by_version,
+            chapter_mark_sync,
+            chapter_mark_conflict,
+            chapters_get_dirty,
+            scene_get,
+            scenes_by_book,
+            scene_put,
+            scenes_get_dirty,
+            scene_mark_sync,
+            scene_mark_conflict,
+            // Keys
+            user_keys_get,
+            user_keys_set,
+            // Session/Device/KV
+            session_get,
+            session_get_by_email,
+            session_get_by_user_id,
+            session_upsert,
+            session_clear,
+            session_seal,
+            session_activate,
+            device_get,
+            device_upsert,
+            kv_set,
+            kv_get,
+            kv_delete,
+            // Assets/Links
+            asset_create,
+            asset_get,
+            asset_get_by_sha256,
+            asset_update,
+            assets_by_status,
+            asset_delete,
+            link_create,
+            link_upsert,
+            links_by_entity,
+            links_by_entity_role,
+            links_by_asset,
+            link_delete,
+            links_delete_by_entity_role,
+            links_delete_by_asset,
+            get_config_dir,
+            asset_list_all,
+            link_list_all,
             open_tool_window,
             minimize_tool_window,
             restore_tool_window,
@@ -204,6 +315,31 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Initialize the new unified database only
+            let app_handle = app.handle();
+            /*let new_db = tauri::async_runtime::block_on(async {
+                // Get the data directory path
+                let data_dir = app_handle.path().app_data_dir().map_err(|e| format!("Failed to get data dir: {}", e))?;
+                let data_dir_str = data_dir.to_string_lossy();
+                database::AppDatabase::new(&data_dir_str).await.map_err(|e| format!("Database error: {}", e))
+            });*/
+            let handle = app.handle().clone();
+            let new_db = tauri::async_runtime::block_on(async {
+                app_surreal::AppDatabase::new(handle).await
+                    .map_err(|e| format!("Database error: {}", e))
+            });
+
+            match new_db {
+                Ok(db) => {
+                    app.manage(db);
+                    println!("App database initialized successfully");
+                },
+                Err(e) => {
+                    eprintln!("Failed to initialize app database: {}", e);
+                }
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

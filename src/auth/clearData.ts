@@ -1,7 +1,7 @@
 // Utilities for clearing local authentication data
 // Use this to reset the app to initial state when data is corrupted
 
-import { openDb } from './sqlite';
+import { clearSession } from './sqlite';
 
 /**
  * Clear all local authentication data
@@ -11,8 +11,8 @@ export async function clearAllLocalData(): Promise<void> {
   try {
     console.log('🧹 Clearing all local authentication data...');
     
-    // 1. Clear SQLite database
-    await clearSQLiteData();
+  // 1. Clear local database
+  await clearLocalData();
     
     // 2. Clear any localStorage data (if any)
     clearLocalStorage();
@@ -28,23 +28,14 @@ export async function clearAllLocalData(): Promise<void> {
 }
 
 /**
- * Clear SQLite database tables
+ * Clear local database tables
  */
-async function clearSQLiteData(): Promise<void> {
+async function clearLocalData(): Promise<void> {
   try {
-    const db = await openDb();
-    
-    // Clear all tables
-    await db.execute('DELETE FROM session');
-    await db.execute('DELETE FROM device');
-    await db.execute('DELETE FROM kv');
-    
-    // Reset auto-increment counters
-    await db.execute('DELETE FROM sqlite_sequence WHERE name IN ("session", "device", "kv")');
-    
-    console.log('✅ SQLite data cleared');
+  await clearSession();
+    console.log('✅ Local data cleared');
   } catch (error) {
-    console.error('❌ Error clearing SQLite data:', error);
+    console.error('❌ Error clearing local data:', error);
     throw error;
   }
 }
@@ -110,11 +101,7 @@ export async function clearSessionData(): Promise<void> {
   try {
     console.log('🧹 Clearing session data...');
     
-    const db = await openDb();
-    
-    // Clear only session table, keep device table
-    await db.execute('DELETE FROM session');
-    await db.execute('DELETE FROM sqlite_sequence WHERE name = "session"');
+  await clearSession();
     
     console.log('✅ Session data cleared');
   } catch (error) {

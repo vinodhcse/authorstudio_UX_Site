@@ -1,82 +1,52 @@
-// Asset Database Layer - CRUD operations for file assets and links
-import Database from '@tauri-apps/plugin-sql';
-import { initializeDatabase } from '../data/dal';
+// Asset Database Layer - now backed by SurrealDB via Tauri commands
+import { invoke } from '@tauri-apps/api/core';
+// SurrealDB is initialized once at app startup; no need to import initializeDatabase
 import { FileAsset, FileAssetLink, EntityType, AssetRole, AssetStatus } from '../types';
 import { appLog } from '../auth/fileLogger';
 
 export class AssetDB {
-  private static async getDatabase(): Promise<Database> {
-    return initializeDatabase();
+  private static async ensureDb(): Promise<void> {
+  // ...existing code...
   }
 
   // FileAsset CRUD operations
   static async createAsset(asset: Omit<FileAsset, 'created_at' | 'updated_at'>): Promise<void> {
-    const db = await this.getDatabase();
+    await this.ensureDb();
     const now = new Date().toISOString();
-    
-    await db.execute(
-      `INSERT INTO file_assets 
-       (id, sha256, ext, mime, size_bytes, width, height, local_path, remote_id, remote_url, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        asset.id,
-        asset.sha256,
-        asset.ext,
-        asset.mime,
-        asset.size_bytes,
-        asset.width || null,
-        asset.height || null,
-        asset.local_path || null,
-        asset.remote_id || null,
-        asset.remote_url || null,
-        asset.status,
-        now,
-        now
-      ]
-    );
-    
+    const full: FileAsset = {
+      ...asset,
+      created_at: now,
+      updated_at: now,
+    } as FileAsset;
+    await invoke('asset_create', { asset: full });
     await appLog.info('assetdb', 'Asset created', { assetId: asset.id, sha256: asset.sha256 });
   }
 
   static async getAssetById(id: string): Promise<FileAsset | null> {
-    const db = await this.getDatabase();
-    const result = await db.select<FileAsset[]>(
-      'SELECT * FROM file_assets WHERE id = ?',
-      [id]
-    );
-    return result.length > 0 ? result[0] : null;
+    await this.ensureDb();
+    return (await invoke<FileAsset | null>('asset_get', { id })) ?? null;
   }
 
   static async getAssetBySha256(sha256: string): Promise<FileAsset | null> {
-    const db = await this.getDatabase();
-    const result = await db.select<FileAsset[]>(
-      'SELECT * FROM file_assets WHERE sha256 = ?',
-      [sha256]
-    );
-    return result.length > 0 ? result[0] : null;
+    await this.ensureDb();
+    return (await invoke<FileAsset | null>('asset_get_by_sha256', { sha256 })) ?? null;
   }
 
   static async updateAsset(id: string, updates: Partial<FileAsset>): Promise<void> {
-    const db = await this.getDatabase();
+    await this.ensureDb();
     const now = new Date().toISOString();
-    
-    const fields = Object.keys(updates).map(key => `${key} = ?`).join(', ');
-    const values = [...Object.values(updates), now, id];
-    
-    await db.execute(
-      `UPDATE file_assets SET ${fields}, updated_at = ? WHERE id = ?`,
-      values
-    );
-    
+    await invoke('asset_update', { id, updates: { ...updates, updated_at: now } });
     await appLog.info('assetdb', 'Asset updated', { assetId: id, updates: Object.keys(updates) });
   }
 
   static async markAssetUploaded(id: string, remoteId: string, remoteUrl: string): Promise<void> {
+    await appLog.info('assetdb', 'Marking asset uploaded', { assetId: id, remoteId, remoteUrl });
     await this.updateAsset(id, {
       remote_id: remoteId,
       remote_url: remoteUrl,
       status: 'uploaded'
     });
+    await appLog.success('assetdb', 'Asset marked uploaded', { assetId: id, remoteId, remoteUrl });
   }
 
   static async markAssetFailed(id: string): Promise<void> {
@@ -84,245 +54,137 @@ export class AssetDB {
   }
 
   static async getAssetsByStatus(status: AssetStatus): Promise<FileAsset[]> {
-    const db = await this.getDatabase();
-    return await db.select<FileAsset[]>(
-      'SELECT * FROM file_assets WHERE status = ?',
-      [status]
-    );
+    await this.ensureDb();
+    return await invoke<FileAsset[]>('assets_by_status', { status });
   }
 
   static async deleteAsset(id: string): Promise<void> {
-    const db = await this.getDatabase();
-    await db.execute('DELETE FROM file_assets WHERE id = ?', [id]);
+    await this.ensureDb();
+    await invoke('asset_delete', { id });
     await appLog.info('assetdb', 'Asset deleted', { assetId: id });
   }
 
   // FileAssetLink CRUD operations
   static async createLink(link: Omit<FileAssetLink, 'created_at' | 'updated_at'>): Promise<void> {
-    const db = await this.getDatabase();
+    await this.ensureDb();
     const now = new Date().toISOString();
-    
-    await db.execute(
-      `INSERT INTO file_asset_links 
-       (id, asset_id, entity_type, entity_id, role, sort_order, tags, description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        link.id,
-        link.asset_id,
-        link.entity_type,
-        link.entity_id,
-        link.role,
-        link.sort_order,
-        link.tags || null,
-        link.description || null,
-        now,
-        now
-      ]
-    );
-    
+    const full: FileAssetLink = {
+      ...link,
+      created_at: now,
+      updated_at: now,
+    } as FileAssetLink;
+    await invoke('link_create', { link: full });
     await appLog.info('assetdb', 'Asset link created', { 
-      linkId: link.id, 
-      assetId: link.asset_id, 
-      entity: `${link.entity_type}:${link.entity_id}`,
-      role: link.role 
+      linkId: full.id, 
+      assetId: full.asset_id, 
+      entity: `${full.entity_type}:${full.entity_id}`,
+      role: full.role 
     });
   }
 
   static async upsertLink(link: Omit<FileAssetLink, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
-    const db = await this.getDatabase();
-    const now = new Date().toISOString();
-    
-    // Check if link already exists
-    const existing = await db.select<FileAssetLink[]>(
-      'SELECT * FROM file_asset_links WHERE asset_id = ? AND entity_type = ? AND entity_id = ? AND role = ?',
-      [link.asset_id, link.entity_type, link.entity_id, link.role]
-    );
-    
-    if (existing.length > 0) {
-      // Update existing link
-      const linkId = existing[0].id;
-      await db.execute(
-        `UPDATE file_asset_links 
-         SET sort_order = ?, tags = ?, description = ?, updated_at = ?
-         WHERE id = ?`,
-        [link.sort_order, link.tags || null, link.description || null, now, linkId]
-      );
-      await appLog.info('assetdb', 'Asset link updated', { linkId });
-      return linkId;
-    } else {
-      // Create new link
-      const linkId = crypto.randomUUID();
-      await this.createLink({ ...link, id: linkId });
-      return linkId;
-    }
+    await this.ensureDb();
+    // Normalize link payload to accept either snake_case (DB) or camelCase (UI) fields
+    const payload = {
+      asset_id: (link as any).asset_id ?? (link as any).assetId,
+      entity_type: (link as any).entity_type ?? (link as any).entityType,
+      entity_id: (link as any).entity_id ?? (link as any).entityId,
+      role: (link as any).role ?? undefined,
+      sort_order: (link as any).sort_order ?? (link as any).sortOrder ?? 0,
+      tags: (link as any).tags ?? null,
+      description: (link as any).description ?? null,
+    } as any;
+
+    // Build invoke payload with both snake_case and camelCase keys to satisfy either Rust/Tauri naming
+    const invokePayload = {
+      asset_id: payload.asset_id,
+      assetId: payload.asset_id,
+      entity_type: payload.entity_type,
+      entityType: payload.entity_type,
+      entity_id: payload.entity_id,
+      entityId: payload.entity_id,
+      role: payload.role,
+      sort_order: payload.sort_order,
+      sortOrder: payload.sort_order,
+      tags: payload.tags,
+      description: payload.description,
+    } as any;
+
+    // Log final payload for debugging
+    await appLog.info('assetdb', 'Calling link_upsert with payload', invokePayload);
+
+    const id = await invoke<string>('link_upsert', invokePayload);
+    await appLog.info('assetdb', 'Asset link upserted', { linkId: id });
+    return id;
   }
 
   static async getLinksByEntity(entityType: EntityType, entityId: string): Promise<FileAssetLink[]> {
-    const db = await this.getDatabase();
-    return await db.select<FileAssetLink[]>(
-      'SELECT * FROM file_asset_links WHERE entity_type = ? AND entity_id = ? ORDER BY sort_order',
-      [entityType, entityId]
-    );
+    await this.ensureDb();
+  return await invoke<FileAssetLink[]>('links_by_entity', { entity_type: entityType, entity_id: entityId });
   }
 
   static async getLinksByEntityAndRole(entityType: EntityType, entityId: string, role: AssetRole): Promise<FileAssetLink[]> {
-    const db = await this.getDatabase();
-    return await db.select<FileAssetLink[]>(
-      'SELECT * FROM file_asset_links WHERE entity_type = ? AND entity_id = ? AND role = ? ORDER BY sort_order',
-      [entityType, entityId, role]
-    );
+    await this.ensureDb();
+  return await invoke<FileAssetLink[]>('links_by_entity_role', { entity_type: entityType, entity_id: entityId, role });
   }
 
   static async getLinksByAsset(assetId: string): Promise<FileAssetLink[]> {
-    const db = await this.getDatabase();
-    return await db.select<FileAssetLink[]>(
-      'SELECT * FROM file_asset_links WHERE asset_id = ?',
-      [assetId]
-    );
+    await this.ensureDb();
+  return await invoke<FileAssetLink[]>('links_by_asset', { asset_id: assetId });
   }
 
   static async deleteLink(id: string): Promise<void> {
-    const db = await this.getDatabase();
-    await db.execute('DELETE FROM file_asset_links WHERE id = ?', [id]);
+    await this.ensureDb();
+    await invoke('link_delete', { id });
     await appLog.info('assetdb', 'Asset link deleted', { linkId: id });
   }
 
   static async deleteLinksByEntityAndRole(entityType: EntityType, entityId: string, role: AssetRole): Promise<void> {
-    const db = await this.getDatabase();
-    await db.execute(
-      'DELETE FROM file_asset_links WHERE entity_type = ? AND entity_id = ? AND role = ?',
-      [entityType, entityId, role]
-    );
-    await appLog.info('assetdb', 'Asset links deleted by entity and role', { entityType, entityId, role });
+    await this.ensureDb();
+  await invoke('links_delete_by_entity_role', { entity_type: entityType, entity_id: entityId, role });
+  await appLog.info('assetdb', 'Asset links deleted by entity and role', { entityType, entityId, role });
   }
 
   static async deleteLinksByAsset(assetId: string): Promise<void> {
-    const db = await this.getDatabase();
-    await db.execute('DELETE FROM file_asset_links WHERE asset_id = ?', [assetId]);
-    await appLog.info('assetdb', 'Asset links deleted by asset', { assetId });
+    await this.ensureDb();
+  await invoke('links_delete_by_asset', { asset_id: assetId });
+  await appLog.info('assetdb', 'Asset links deleted by asset', { assetId });
   }
 
   // Complex queries
   static async getAssetsWithLinks(entityType: EntityType, entityId: string): Promise<Array<FileAsset & { link: FileAssetLink }>> {
-    const db = await this.getDatabase();
-    const results = await db.select<any[]>(
-      `SELECT 
-         a.*,
-         l.id as link_id,
-         l.role as link_role,
-         l.sort_order as link_sort_order,
-         l.tags as link_tags,
-         l.description as link_description,
-         l.created_at as link_created_at,
-         l.updated_at as link_updated_at
-       FROM file_assets a
-       JOIN file_asset_links l ON a.id = l.asset_id
-       WHERE l.entity_type = ? AND l.entity_id = ?
-       ORDER BY l.sort_order`,
-      [entityType, entityId]
-    );
-
-    return results.map(row => ({
-      id: row.id,
-      sha256: row.sha256,
-      ext: row.ext,
-      mime: row.mime,
-      size_bytes: row.size_bytes,
-      width: row.width,
-      height: row.height,
-      local_path: row.local_path,
-      remote_id: row.remote_id,
-      remote_url: row.remote_url,
-      status: row.status,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      link: {
-        id: row.link_id,
-        asset_id: row.id,
-        entity_type: entityType,
-        entity_id: entityId,
-        role: row.link_role,
-        sort_order: row.link_sort_order,
-        tags: row.link_tags,
-        description: row.link_description,
-        created_at: row.link_created_at,
-        updated_at: row.link_updated_at
-      }
-    }));
+    await this.ensureDb();
+    const links = await this.getLinksByEntity(entityType, entityId);
+    const assets = await Promise.all(links.map(async (l) => ({ link: l, asset: await this.getAssetById(l.asset_id) })));
+    return assets
+      .filter(a => !!a.asset)
+      .map(a => ({ ...(a.asset as FileAsset), link: a.link }));
   }
 
   static async getAssetWithLinksByRole(entityType: EntityType, entityId: string, role: AssetRole): Promise<Array<FileAsset & { link: FileAssetLink }>> {
-    const db = await this.getDatabase();
-    const results = await db.select<any[]>(
-      `SELECT 
-         a.*,
-         l.id as link_id,
-         l.role as link_role,
-         l.sort_order as link_sort_order,
-         l.tags as link_tags,
-         l.description as link_description,
-         l.created_at as link_created_at,
-         l.updated_at as link_updated_at
-       FROM file_assets a
-       JOIN file_asset_links l ON a.id = l.asset_id
-       WHERE l.entity_type = ? AND l.entity_id = ? AND l.role = ?
-       ORDER BY l.sort_order`,
-      [entityType, entityId, role]
-    );
-
-    return results.map(row => ({
-      id: row.id,
-      sha256: row.sha256,
-      ext: row.ext,
-      mime: row.mime,
-      size_bytes: row.size_bytes,
-      width: row.width,
-      height: row.height,
-      local_path: row.local_path,
-      remote_id: row.remote_id,
-      remote_url: row.remote_url,
-      status: row.status,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      link: {
-        id: row.link_id,
-        asset_id: row.id,
-        entity_type: entityType,
-        entity_id: entityId,
-        role: row.link_role,
-        sort_order: row.link_sort_order,
-        tags: row.link_tags,
-        description: row.link_description,
-        created_at: row.link_created_at,
-        updated_at: row.link_updated_at
-      }
-    }));
+    await this.ensureDb();
+    const links = await this.getLinksByEntityAndRole(entityType, entityId, role);
+    const assets = await Promise.all(links.map(async (l) => ({ link: l, asset: await this.getAssetById(l.asset_id) })));
+    return assets
+      .filter(a => !!a.asset)
+      .map(a => ({ ...(a.asset as FileAsset), link: a.link }));
   }
 
   // Cleanup operations
   static async getOrphanedAssets(): Promise<FileAsset[]> {
-    const db = await this.getDatabase();
-    return await db.select<FileAsset[]>(
-      `SELECT a.* FROM file_assets a
-       LEFT JOIN file_asset_links l ON a.id = l.asset_id
-       WHERE l.asset_id IS NULL`
-    );
+    await this.ensureDb();
+    const rows = await invoke<any>('surreal_query', {
+      query: `SELECT * FROM file_assets WHERE id NOT IN (SELECT asset_id FROM file_asset_links)`
+    });
+    return rows as FileAsset[];
   }
 
   static async deleteOrphanedAssets(): Promise<number> {
     const orphans = await this.getOrphanedAssets();
-    const db = await this.getDatabase();
-    
     if (orphans.length === 0) return 0;
-    
-    const placeholders = orphans.map(() => '?').join(',');
-    const orphanIds = orphans.map(a => a.id);
-    
-    await db.execute(
-      `DELETE FROM file_assets WHERE id IN (${placeholders})`,
-      orphanIds
-    );
-    
+    for (const a of orphans) {
+      await this.deleteAsset(a.id);
+    }
     await appLog.info('assetdb', 'Deleted orphaned assets', { count: orphans.length });
     return orphans.length;
   }

@@ -3,14 +3,7 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { useAuthStore } from '../src/auth';
 
 // Mock Tauri APIs
-jest.mock('@tauri-apps/plugin-sql', () => ({
-  Database: {
-    load: jest.fn(() => Promise.resolve({
-      execute: jest.fn(),
-      select: jest.fn(() => Promise.resolve([])),
-    })),
-  },
-}));
+// SQL plugin no longer used
 
 jest.mock('@tauri-apps/plugin-fs', () => ({
   readTextFile: jest.fn(),

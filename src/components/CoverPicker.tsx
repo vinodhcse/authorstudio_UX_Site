@@ -38,6 +38,8 @@ const CoverPicker: React.FC<CoverPickerProps> = ({
           setCoverRef(ref);
           const coverUrl = await AssetService.getLocalImageDataUrl(ref);
           setCoverSrc(coverUrl);
+          // Debug: log the resolved cover source for diagnostics
+          console.info('[CoverPicker] Resolved coverSrc', { assetId: ref.assetId, coverSrc: coverUrl ? coverUrl.slice(0, 120) : null });
         }
       } catch (err) {
         console.error('Failed to load current cover:', err);

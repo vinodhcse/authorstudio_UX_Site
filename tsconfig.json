@@ -28,4 +28,13 @@
     }
   },
   "include": ["src"]
+  ,
+  "exclude": [
+  "src/data/migrations*.ts",
+  "src/pages/BookForge/components/planning/characterScreentime/CharacterScreenTimeLayout.backup.tsx",
+  "src/pages/BookForge/components/planning/worldEntityScreentime/LoreAppearanceHeatMap.tsx",
+  "src/pages/BookForge/components/planning/worldEntityScreentime/ObjectAppearanceHeatMap.tsx",
+  "**/*.backup.tsx"
+  ,"src/services/encryptionService_clean.ts"
+  ]
 }

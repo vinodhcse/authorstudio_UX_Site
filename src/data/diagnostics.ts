@@ -1,24 +1,23 @@
 // Diagnostic functions for debugging database state
 import { initializeDatabase } from './dal';
+import { invoke } from '@tauri-apps/api/core';
 import { appLog } from '../auth/fileLogger';
 
 export async function diagnoseDatabaseState() {
   try {
-    const database = await initializeDatabase();
-    
-    // Check versions table
-    const versions = await database.select('SELECT version_id, book_id, title, content_data FROM versions ORDER BY created_at DESC LIMIT 5');
-    console.log('📊 Recent versions:', versions);
-    
-    // Check chapters table 
-    const chapters = await database.select('SELECT chapter_id, book_id, version_id, title, order_index, created_at FROM chapters ORDER BY created_at DESC LIMIT 10');
-    console.log('📖 Recent chapters:', chapters);
+  await initializeDatabase();
+  // Check versions table
+  const versions = await invoke<any[]>('surreal_query', { query: 'SELECT version_id, book_id, title, content_data FROM version ORDER BY created_at DESC LIMIT 5' });
+  console.log('📊 Recent versions:', versions);
+  // Check chapters table
+  const chapters = await invoke<any[]>('surreal_query', { query: 'SELECT chapter_id, book_id, version_id, title, order_index, created_at FROM chapter ORDER BY created_at DESC LIMIT 10' });
+  console.log('📖 Recent chapters:', chapters);
     
     // Check plot canvas data
     for (const version of versions as any[]) {
-      if (version.content_data) {
+    if ((version as any).content_data) {
         try {
-          const contentData = JSON.parse(version.content_data);
+      const contentData = JSON.parse((version as any).content_data);
           console.log(`🎨 Version ${version.version_id} content data:`, {
             hasPlotCanvas: !!contentData.plotCanvas,
             hasCharacters: !!contentData.characters,
@@ -34,8 +33,8 @@ export async function diagnoseDatabaseState() {
     }
     
     await appLog.info('diagnostics', 'Database state diagnosed', { 
-      versionsCount: (versions as any[]).length, 
-      chaptersCount: (chapters as any[]).length 
+  versionsCount: (versions as any[]).length, 
+  chaptersCount: (chapters as any[]).length 
     });
     
     return { versions, chapters };

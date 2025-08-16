@@ -1,11 +1,11 @@
 # Tauri-Only Authentication System
 
-A comprehensive authentication system designed specifically for Tauri applications with SQLite storage, encryption, and offline functionality.
+A comprehensive authentication system designed specifically for Tauri applications with encrypted local storage and offline functionality.
 
 ## Features
 
 - 🔐 **AES-GCM Encryption**: All sensitive data encrypted with PBKDF2-derived keys
-- 💾 **SQLite Storage**: Encrypted session persistence using Tauri's SQL plugin
+- 💾 **Local Encrypted Storage**: Encrypted session persistence via the Tauri Rust layer
 - 🔌 **Offline Support**: Works offline with encrypted local session storage
 - ⏱️ **Idle Timeout**: Automatic session clearing after inactivity
 - 🎯 **Device Management**: Unique device ID with keypair generation
@@ -20,7 +20,7 @@ A comprehensive authentication system designed specifically for Tauri applicatio
 2. **AuthGate.tsx** - Route protection wrapper component
 3. **UnlockOffline.tsx** - Passphrase entry for session unlock
 4. **apiClient.ts** - HTTP client for authentication APIs
-5. **sqlite.ts** - Database operations with encryption
+5. **sqlite.ts** - Local storage operations via Tauri commands with encryption
 6. **crypto.ts** - Cryptographic utilities (PBKDF2 + AES-GCM)
 7. **deviceId.ts** - Device identification management
 8. **idleTimer.ts** - Automatic session timeout handling
@@ -30,7 +30,7 @@ A comprehensive authentication system designed specifically for Tauri applicatio
 ```
 1. User Login/Signup → API → JWT Tokens
 2. Passphrase + Device ID → PBKDF2 → App Key
-3. App Key + Session Data → AES-GCM → Encrypted SQLite
+3. App Key + Session Data → AES-GCM → Encrypted local store
 4. Idle Timer → Clear Memory → Show Unlock Screen
 5. Unlock → Decrypt Session → Restore State
 ```
@@ -43,7 +43,6 @@ Ensure you have the required Tauri plugins in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tauri-plugin-sql = { version = "2.0", features = ["sqlite"] }
 tauri-plugin-fs = "2.0"
 tauri-plugin-http = "2.0"
 ```
@@ -53,7 +52,6 @@ And in your `package.json`:
 ```json
 {
   "dependencies": {
-    "@tauri-apps/plugin-sql": "^2.0.0",
     "@tauri-apps/plugin-fs": "^2.0.0", 
     "@tauri-apps/plugin-http": "^2.0.0",
     "zustand": "^4.0.0",
@@ -243,7 +241,7 @@ Session timeout warning modal.
 
 ### Storage
 
-- **SQLite Encryption**: All session data encrypted at rest
+- **Encrypted at Rest**: All session data encrypted at rest
 - **Memory Protection**: Sensitive keys cleared after idle timeout
 - **Device Isolation**: Sessions tied to specific device IDs
 
@@ -253,37 +251,9 @@ Session timeout warning modal.
 - **Auto-refresh**: Transparent token renewal
 - **Offline Mode**: Full functionality without network
 
-## Database Schema
+## Local Storage
 
-The system creates three SQLite tables:
-
-```sql
--- Session storage
-CREATE TABLE IF NOT EXISTS session (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  encrypted_data TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
--- Device information
-CREATE TABLE IF NOT EXISTS device (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  device_id TEXT NOT NULL,
-  encrypted_private_key TEXT,
-  public_key TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
--- Key-value storage
-CREATE TABLE IF NOT EXISTS kv (
-  key TEXT PRIMARY KEY,
-  encrypted_value TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-```
+Session, device, and key-value storage are persisted locally via the Tauri Rust layer.
 
 ## Migration Guide
 
@@ -330,9 +300,8 @@ CREATE TABLE IF NOT EXISTS kv (
 
 ### Common Issues
 
-1. **"Cannot find module '@tauri-apps/plugin-sql'"**
-   - Install the Tauri plugin: `npm install @tauri-apps/plugin-sql`
-   - Add to `Cargo.toml`: `tauri-plugin-sql = "2.0"`
+1. Missing plugins
+  - Ensure FS and HTTP plugins are installed and configured
 
 2. **Encryption/Decryption Errors**
    - Check PBKDF2 parameters match between encryption/decryption
@@ -340,7 +309,7 @@ CREATE TABLE IF NOT EXISTS kv (
    - Clear device data if corrupted: `clearDeviceId()`
 
 3. **Session Not Persisting**
-   - Ensure SQLite database is writable
+  - Ensure local database is writable
    - Check Tauri app permissions
    - Verify encryption key derivation
 

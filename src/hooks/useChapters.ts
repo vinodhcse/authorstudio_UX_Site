@@ -10,6 +10,10 @@ import {
   ensureDefaultVersion,
   ensureVersionInDatabase,
   syncChaptersToVersionData
+,
+  createChapterAtomic,
+  deleteChapterAtomic,
+  bumpChapterMetadataAtomic
 } from '../data/dal';
 import { useAuthStore } from '../auth/useAuthStore';
 // Note: encryptionService is imported dynamically to ensure singleton consistency
@@ -474,7 +478,7 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         bookId,
         versionId: finalVersionId
       });
-      await putChapter(chapterRow);
+      await createChapterAtomic(chapterRow, user.id);
       appLog.info('useChapters', 'Chapter saved to database successfully', { 
         chapterId, 
         titleSaved: chapterRow.title 
@@ -493,15 +497,8 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         if (encryptionService.isInitialized()) {
           await encryptionService.saveChapterContent(chapterId, bookId, finalVersionId, user.id, initialContent);
         } else {
-          // If encryption service isn't ready, save a simple JSON version to the database
-          const contentJson = JSON.stringify(initialContent);
-          const { initializeDatabase } = await import('../data/dal');
-          const database = await initializeDatabase();
-          await database.execute(
-            'UPDATE chapters SET content_enc = ?, content_iv = ? WHERE chapter_id = ?',
-            [new TextEncoder().encode(contentJson), new Uint8Array(), chapterId]
-          );
-          appLog.warn('useChapters', 'Saved unencrypted content - encryption service not ready', {
+          // If encryption service isn't ready, log warning and skip content save
+          appLog.warn('useChapters', 'Encryption service not ready - skipping content save', {
             chapterId,
             bookId,
             userId: user.id
@@ -561,8 +558,8 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       // Sync chapters to version content_data so BookContext can see them
       if (bookId && finalVersionId) {
         try {
-          await syncChaptersToVersionData(bookId, finalVersionId, user.id);
-          appLog.info('useChapters', 'Synced chapters to version content_data', { 
+          /* createChapterAtomic already syncs chapters to version content_data */
+appLog.info('useChapters', 'Synced chapters to version content_data', { 
             bookId, 
             versionId: finalVersionId,
             chapterId: newChapter.id,
@@ -717,14 +714,8 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       setError(null);
       
       // Remove from local database
-      const { initializeDatabase } = await import('../data/dal');
-      const database = await initializeDatabase();
-      await database.execute(
-        'DELETE FROM chapters WHERE chapter_id = ? AND owner_user_id = ?',
-        [chapterId, user.id]
-      );
-      
-      // Update local state
+      await deleteChapterAtomic(chapterId, versionId, user.id);
+// Update local state
       setChapters(prev => prev.filter(chapter => chapter.id !== chapterId));
       
       // Sync chapters to version content_data after deletion
@@ -801,7 +792,10 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
           updated_at: Date.now(),
           sync_state: 'dirty' // Mark as needing sync after content change
         };
-        await putChapter(updatedChapterRow);
+        await bumpChapterMetadataAtomic(chapterId, versionId, user.id, {
+          wordCount: content.metadata?.totalWords || 0,
+          charCount: content.metadata?.totalCharacters || 0
+        });
         
         appLog.info('useChapters', 'Chapter database row updated after content save', {
           chapterId,

@@ -22,6 +22,7 @@ import {
 import { 
   getSessionRow, 
   upsertSessionRow, 
+  clearSession,
   SessionRow 
 } from './sqlite';
 
@@ -320,7 +321,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const encryptedRefreshToken = await encryptString(authResponse.refreshToken, appKey);
       console.log('✅ [LOGIN] Refresh token encrypted successfully');
       
-      // Store session in SQLite
+  // Store session in local SurrealDB (via tauri commands)
       const sessionData: Partial<SessionRow> = {
         user_id: authResponse.userId,
         email: authResponse.email || email,
@@ -385,11 +386,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       _setLoading(true);
       console.log('🔓 [UNLOCK] Starting unlock process...');
       
-      // Get session from SQLite
-      console.log('📋 [UNLOCK] Retrieving session from SQLite...');
+  // Get session from local SurrealDB
+  console.log('📋 [UNLOCK] Retrieving session from local store...');
       const session = await getSessionRow();
       if (!session) {
-        console.error('❌ [UNLOCK] No session found in SQLite');
+  console.error('❌ [UNLOCK] No session found');
         throw new Error('No session found. Please login first.');
       }
       
@@ -735,7 +736,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     apiClient.clearAccessToken();
     
     // Don't clear user - they can unlock again without full login
-    // SQLite session data remains encrypted on disk
+  // Local session data remains encrypted on disk
   },
 
   // Clear all local data (for corrupted data recovery)
@@ -746,6 +747,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       _setLoading(true);
       console.log('🧹 Clearing all local authentication data...');
       
+      await clearSession();
       // Clear all local data
       await clearAllLocalData();
       

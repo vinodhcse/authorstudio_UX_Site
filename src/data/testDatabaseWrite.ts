@@ -1,4 +1,5 @@
 import { initializeDatabase, VersionRow, putVersion, getVersion, putBook, BookRow } from './dal';
+import { invoke } from '@tauri-apps/api/core';
 import { appLog } from '../auth/fileLogger';
 
 // Test function to verify database write operations
@@ -15,14 +16,16 @@ export async function testDatabaseWrite(): Promise<void> {
       book_id: testBookId,
       owner_user_id: testUserId,
       title: 'Test Book',
-      enc_scheme: 'udek',
-      has_proposals: 0,
-      pending_ops: 0,
+      is_shared: 0,
+      enc_schema: 'udek',
+      rev_local: undefined,
+      rev_cloud: undefined,
       sync_state: 'dirty',
       conflict_state: 'none',
-      created_at: Date.now(),
+      last_local_change: undefined,
+      last_cloud_change: undefined,
       updated_at: Date.now()
-    };
+    } as unknown as BookRow;
     
     appLog.info('test', 'Creating test book first to satisfy foreign key...');
     await putBook(testBook);
@@ -68,11 +71,8 @@ export async function testDatabaseWrite(): Promise<void> {
     }
     
     // Also try a direct database query
-    const database = await initializeDatabase();
-    const directQuery = await database.select(
-      'SELECT * FROM versions WHERE version_id = ?', 
-      [testVersionId]
-    ) as any[];
+  await initializeDatabase();
+  const directQuery = await invoke<any[]>('surreal_query', { query: 'SELECT * FROM version WHERE version_id = $vid', vars: { vid: testVersionId } });
     
     appLog.info('test', 'Direct database query result', { 
       directQueryResults: directQuery,

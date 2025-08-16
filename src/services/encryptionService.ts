@@ -110,7 +110,7 @@ import {
         
         // Convert wrapped data from storage format to Uint8Array
         let wrappedData: Uint8Array;
-        const rawWrappedData = userKeys.udek_wrap_appkey as any; // SQLite may return as string
+  const rawWrappedData = userKeys.udek_wrap_appkey as any;
         
         console.log('🔐 [EncryptionService] Raw wrapped data type and sample:', {
           type: typeof rawWrappedData,
@@ -122,7 +122,7 @@ import {
         });
         
         if (typeof rawWrappedData === 'string') {
-          // Handle JSON string format from SQLite
+          // Handle JSON string format if present
           if (rawWrappedData.startsWith('[') && rawWrappedData.endsWith(']')) {
             try {
               const arrayData = JSON.parse(rawWrappedData);
