@@ -3,7 +3,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { appLog } from '../auth/fileLogger';
-
+import { Version, Collaborator } from '../types';
 // Types matching frontend TypeScript interfaces
 export interface FileRef {
   assetId: string;
@@ -19,6 +19,7 @@ export interface FileRef {
 
 export interface Book {
   id: string;
+  bookId: string;
   title: string;
   subtitle?: string;
   author?: string;
@@ -32,6 +33,7 @@ export interface Book {
   genre: string;
   subgenre?: string;
   collaboratorCount: number;
+  collaborators: Collaborator[];
   featured: boolean;
   bookType: string;
   prose: string;
@@ -52,9 +54,10 @@ export interface Book {
   syncState?: string; // 'idle' | 'dirty' | 'pushing' | 'pulling' | 'conflict'
   conflictState?: string; // 'none' | 'needs_review' | 'blocked'
   updatedAt?: number;
+  versions?: Version[];
 }
 
-export interface Version {
+export interface Version1 {
   id: string;
   name: string;
   status: string; // 'DRAFT' | 'IN_REVIEW' | 'FINAL'
@@ -64,7 +67,7 @@ export interface Version {
     name: string;
     avatar: string;
   };
-  
+  chapter: Chapter;
   // Sync fields
   revLocal?: string;
   revCloud?: string;
@@ -72,6 +75,8 @@ export interface Version {
   conflictState?: string;
   updatedAt?: number;
 }
+
+
 
 export interface Chapter {
   id: string;
@@ -159,14 +164,76 @@ export interface UserKeys {
   updatedAt: number;
 }
 
-// Database record types matching Rust structs
+export type SurrealThing =
+  | string
+  | { tb: string; id: string | number | { String?: string; Number?: number } };
+
+// Database record shape returned by app_surreal.rs (BookRecord)
 export interface BookRow {
-  book_id: string;
+  // Surreal internal id (RecordId / Thing). Often "book:<id>".
+  // Optional because you might not use it directly.
+  id?: SurrealThing | null;
+
+  // Explicit app-level id if present in the record
+  book_id?: string | null;
+
+  // Required in BookRecord
   title: string;
-  author_id?: string;
-  sync_state?: string;
-  conflict_state?: string;
-  updated_at?: number;
+
+  // Option<> in Rust → can arrive as null
+  subtitle?: string | null;
+  author?: string | null;
+  author_id?: string | null;
+
+  cover_image?: string | null;
+  cover_image_ref?: FileRef | null;
+  cover_images?: string[] | null;
+
+  // Required in BookRecord
+  last_modified: string;
+
+  // Required in BookRecord
+  progress: number;
+  word_count: number;
+  genre: string;
+
+  // Optional in BookRecord
+  subgenre?: string | null;
+  collaborator_count: number;   // required in BookRecord
+  featured: boolean;            // required in BookRecord
+  book_type: string;            // required in BookRecord
+  prose: string;                // required in BookRecord
+  language: string;             // required in BookRecord
+  publisher: string;            // required in BookRecord
+  published_status: string;     // required in BookRecord
+
+  publisher_link?: string | null;
+  print_isbn?: string | null;
+  ebook_isbn?: string | null;
+  publisher_logo?: string | null;
+
+  // Required in BookRecord
+  synopsis: string;
+
+  description?: string | null;
+
+  // Optional sync/sharing fields
+  is_shared?: boolean | null;
+  rev_local?: string | null;
+  rev_cloud?: string | null;
+  sync_state?: string | null;
+  conflict_state?: string | null;
+  updated_at?: number | null;
+
+  // NEW: free-form JSON array coming from SurrealDB
+  // (serde_json::Value[] in Rust → any[] in TS)
+  versions?: any[] | null;
+
+  // Present in your Rust BookRecord (Vec<String>) — keep if you need them
+  characters?: string[] | null;
+  worlds?: string[] | null;
+
+  // Allow extra props just in case
   [key: string]: any;
 }
 
@@ -226,9 +293,46 @@ export async function initializeDatabase(dataDir: string): Promise<void> {
 // Book operations
 export async function getUserBooks(userId: string): Promise<Book[]> {
   try {
-    const books = await invoke<Book[]>('get_user_books', { userId });
+    const books = await invoke<BookRow[]>('get_user_books', { user_Id: userId });
     appLog.info('dal', 'Retrieved user books', { userId, count: books.length });
-    return books;
+    let formattedBooks: Book[] = books.map(book => ({
+      id: book.book_id ?? '',
+      bookId: book.book_id ?? '',
+      title: book.title,
+      subtitle: book.subtitle ?? undefined,
+      author: book.author ?? undefined,
+      authorId: book.author_id ?? undefined,
+      coverImage: book.cover_image ?? undefined,
+      coverImageRef: book.cover_image_ref ?? undefined,
+      coverImages: book.cover_images ?? undefined,
+      lastModified: book.last_modified,
+      progress: book.progress,
+      wordCount: book.word_count,
+      genre: book.genre,
+      subgenre: book.subgenre ?? undefined,
+      collaboratorCount: book.collaborator_count,
+      featured: book.featured,
+      bookType: book.book_type,
+      prose: book.prose,
+      language: book.language,
+      publisher: book.publisher,
+      publishedStatus: book.published_status,
+      publisherLink: book.publisher_link ?? undefined,
+      printISBN: book.print_isbn ?? undefined,
+      ebookISBN: book.ebook_isbn ?? undefined,
+      publisherLogo: book.publisher_logo ?? undefined,
+      synopsis: book.synopsis,
+      description: book.description ?? undefined,
+      isShared: book.is_shared ?? undefined,
+      revLocal: book.rev_local ?? undefined,
+      revCloud: book.rev_cloud ?? undefined,
+      syncState: book.sync_state ?? undefined,
+      conflictState: book.conflict_state ?? undefined,
+      updatedAt: book.updated_at ?? undefined,
+      versions: book.versions ?? [],
+    }));
+
+    return formattedBooks
   } catch (error) {
     appLog.error('dal', 'Failed to get user books', { userId, error: String(error) });
     throw error;
@@ -237,7 +341,7 @@ export async function getUserBooks(userId: string): Promise<Book[]> {
 
 export async function getBook(bookId: string, userId: string): Promise<Book | null> {
   try {
-    const book = await invoke<Book | null>('get_book', { bookId, userId });
+    const book = await invoke<Book | null>('get_book', { book_Id: bookId, user_Id: userId });
     appLog.info('dal', 'Retrieved book', { bookId, userId, found: !!book });
     return book;
   } catch (error) {
@@ -270,7 +374,7 @@ export async function updateBook(book: Book): Promise<Book> {
 
 export async function deleteBook(bookId: string, userId: string): Promise<void> {
   try {
-    await invoke('delete_book', { bookId, userId });
+    await invoke('app_delete_book_by_user', { bookId, userId });
     appLog.info('dal', 'Deleted book', { bookId, userId });
   } catch (error) {
     appLog.error('dal', 'Failed to delete book', { bookId, userId, error: String(error) });

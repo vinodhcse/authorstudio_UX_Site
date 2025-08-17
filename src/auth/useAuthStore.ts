@@ -42,18 +42,25 @@ export interface AuthState {
   appKey: CryptoKey | null;
   accessToken: string | null;
   accessTokenExp: number | null;
+  currentSession: SessionRow | null; // Add current session to state
   
   // Actions
   signup: (name: string, email: string, password: string) => Promise<{ requiresEmailVerification?: boolean }>;
   verifyEmail: (email: string, code: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   unlock: (passphrase: string) => Promise<void>;
+  lock: () => Promise<void>;
   ensureAccessToken: () => Promise<string>;
   refreshSubscription: () => Promise<void>;
   logout: () => Promise<void>;
   clearLocalData: () => Promise<void>; // Add clear data function
   setOnlineStatus: (online: boolean) => void;
   clearInMemoryData: () => void;
+  
+  // Session management helpers
+  updateSessionInContext: (updates: Partial<SessionRow>) => void;
+  saveSessionToDatabase: () => Promise<void>;
+  refreshSessionFromDatabase: () => Promise<SessionRow | null>;
   
   // Internal helpers
   _setUser: (user: User | null) => void;
@@ -77,6 +84,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   appKey: null,
   accessToken: null,
   accessTokenExp: null,
+  currentSession: null,
 
   // Set user
   _setUser: (user) => {
@@ -111,6 +119,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // Set online status
   setOnlineStatus: (isOnline) => {
     set({ isOnline });
+  },
+
+  // Session management helpers
+  updateSessionInContext: (updates) => {
+    const { currentSession } = get();
+    if (currentSession) {
+      const updatedSession = { ...currentSession, ...updates };
+      set({ currentSession: updatedSession });
+    }
+  },
+
+  saveSessionToDatabase: async () => {
+    const { currentSession } = get();
+    if (currentSession) {
+      await upsertSessionRow(currentSession);
+    }
+  },
+
+  refreshSessionFromDatabase: async () => {
+    const session = await getSessionRow();
+    set({ currentSession: session });
+    return session;
   },
 
   // Signup (online only)
@@ -239,12 +269,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           const encryptedRefreshToken = await encryptString(authResponse.refreshToken, appKey);
           console.log('✅ [LOGIN] New refresh token encrypted for sealed session');
           
-          // Update session with new tokens and expiry
-          await upsertSessionRow({
-            refresh_token_enc: pack(encryptedRefreshToken.iv, encryptedRefreshToken.data),
-            access_exp: Date.now() + 15 * 60 * 1000, // 15 minutes
-            updated_at: Date.now(),
-          });
+          // Get the current session state to update it properly
+          const currentSessionState = await getSessionRow();
+          if (currentSessionState) {
+            // Update session with new tokens and expiry
+            const updatedSession: SessionRow = {
+              ...currentSessionState,
+              refresh_token_enc: pack(encryptedRefreshToken.iv, encryptedRefreshToken.data),
+              access_exp: Date.now() + 15 * 60 * 1000, // 15 minutes
+              updated_at: Date.now(),
+            };
+            await upsertSessionRow(updatedSession);
+            // Store updated session in context
+            set({ currentSession: updatedSession });
+          }
           
           // Set user, app key, and access token in memory
           console.log('💾 [LOGIN] Setting user, app key, and token in memory state...');
@@ -340,6 +378,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       };
       
       await upsertSessionRow(sessionData);
+      // Store session in context for future updates
+      set({ currentSession: sessionData as SessionRow });
       
       // Optional: Register device with server
       try {
@@ -379,20 +419,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       _setAppKey, 
       _setAccessToken, 
       _setLoading,
-      isOnline 
+      isOnline,
+      updateSessionInContext,
+      saveSessionToDatabase
     } = get();
     
     try {
       _setLoading(true);
       console.log('🔓 [UNLOCK] Starting unlock process...');
       
-  // Get session from local SurrealDB
+  // Get session from local SurrealDB and store in context
   console.log('📋 [UNLOCK] Retrieving session from local store...');
       const session = await getSessionRow();
       if (!session) {
   console.error('❌ [UNLOCK] No session found');
         throw new Error('No session found. Please login first.');
       }
+      
+      // Store session in context for future updates
+      set({ currentSession: session });
       
       console.log('✅ [UNLOCK] Session found:', {
         user_id: session.user_id,
@@ -403,8 +448,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       // Check if session is sealed
       if (session.session_state === 'sealed') {
-        console.error('🔒 [UNLOCK] Session is sealed, requires online login');
-        throw new Error('Session is sealed. Please log in online to unseal your data.');
+        console.log('🔒 [UNLOCK] Session is sealed, attempting to unseal...');
+        // For lock scenario testing: allow unsealing if we have all necessary data
+        if (!session.appkey_wrap_salt || !session.appkey_probe || !session.appkey_wrap_iters) {
+          console.error('🔒 [UNLOCK] Session is sealed and missing encryption data, requires online login');
+          throw new Error('Session is sealed and missing encryption data. Please log in online to restore your data.');
+        }
+        console.log('✅ [UNLOCK] Sealed session has encryption data, proceeding with unlock...');
       }
       
       console.log('🔍 [UNLOCK] Session data format verification:', {
@@ -498,23 +548,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           const refreshResponse = await apiClient.refreshToken({ refreshToken });
           _setAccessToken(refreshResponse.token, Date.now() + 15 * 60 * 1000);
           
-          // Update session with new access token expiry
-          await upsertSessionRow({
-            access_exp: Date.now() + 15 * 60 * 1000,
+          // Update session in context with new access token expiry
+          updateSessionInContext({
+            access_exp: Date.now() + 15 * 60 * 1000, // 15 minutes
             updated_at: Date.now(),
           });
+
+          // Save complete session to database
+          await saveSessionToDatabase();
           
           console.log('✅ [UNLOCK] Access token refreshed successfully');
           
           // Update subscription info
           try {
             const subscription = await apiClient.getSubscription();
-            await upsertSessionRow({
+            updateSessionInContext({
               subscription_status: subscription.status,
               subscription_expires_at: subscription.expiresAt,
               subscription_last_checked_at: Date.now(),
               updated_at: Date.now(),
             });
+            await saveSessionToDatabase();
           } catch (error) {
             console.warn('Failed to refresh subscription:', error);
           }
@@ -528,6 +582,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         console.log('🔓 [UNLOCK] Offline mode - no access token available');
         // In offline mode, we don't have an access token
         // But we still have the user authenticated locally
+      }
+      
+      // If we successfully unlocked a sealed session, update its state to active
+      if (session.session_state === 'sealed') {
+        console.log('🔓 [UNLOCK] Updating sealed session state to active...');
+        updateSessionInContext({
+          session_state: 'active',
+          updated_at: Date.now(),
+        });
+        await saveSessionToDatabase();
+        console.log('✅ [UNLOCK] Session state updated to active');
       }
       
     } catch (error) {
@@ -552,7 +617,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       appKey, 
       isOnline,
       _setAccessToken,
-      _setUser
+      _setUser,
+      currentSession,
+      refreshSessionFromDatabase,
+      updateSessionInContext,
+      saveSessionToDatabase
     } = get();
     
     console.log('🔍 [ENSURE_TOKEN] Checking access token validity...', {
@@ -584,9 +653,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           throw new Error('App key not available. Please unlock first.');
         }
         
-        // Get session and refresh token
-        console.log('🔍 [ENSURE_TOKEN] Getting session and refresh token...');
-        const session = await getSessionRow();
+        // Get session - use cached version or refresh from database
+        console.log('🔍 [ENSURE_TOKEN] Getting session...');
+        const session = currentSession || await refreshSessionFromDatabase();
         if (!session?.refresh_token_enc) {
           console.error('❌ [ENSURE_TOKEN] No refresh token in session');
           throw new Error('No refresh token available');
@@ -635,11 +704,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           });
         }
         
-        // Update session
-        await upsertSessionRow({
+        // Update session in context and save to database
+        updateSessionInContext({
           access_exp: newExpiry,
           updated_at: Date.now(),
         });
+        await saveSessionToDatabase();
         
         console.log('✅ [ENSURE_TOKEN] Token refresh complete');
         return response.token;
@@ -658,7 +728,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   // Refresh subscription info
   refreshSubscription: async () => {
-    const { isOnline } = get();
+    const { isOnline, updateSessionInContext, saveSessionToDatabase } = get();
     
     if (!isOnline) {
       throw new Error('Cannot refresh subscription while offline');
@@ -669,12 +739,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       const subscription = await apiClient.getSubscription();
       
-      await upsertSessionRow({
+      updateSessionInContext({
         subscription_status: subscription.status,
         subscription_expires_at: subscription.expiresAt,
         subscription_last_checked_at: Date.now(),
         updated_at: Date.now(),
       });
+      await saveSessionToDatabase();
       
     } catch (error) {
       console.error('Subscription refresh failed:', error);
@@ -699,6 +770,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       _setUser(null);
       _setAppKey(null);
       _setAccessToken(null);
+      set({ currentSession: null });
       
       // Clear API client token
       await appLog.info('logout', 'Clearing API client access token...');
@@ -715,10 +787,46 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       _setUser(null);
       _setAppKey(null);
       _setAccessToken(null);
+      set({ currentSession: null });
       apiClient.clearAccessToken();
       
       // Reload to show login page
       window.location.reload();
+    }
+  },
+
+  // Lock app (seal session but stay on the same page - for testing unlock scenario)
+  lock: async () => {
+    const { _setAppKey, _setAccessToken, user } = get();
+    
+    try {
+      await appLog.info('lock', `Starting lock process for user: ${user?.email}`);
+      await appLog.info('lock', 'Sealing session to preserve encrypted data...');
+      
+      // Seal session instead of clearing it
+      await sealSession();
+      await appLog.info('lock', 'Session successfully sealed');
+      
+      // Clear in-memory state but keep user info for display
+      await appLog.info('lock', 'Clearing in-memory authentication state...');
+      _setAppKey(null);
+      _setAccessToken(null);
+      
+      // Clear API client token
+      await appLog.info('lock', 'Clearing API client access token...');
+      apiClient.clearAccessToken();
+      
+      await appLog.success('lock', 'Lock complete - session sealed, data preserved');
+      
+      // Note: Unlike logout, we don't reload the page, allowing unlock testing
+      
+    } catch (error) {
+      await appLog.error('lock', `Lock failed: ${error instanceof Error ? error.message : 'Unknown error'}`, error);
+      // If there's an error, still try to clear in-memory state
+      _setAppKey(null);
+      _setAccessToken(null);
+      apiClient.clearAccessToken();
+      throw error; // Re-throw so UI can handle the error
     }
   },
 
@@ -751,10 +859,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Clear all local data
       await clearAllLocalData();
       
-      // Reset in-memory state
+      // Reset in-memory state including session
       _setUser(null);
       _setAppKey(null);
       _setAccessToken(null);
+      set({ currentSession: null });
       
       // Clear API client
       apiClient.clearAccessToken();

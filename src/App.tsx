@@ -23,6 +23,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 // Import new authentication system
 import { AuthGate } from './auth';
 import { BookContextProvider, useBookContext } from './contexts/BookContext';
+import { useGlobalKeyboard } from './hooks/useGlobalKeyboard';
 
 // Component that uses BookContext to provide authored books to MyBooksView
 const MyBooksWithContext: React.FC = () => {
@@ -65,6 +66,9 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<Theme>('dark');
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [isDbClientOpen, setDbClientOpen] = useState(false);
+
+  // Enable global keyboard shortcuts
+  useGlobalKeyboard();
 
   useEffect(() => {
     const applyTheme = (t: Theme) => {

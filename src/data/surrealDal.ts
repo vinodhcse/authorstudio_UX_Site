@@ -146,7 +146,7 @@ export async function getUserBooks(userId: string): Promise<BookRow[]> {
 }
 
 export async function getBook(bookId: string, userId: string): Promise<BookRow | null> {
-  const row = await invoke<BookRow | null>('book_get', { bookId, ownerUserId: userId });
+  const row = await invoke<BookRow | null>('app_get_book', { bookId, userId });
   return row;
 }
 
@@ -178,12 +178,12 @@ export async function getConflictedBooks(userId: string): Promise<BookRow[]> {
 }
 
 // Versions
-export async function getVersion(versionId: string, userId: string): Promise<VersionRow | null> {
-  return await invoke<VersionRow | null>('version_get', { versionId, ownerUserId: userId });
+export async function getVersion(versionId: string): Promise<VersionRow | null> {
+  return await invoke<VersionRow | null>('app_get_version_by_id', { versionId });
 }
 
-export async function getVersionsByBook(bookId: string, userId: string): Promise<VersionRow[]> {
-  return await invoke<VersionRow[]>('versions_by_book', { bookId, ownerUserId: userId });
+export async function getVersionsByBook(bookId: string): Promise<VersionRow[]> {
+  return await invoke<VersionRow[]>('app_get_versions_by_book', { bookId });
 }
 
 export async function putVersion(data: VersionRow): Promise<void> {
@@ -210,16 +210,16 @@ export async function updateVersionContentData(versionId: string, userId: string
 }
 
 // Chapters
-export async function getChapter(chapterId: string, userId: string): Promise<ChapterRow | null> {
-  return await invoke<ChapterRow | null>('chapter_get', { chapterId, ownerUserId: userId });
+export async function getChapter(chapterId: string): Promise<ChapterRow | null> {
+  return await invoke<ChapterRow | null>('app_get_chapter_by_id', { chapterId });
 }
 
 export async function putChapter(data: ChapterRow): Promise<void> {
   await invoke('chapter_put', { row: data });
 }
 
-export async function getChaptersByVersion(bookId: string, versionId: string, userId: string): Promise<ChapterRow[]> {
-  return await invoke<ChapterRow[]>('chapters_by_version', { bookId, versionId, ownerUserId: userId });
+export async function getChaptersByVersion(bookId: string, versionId: string): Promise<ChapterRow[]> {
+  return await invoke<ChapterRow[]>('app_get_chapters_by_version', { bookId, versionId });
 }
 
 export async function getDirtyChapters(userId: string): Promise<ChapterRow[]> {
@@ -235,16 +235,16 @@ export async function updateChapterConflictState(chapterId: string, userId: stri
 }
 
 // Scenes
-export async function getScene(sceneId: string, userId: string): Promise<SceneRow | null> {
-  return await invoke<SceneRow | null>('scene_get', { sceneId, ownerUserId: userId });
+export async function getScene(sceneId: string): Promise<SceneRow | null> {
+  return await invoke<SceneRow | null>('app_get_scene_by_id', { sceneId });
 }
 
 export async function putScene(data: SceneRow): Promise<void> {
   await invoke('scene_put', { row: data });
 }
 
-export async function getScenesByBook(bookId: string, userId: string): Promise<SceneRow[]> {
-  return await invoke<SceneRow[]>('scenes_by_book', { bookId, ownerUserId: userId });
+export async function getScenesByBook(bookId: string): Promise<SceneRow[]> {
+  return await invoke<SceneRow[]>('app_get_scenes_by_book', { bookId });
 }
 
 export async function getDirtyScenes(userId: string): Promise<SceneRow[]> {
@@ -359,7 +359,7 @@ export async function syncChaptersToVersionData(
   versionId: string,
   userId: string
 ): Promise<void> {
-  const chapterRows = await getChaptersByVersion(bookId, versionId, userId);
+  const chapterRows = await getChaptersByVersion(bookId, versionId);
   const chapterMetadata = chapterRows
     .map((row) => ({
       id: row.chapter_id,
@@ -410,7 +410,7 @@ export async function syncChaptersToVersionData(
 }
 
 export async function ensureDefaultVersion(bookId: string, userId: string): Promise<string> {
-  const versions = await getVersionsByBook(bookId, userId);
+  const versions = await getVersionsByBook(bookId);
   if (versions.length > 0) {
     await appLog.info('dal', 'Using existing version', { bookId, versionId: versions[0].version_id });
     return versions[0].version_id;
@@ -439,7 +439,7 @@ export async function ensureDefaultVersion(bookId: string, userId: string): Prom
 
 export async function ensureVersionInDatabase(versionId: string, bookId: string, userId: string): Promise<boolean> {
   try {
-    const v = await getVersion(versionId, userId);
+    const v = await getVersion(versionId);
     if (v) {
       await appLog.info('dal', 'Version exists', { versionId });
       return true;
@@ -481,7 +481,7 @@ export async function createChapterAtomic(row: ChapterRow, userId: string): Prom
 }
 
 export async function deleteChapterAtomic(chapterId: string, versionId: string, userId: string): Promise<void> {
-  const row = await getChapter(chapterId, userId);
+  const row = await getChapter(chapterId);
   const bookId = row?.book_id;
   // Delete from Surreal
   await invoke('surreal_query', {

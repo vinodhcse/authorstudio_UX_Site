@@ -260,7 +260,7 @@ export async function updateBook(book: Book): Promise<Book> {
 
 export async function deleteBook(bookId: string, userId: string): Promise<void> {
   try {
-    await invoke('delete_book', { bookId, userId });
+    await invoke('app_delete_book_by_user', { bookId, userId });
     appLog.info('dal', 'Deleted book', { bookId });
   } catch (error) {
     appLog.error('dal', 'Failed to delete book', { bookId, error: String(error) });
@@ -271,7 +271,7 @@ export async function deleteBook(bookId: string, userId: string): Promise<void> 
 // Session operations
 export async function getSession(): Promise<Session | null> {
   try {
-    const session = await invoke<Session | null>('get_session');
+    const session = await invoke<Session | null>('app_get_session');
     appLog.info('dal', 'Retrieved session', { found: !!session });
     return session;
   } catch (error) {
@@ -282,7 +282,7 @@ export async function getSession(): Promise<Session | null> {
 
 export async function saveSession(session: Session): Promise<void> {
   try {
-    await invoke('save_session', { session });
+    await invoke('app_save_session', { session });
     appLog.info('dal', 'Session saved', { userId: session.userId });
   } catch (error) {
     appLog.error('dal', 'Failed to save session', { error: String(error) });
@@ -292,7 +292,7 @@ export async function saveSession(session: Session): Promise<void> {
 
 export async function clearSession(): Promise<void> {
   try {
-    await invoke('clear_session');
+    await invoke('app_clear_session');
     appLog.info('dal', 'Session cleared');
   } catch (error) {
     appLog.error('dal', 'Failed to clear session', { error: String(error) });
@@ -303,7 +303,7 @@ export async function clearSession(): Promise<void> {
 // User keys operations
 export async function getUserKeys(userId: string): Promise<UserKeys | null> {
   try {
-    const userKeys = await invoke<UserKeys | null>('get_user_keys', { userId });
+    const userKeys = await invoke<UserKeys | null>('app_get_user_keys', { userId });
     appLog.info('dal', 'Retrieved user keys', { userId, found: !!userKeys });
     return userKeys;
   } catch (error) {
@@ -314,7 +314,7 @@ export async function getUserKeys(userId: string): Promise<UserKeys | null> {
 
 export async function saveUserKeys(userKeys: UserKeys): Promise<void> {
   try {
-    await invoke('save_user_keys', { userKeys });
+    await invoke('app_save_user_keys', { userKeys });
     appLog.info('dal', 'User keys saved', { userId: userKeys.userId });
   } catch (error) {
     appLog.error('dal', 'Failed to save user keys', { userId: userKeys.userId, error: String(error) });

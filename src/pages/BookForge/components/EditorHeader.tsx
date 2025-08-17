@@ -1012,7 +1012,7 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
 }) => {
     const [isChapterSettingsOpen, setChapterSettingsOpen] = useState(false);
     const { openTool, broadcastThemeChange } = useToolWindowStore();
-    const { logout } = useAuthStore();
+    const { logout, lock } = useAuthStore();
 
     const handleOpenTool = async (toolName: string) => {
         try {
@@ -1036,6 +1036,16 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
             // No need to navigate as logout will reload the page
         } catch (error) {
             await appLog.error('editor-header', 'Logout failed', error);
+        }
+    };
+
+    const handleLock = async () => {
+        try {
+            await appLog.info('editor-header', 'Starting lock process...');
+            await lock();
+            await appLog.success('editor-header', 'Lock successful');
+        } catch (error) {
+            await appLog.error('editor-header', 'Lock failed', error);
         }
     };
 
@@ -1129,6 +1139,12 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
 
                             <DropdownMenu trigger={<img src="https://picsum.photos/seed/user/40/40" alt="User Avatar" className="w-9 h-9 rounded-full cursor-pointer ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-gray-900 ring-transparent hover:ring-purple-500 transition-all"/>}>
                                 <a href="#" className="block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">My Account</a>
+                                <button 
+                                    onClick={handleLock}
+                                    className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                                >
+                                    Lock App
+                                </button>
                                 <button 
                                     onClick={handleLogout}
                                     className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"

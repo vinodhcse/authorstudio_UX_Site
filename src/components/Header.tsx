@@ -196,7 +196,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, books }) => {
   const location = useLocation();
   const params = useParams<{ bookId?: string }>();
-  const { user, logout } = useAuthStore();
+  const { user, logout, lock } = useAuthStore();
   
   const isBookDetailsPage = location.pathname.startsWith('/book/');
   const book = isBookDetailsPage && params.bookId ? books.find(b => b.id === params.bookId) : null;
@@ -209,6 +209,16 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
       // No need to navigate as logout will reload the page
     } catch (error) {
       await appLog.error('header', 'Logout failed', error);
+    }
+  };
+
+  const handleLock = async () => {
+    try {
+      await appLog.info('header', 'Starting lock process...');
+      await lock();
+      await appLog.success('header', 'Lock successful');
+    } catch (error) {
+      await appLog.error('header', 'Lock failed', error);
     }
   };
 
@@ -292,6 +302,12 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
                   <div className="text-xs text-gray-400 dark:text-gray-500">{user?.email}</div>
                 </div>
                 <a href="#" className="block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">My Account</a>
+                <button 
+                  onClick={handleLock}
+                  className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                >
+                  Lock App
+                </button>
                 <button 
                   onClick={handleLogout}
                   className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"

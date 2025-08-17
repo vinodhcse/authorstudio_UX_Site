@@ -62,7 +62,7 @@ export async function getUserBooks(userId: string): Promise<BookRow[]> {
 export async function getBook(bookId: string, userId?: string): Promise<BookRow | null> {
   try {
     const ownerUserId = userId || getCurrentUserId();
-    const book = await invoke<BookRow | null>('book_get', { bookId, ownerUserId });
+    const book = await invoke<BookRow | null>('app_get_book', { bookId, userId: ownerUserId });
     appLog.info('main-dal', 'Retrieved book', { bookId, found: !!book });
     return book;
   } catch (error) {
@@ -123,10 +123,9 @@ export async function deleteBook(bookId: string, userId?: string): Promise<void>
 }
 
 // Versions
-export async function getVersionsByBook(bookId: string, userId?: string): Promise<VersionRow[]> {
+export async function getVersionsByBook(bookId: string): Promise<VersionRow[]> {
   try {
-    const ownerUserId = userId || getCurrentUserId();
-    const versions = await invoke<VersionRow[]>('versions_by_book', { bookId, ownerUserId });
+    const versions = await invoke<VersionRow[]>('app_get_versions_by_book', { bookId });
     appLog.info('main-dal', 'Retrieved versions for book', { bookId, count: versions.length });
     return versions;
   } catch (error) {
@@ -135,10 +134,9 @@ export async function getVersionsByBook(bookId: string, userId?: string): Promis
   }
 }
 
-export async function getVersion(versionId: string, userId?: string): Promise<VersionRow | null> {
+export async function getVersion(versionId: string): Promise<VersionRow | null> {
   try {
-    const ownerUserId = userId || getCurrentUserId();
-    const version = await invoke<VersionRow | null>('version_get', { versionId, ownerUserId });
+    const version = await invoke<VersionRow | null>('app_get_version_by_id', { versionId });
     appLog.info('main-dal', 'Retrieved version', { versionId, found: !!version });
     return version;
   } catch (error) {
@@ -193,10 +191,9 @@ export async function createVersion(bookId: string, title: string, userId?: stri
 }
 
 // Chapters
-export async function getChaptersByVersion(bookId: string, versionId: string, userId?: string): Promise<ChapterRow[]> {
+export async function getChaptersByVersion(bookId: string, versionId: string): Promise<ChapterRow[]> {
   try {
-    const ownerUserId = userId || getCurrentUserId();
-    const chapters = await invoke<ChapterRow[]>('chapters_by_version', { bookId, versionId, ownerUserId });
+    const chapters = await invoke<ChapterRow[]>('app_get_chapters_by_version', { bookId, versionId });
     appLog.info('main-dal', 'Retrieved chapters for version', { bookId, versionId, count: chapters.length });
     return chapters;
   } catch (error) {
@@ -205,10 +202,9 @@ export async function getChaptersByVersion(bookId: string, versionId: string, us
   }
 }
 
-export async function getChapter(chapterId: string, userId?: string): Promise<ChapterRow | null> {
+export async function getChapter(chapterId: string): Promise<ChapterRow | null> {
   try {
-    const ownerUserId = userId || getCurrentUserId();
-    const chapter = await invoke<ChapterRow | null>('chapter_get', { chapterId, ownerUserId });
+    const chapter = await invoke<ChapterRow | null>('app_get_chapter_by_id', { chapterId });
     appLog.info('main-dal', 'Retrieved chapter', { chapterId, found: !!chapter });
     return chapter;
   } catch (error) {
@@ -277,10 +273,9 @@ export async function deleteChapter(chapterId: string, _userId?: string): Promis
 }
 
 // Scenes
-export async function getScenesByBook(bookId: string, userId?: string): Promise<SceneRow[]> {
+export async function getScenesByBook(bookId: string): Promise<SceneRow[]> {
   try {
-    const ownerUserId = userId || getCurrentUserId();
-    const scenes = await invoke<SceneRow[]>('scenes_by_book', { bookId, ownerUserId });
+    const scenes = await invoke<SceneRow[]>('app_get_scenes_by_book', { bookId });
     appLog.info('main-dal', 'Retrieved scenes for book', { bookId, count: scenes.length });
     return scenes;
   } catch (error) {
@@ -289,10 +284,9 @@ export async function getScenesByBook(bookId: string, userId?: string): Promise<
   }
 }
 
-export async function getScene(sceneId: string, userId?: string): Promise<SceneRow | null> {
+export async function getScene(sceneId: string): Promise<SceneRow | null> {
   try {
-    const ownerUserId = userId || getCurrentUserId();
-    const scene = await invoke<SceneRow | null>('scene_get', { sceneId, ownerUserId });
+    const scene = await invoke<SceneRow | null>('app_get_scene_by_id', { sceneId });
     appLog.info('main-dal', 'Retrieved scene', { sceneId, found: !!scene });
     return scene;
   } catch (error) {
@@ -314,7 +308,7 @@ export async function putScene(sceneRow: SceneRow): Promise<void> {
 // Utility functions for compatibility with existing DAL
 export async function ensureDefaultVersion(bookId: string, userId?: string): Promise<VersionRow> {
   try {
-    const versions = await getVersionsByBook(bookId, userId);
+    const versions = await getVersionsByBook(bookId);
     
     // Find current version or create default
     let currentVersion = versions.find(v => v.is_current === 1);
@@ -391,10 +385,9 @@ export async function deleteChapterAtomic(chapterId: string, userId?: string): P
   return deleteChapter(chapterId, userId);
 }
 
-export async function bumpChapterMetadataAtomic(chapterId: string, userId?: string): Promise<void> {
+export async function bumpChapterMetadataAtomic(chapterId: string): Promise<void> {
   try {
-    const ownerUserId = userId || getCurrentUserId();
-    const chapter = await getChapter(chapterId, ownerUserId);
+    const chapter = await getChapter(chapterId);
     
     if (chapter) {
       chapter.updated_at = Date.now();
