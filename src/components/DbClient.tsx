@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { appLog } from '../auth/fileLogger';
 import { useAuthStore } from '../auth/useAuthStore';
 import * as dal from '../data/dal'; // Import the new DAL
+import CoverPicker from './CoverPicker';
 
 interface DbClientProps {
   open: boolean;
@@ -190,6 +191,35 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
         };
       } catch (err) {
         results.assets = { error: String(err), status: 'Failed to retrieve assets' };
+      }
+
+      // Test 6.1: SimpleAssetService File Operations Test
+      appLog.info('db-validation', 'Testing simplified asset file operations...');
+      try {
+        // Test file path creation
+        const testBookId = 'test_book_123';
+        const testHash = 'test_hash_456';
+        const testFileName = 'test_cover.jpg';
+        
+        // Test the Tauri commands that SimpleAssetService uses
+        const filePathResult = await invoke<string>('create_file_path', { 
+          relativePath: `books/${testBookId}/files/${testHash}`,
+          fileName: testFileName
+        });
+        
+        results.simpleAssets = {
+          filePathCreation: 'SUCCESS',
+          testPath: filePathResult,
+          status: 'SimpleAssetService file operations ready'
+        };
+        
+        appLog.info('db-validation', 'SimpleAssetService file path test successful', { filePathResult });
+      } catch (err) {
+        results.simpleAssets = { 
+          error: String(err), 
+          status: 'Failed to test SimpleAssetService file operations' 
+        };
+        appLog.error('db-validation', 'SimpleAssetService test failed', { error: String(err) });
       }
 
       // Test 7: Database Schema Validation
@@ -436,6 +466,61 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
     }
   };
 
+  // Cover Upload Test Function
+  const testCoverUpload = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      // Import SimpleAssetService for testing
+      const { SimpleAssetService } = await import('../services/SimpleAssetService');
+      
+      // Create a test image file (1x1 red pixel PNG)
+      const testImageData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChAGAWWjOwgAAAABJRU5ErkJggg==';
+      
+      // Convert data URL to File object
+      const response = await fetch(testImageData);
+      const blob = await response.blob();
+      const testFile = new File([blob], 'test-cover.png', { type: 'image/png' });
+      
+      const testBookId = 'test_book_cover_' + Date.now();
+      
+      appLog.info('db-client', 'Starting cover upload test', { testBookId, fileName: testFile.name });
+      
+      // Test the simplified cover upload
+      const result = await SimpleAssetService.uploadCover(testFile, testBookId);
+      
+      // Test loading the asset back
+      const loadedAsset = await SimpleAssetService.loadAssetForDisplay(result.assetId);
+      
+      setRows([{
+        testType: 'Cover Upload Test',
+        success: true,
+        assetId: result.assetId,
+        fileRef: result.fileRef,
+        dataUrlLength: result.dataUrl.length,
+        loadedAssetLength: loadedAsset ? loadedAsset.length : 0,
+        message: 'Cover upload and load test successful'
+      }]);
+      
+      appLog.success('db-client', 'Cover upload test completed successfully', { 
+        assetId: result.assetId,
+        testBookId 
+      });
+      
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Cover upload test failed', { error: String(err) });
+      setRows([{
+        testType: 'Cover Upload Test',
+        success: false,
+        error: String(err),
+        message: 'Cover upload test failed'
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   // App Database Test Functions
   const appCreateSession = async () => {
@@ -549,6 +634,121 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
     }
   };
 
+  // File Asset Test Functions
+  const testCreateFileAsset = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const fileAsset = {
+        file_asset_id: 'test_asset_' + Date.now(),
+        sha256: 'test_hash_' + Date.now(),
+        ext: 'jpg',
+        mime: 'image/jpeg',
+        size_bytes: 12345,
+        width: 300,
+        height: 400,
+        local_path: 'test/path/image.jpg',
+        status: 'local_only',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const res = await invoke<any>('app_create_file_asset', { fileAsset });
+      setRows([{ message: 'File asset created', result: res }]);
+      appLog.info('db-client', 'File asset created', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to create file asset', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testGetFileAssetByHash = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_get_file_asset_by_sha256', { sha256: 'test_hash_' + Date.now() });
+      setRows([{ message: 'File asset retrieved by hash', result: res }]);
+      appLog.info('db-client', 'File asset retrieved by hash', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get file asset by hash', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testGetFileAssetsByStatus = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_get_file_assets_by_status', { status: 'local_only' });
+      setRows(Array.isArray(res) ? res : [res]);
+      appLog.info('db-client', 'File assets retrieved by status', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get file assets by status', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testDeleteFileAsset = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const fileAssetId = 'test_asset_' + Date.now();
+      const res = await invoke<any>('app_delete_file_asset', { fileAssetId });
+      setRows([{ message: 'File asset deleted', result: res }]);
+      appLog.info('db-client', 'File asset deleted', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to delete file asset', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testDeleteAllFileAssets = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_delete_all_file_assets');
+      setRows([{ message: 'All file assets deleted', result: res }]);
+      appLog.info('db-client', 'All file assets deleted', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to delete all file assets', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testGetPendingAssets = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const { AssetService } = await import('../services/AssetService');
+      const pendingAssets = await AssetService.getPendingAssets();
+      setRows(pendingAssets.map(asset => ({
+        message: 'Pending Asset',
+        result: {
+          id: asset.id,
+          local_path: asset.local_path,
+          status: asset.status,
+          mime: asset.mime,
+          size_bytes: asset.size_bytes
+        }
+      })));
+      appLog.info('db-client', 'Pending assets retrieved', { count: pendingAssets.length, assets: pendingAssets });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get pending assets', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Main Database Test Functions
   const mainCreateBook = async () => {
     setError(null);
@@ -639,6 +839,72 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
               >
                 Delete All App Books
               </button>
+            </div>
+
+            <div className="mb-2 mt-4 text-xs text-gray-500">File Asset System</div>
+            <div className="space-y-2">
+              <button
+                onClick={testCreateFileAsset}
+                className="w-full p-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+              >
+                Create Test File Asset
+              </button>
+              <button
+                onClick={testGetFileAssetByHash}
+                className="w-full p-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+              >
+                Get File Asset by Hash
+              </button>
+              <button
+                onClick={testGetFileAssetsByStatus}
+                className="w-full p-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+              >
+                Get Assets by Status
+              </button>
+              <button
+                onClick={testDeleteFileAsset}
+                className="w-full p-2 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete File Asset
+              </button>
+              <button
+                onClick={testDeleteAllFileAssets}
+                className="w-full p-2 text-xs bg-red-700 text-white rounded hover:bg-red-800"
+              >
+                Delete All File Assets
+              </button>
+              <button
+                onClick={testGetPendingAssets}
+                className="w-full p-2 text-xs bg-yellow-600 text-white rounded hover:bg-yellow-700"
+              >
+                Get Pending Assets
+              </button>
+              <button
+                onClick={testCoverUpload}
+                className="w-full p-2 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
+              >
+                🖼️ Test Cover Upload
+              </button>
+            </div>
+
+            <div className="mb-2 mt-4 text-xs text-gray-500">Cover Picker Test</div>
+            <div className="space-y-2">
+              <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded">
+                <p className="text-xs mb-2">Test cover upload with real CoverPicker component:</p>
+                <CoverPicker
+                  bookId="test_book_cover_picker"
+                  currentCoverId={undefined}
+                  onCoverChanged={(coverId) => {
+                    console.log('Cover changed to:', coverId);
+                    setRows([{ 
+                      testType: 'CoverPicker Test', 
+                      coverId,
+                      message: `Cover changed to: ${coverId}` 
+                    }]);
+                  }}
+                  className="w-full max-w-xs"
+                />
+              </div>
             </div>
 
             <div className="mb-2 text-xs text-gray-500">Test Database</div>

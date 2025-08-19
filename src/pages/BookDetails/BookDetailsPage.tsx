@@ -47,7 +47,7 @@ const BookDetailsPage: React.FC = () => {
         
         try {
             const updatedData: Partial<Book> = {
-                coverImageRef: coverId ? { assetId: coverId } as any : undefined
+                coverImageRef: coverId ? { id: coverId } as any : undefined
             };
             await updateBook(book.id, updatedData);
             console.log('Book cover updated:', book.id, coverId);

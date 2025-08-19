@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Book } from '../../../types';
 import { ChevronDownIcon } from '../../../constants';
+import { SimpleAssetService } from '../../../services/SimpleAssetService';
+import { appLog } from '../../../auth/fileLogger';
 
 // --- PREDEFINED DATA ---
 const languages = [ 'English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Russian', 'Chinese', 'Japanese', 'Korean', 'Arabic', 'Hindi', 'Other' ];
@@ -160,6 +162,51 @@ const EditBookModal: React.FC<EditBookModalProps> = ({ isOpen, onClose, book, on
     const [activeTab, setActiveTab] = useState<Tab>('details');
     const [formData, setFormData] = useState<Partial<Book>>({});
     const [subGenreOptions, setSubGenreOptions] = useState<string[]>([]);
+    const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>();
+
+    // Load cover image using SimpleAssetService (same as BookHero pattern)
+    useEffect(() => {
+        const loadCoverImage = async () => {
+            const currentCoverId = book?.coverImageRef?.assetId || (book?.coverImageRef as any)?.id;
+            
+            if (currentCoverId) {
+                try {
+                    // Use SimpleAssetService.loadAssetForDisplay (same as BookHero)
+                    const imageUrl = await SimpleAssetService.loadAssetForDisplay(currentCoverId);
+                    setCoverImageUrl(imageUrl);
+                    appLog.info('edit-book-modal', 'Resolved cover image URL', { 
+                        bookId: book?.id,
+                        coverId: currentCoverId, 
+                        urlSnippet: imageUrl ? imageUrl.slice(0, 120) : null 
+                    });
+                } catch (error) {
+                    console.warn('Failed to load cover image from assets:', error);
+                    appLog.error('edit-book-modal', 'Failed to load cover image', { 
+                        bookId: book?.id,
+                        coverId: currentCoverId, 
+                        error 
+                    });
+                    // Fallback to book.coverImage if available
+                    setCoverImageUrl(book?.coverImage);
+                    appLog.info('edit-book-modal', 'Fallback cover image used', { 
+                        bookId: book?.id,
+                        coverUrl: book?.coverImage ? String(book.coverImage).slice(0, 120) : null 
+                    });
+                }
+            } else {
+                // Use legacy cover image if no asset reference
+                setCoverImageUrl(book?.coverImage);
+                appLog.info('edit-book-modal', 'Using legacy cover image', { 
+                    bookId: book?.id,
+                    coverUrl: book?.coverImage ? String(book.coverImage).slice(0, 120) : null 
+                });
+            }
+        };
+
+        if (book && isOpen) {
+            loadCoverImage();
+        }
+    }, [book?.coverImageRef?.assetId, book?.coverImage, book?.id, isOpen]);
 
     useEffect(() => {
         if (book && isOpen) {
@@ -230,6 +277,27 @@ const EditBookModal: React.FC<EditBookModalProps> = ({ isOpen, onClose, book, on
                             <div>
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Book Details</h2>
                                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Refine the details of "{book.title}"</p>
+                            </div>
+
+                            {/* Cover Display Section */}
+                            <div className="flex justify-center py-4">
+                                <div className="relative aspect-[3/4] w-32 rounded-lg shadow-lg overflow-hidden">
+                                    {coverImageUrl ? (
+                                        <img 
+                                            src={coverImageUrl} 
+                                            alt={`${book?.title} cover`} 
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full bg-gradient-to-br from-gray-700 via-gray-900 to-black flex items-center justify-center">
+                                            <div className="text-center text-white p-2">
+                                                <div className="text-2xl font-bold mb-1">📚</div>
+                                                <div className="text-xs font-medium leading-tight">{book?.title}</div>
+                                                <div className="text-xs text-gray-300">{book?.author}</div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="flex w-full p-1 rounded-full bg-gray-200/70 dark:bg-gray-800/50">

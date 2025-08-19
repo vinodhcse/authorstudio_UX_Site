@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Book } from '../types';
-import { AssetService } from '../services/AssetService';
+import { SimpleAssetService } from '../services/SimpleAssetService';
+import { appLog } from '../auth/fileLogger';
 
 const ModalProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
     <div className="w-full bg-gray-200 dark:bg-gray-700/50 rounded-full h-2.5 overflow-hidden">
@@ -52,30 +53,47 @@ const Modal: React.FC<ModalProps> = ({ book, onClose }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const navigate = useNavigate();
 
-  // Load cover image from asset system
+  // Load cover image from asset system (same as BookHero pattern)
   useEffect(() => {
     const loadCoverImage = async () => {
-      if (book.coverImageRef?.assetId) {
+      const currentCoverId = book.coverImageRef?.assetId || (book.coverImageRef as any)?.id;
+      
+      if (currentCoverId) {
         try {
-          const fileRef = await AssetService.getFileRef(book.coverImageRef.assetId);
-          if (fileRef) {
-            // Try to get data URL for local files
-            const imageUrl = await AssetService.getLocalImageDataUrl(fileRef);
-            setCoverImageUrl(imageUrl);
-          }
+          // Use SimpleAssetService.loadAssetForDisplay (same as BookHero)
+          const imageUrl = await SimpleAssetService.loadAssetForDisplay(currentCoverId);
+          setCoverImageUrl(imageUrl);
+          appLog.info('modal', 'Resolved cover image URL', { 
+            bookId: book.id,
+            coverId: currentCoverId, 
+            urlSnippet: imageUrl ? imageUrl.slice(0, 120) : null 
+          });
         } catch (error) {
           console.warn('Failed to load cover image from assets:', error);
+          appLog.error('modal', 'Failed to load cover image', { 
+            bookId: book.id,
+            coverId: currentCoverId, 
+            error 
+          });
           // Fallback to book.coverImage if available
           setCoverImageUrl(book.coverImage);
+          appLog.info('modal', 'Fallback cover image used', { 
+            bookId: book.id,
+            coverUrl: book.coverImage ? String(book.coverImage).slice(0, 120) : null 
+          });
         }
       } else {
         // Use legacy cover image if no asset reference
         setCoverImageUrl(book.coverImage);
+        appLog.info('modal', 'Using legacy cover image', { 
+          bookId: book.id,
+          coverUrl: book.coverImage ? String(book.coverImage).slice(0, 120) : null 
+        });
       }
     };
 
     loadCoverImage();
-  }, [book.coverImageRef?.assetId, book.coverImage]);
+  }, [book.coverImageRef?.assetId, book.coverImage, book.id]);
 
   // Use resolved cover image instead of book.coverImage
   const images = [coverImageUrl, ...(book.coverImages || [])].filter(Boolean) as string[];

@@ -19,8 +19,8 @@ export interface FileRef {
   mime?: string;
   width?: number;
   height?: number;
-  remoteId?: string;
   remoteUrl?: string;
+  remoteId?: string;
   localPath?: string;
 }
 
@@ -208,6 +208,14 @@ export type CollaboratorRole = 'AUTHOR' | 'EDITOR' | 'REVIEWER' | 'ADMIN';
 
 export interface Collaborator {
   id:string;
+  avatar: string;
+  name?: string;
+  email?: string;
+  role?: CollaboratorRole;
+}
+
+export interface CollaboratorRecord {
+  user_id:string;
   avatar: string;
   name?: string;
   email?: string;

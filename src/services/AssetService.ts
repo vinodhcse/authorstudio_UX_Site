@@ -109,7 +109,7 @@ export class AssetService {
 
         return {
           ...this.assetToFileRef(existingAsset, context.role),
-          wasReused: true,
+        wasReused: true,
           uploadStatus: existingAsset.remote_url ? 'uploaded' : 
                       existingAsset.status === 'pending_upload' ? 'pending_upload' : 
                       existingAsset.status === 'failed' ? 'failed' : 'local_only'
@@ -235,10 +235,26 @@ export class AssetService {
       if (fileRef.localPath) {
         try {
           // Read file from local storage as bytes
-          const relativePath = fileRef.localPath.split('/books/')[1]; // Extract relative path
+          let relativePath = fileRef.localPath;
+          
+          // Handle different path formats: extract relative path after books/
+          if (relativePath.includes('/books/')) {
+            relativePath = relativePath.split('/books/')[1];
+          } else if (relativePath.includes('\\books\\')) {
+            relativePath = relativePath.split('\\books\\')[1];
+          } else if (relativePath.startsWith('books/') || relativePath.startsWith('books\\')) {
+            // Already relative, use as-is
+            relativePath = relativePath;
+          } else {
+            // Fallback: assume the path is already relative to books directory
+            await appLog.warn('asset-service', 'Unexpected path format, using as-is', { localPath: fileRef.localPath });
+          }
+          
           if (relativePath) {
-              const fileBytes = await readFile(`books/${relativePath}`, { baseDir: BaseDirectory.AppConfig });
-              await appLog.info('asset-service', 'Reading local image bytes', { relativePath, bytesLength: fileBytes.length });
+            // Normalize path separators for Tauri
+            const normalizedPath = `books/${relativePath.replace(/\\/g, '/')}`;
+            const fileBytes = await readFile(normalizedPath, { baseDir: BaseDirectory.AppConfig });
+            await appLog.info('asset-service', 'Reading local image bytes', { relativePath: normalizedPath, bytesLength: fileBytes.length });
             
             // Convert to base64 data URL using proper method for large files
             let binary = '';
@@ -268,10 +284,26 @@ export class AssetService {
     if (fileRef.localPath) {
       try {
         // Read file from local storage as bytes
-        const relativePath = fileRef.localPath.split('/books/')[1]; // Extract relative path
+        let relativePath = fileRef.localPath;
+        
+        // Handle different path formats: extract relative path after books/
+        if (relativePath.includes('/books/')) {
+          relativePath = relativePath.split('/books/')[1];
+        } else if (relativePath.includes('\\books\\')) {
+          relativePath = relativePath.split('\\books\\')[1];
+        } else if (relativePath.startsWith('books/') || relativePath.startsWith('books\\')) {
+          // Already relative, use as-is
+          relativePath = relativePath;
+        } else {
+          // Fallback: assume the path is already relative to books directory
+          await appLog.warn('asset-service', 'Unexpected path format, using as-is', { localPath: fileRef.localPath });
+        }
+        
         if (relativePath) {
-          const fileBytes = await readFile(`books/${relativePath}`, { baseDir: BaseDirectory.AppConfig });
-          await appLog.info('asset-service', 'Reading local image bytes (online flow)', { relativePath, bytesLength: fileBytes.length });
+          // Normalize path separators for Tauri
+          const normalizedPath = `books/${relativePath.replace(/\\/g, '/')}`;
+          const fileBytes = await readFile(normalizedPath, { baseDir: BaseDirectory.AppConfig });
+          await appLog.info('asset-service', 'Reading local image bytes (online flow)', { relativePath: normalizedPath, bytesLength: fileBytes.length });
           
           // Convert to base64 data URL using proper method for large files
           let binary = '';

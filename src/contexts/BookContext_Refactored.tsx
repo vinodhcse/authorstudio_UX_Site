@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useParams } from 'react-router-dom';
 import type { Book, Version } from '../types/bookTypes';
 import { Character, PlotArc, Scene, Chapter } from '../types';
 import { NarrativeFlowNode, NarrativeEdge } from '../types/narrative-layout';
@@ -27,7 +26,6 @@ import {
 } from '../utils/syncUtils';
 import { useAuthStore } from '../auth/useAuthStore';
 import { apiClient } from '../lib/apiClient';
-import { AssetSyncService } from '../services/AssetSyncService';
 
 // Helper function to create a token getter for API calls
 const createTokenGetter = () => {
@@ -275,16 +273,6 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
           syncedBooks.push(normalizedBook);
           await logSyncDecision(bookId, 'pulled_new', {});
 
-          // Download any cloud assets for this book
-          try {
-            const { AssetSyncService } = await import('../services/AssetSyncService');
-            await AssetSyncService.downloadBookAssets(bookId);
-            await appLog.info('book-context', 'Downloaded assets for new book from cloud', { bookId });
-          } catch (assetError) {
-            await appLog.warn('book-context', 'Failed to download assets for new book', { bookId, error: assetError });
-            // Continue - asset download failure shouldn't block book sync
-          }
-
         } else if (localBook && !cloudBook) {
           // Local-only book - push if dirty
           if (localBook.syncState === 'dirty') {
@@ -308,16 +296,6 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
               await putBook(mergedBook);
               syncedBooks.push(mergedBook);
               await logSyncDecision(bookId, 'pulled', {});
-
-              // Download any cloud assets for this book
-              try {
-                const { AssetSyncService } = await import('../services/AssetSyncService');
-                await AssetSyncService.downloadBookAssets(bookId);
-                await appLog.info('book-context', 'Downloaded assets for pulled book', { bookId });
-              } catch (assetError) {
-                await appLog.warn('book-context', 'Failed to download assets for pulled book', { bookId, error: assetError });
-                // Continue - asset download failure shouldn't block book sync
-              }
               break;
 
             case 'conflict':
@@ -393,15 +371,6 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
           await pushBookToCloud(updatedBook);
           // Update state again with synced version
           setBooks(prev => prev.map(b => b.id === bookId ? { ...updatedBook, syncState: 'idle' } : b));
-          
-          // Sync any pending assets for this book
-          try {
-            const { AssetSyncService } = await import('../services/AssetSyncService');
-            await AssetSyncService.syncBookAssets(bookId);
-          } catch (assetError) {
-            await appLog.warn('book-context', 'Failed to sync book assets to cloud', { bookId, error: assetError });
-            // Continue - asset sync failure shouldn't block book update
-          }
         } catch (error) {
           await appLog.warn('book-context', 'Failed to sync book update to cloud', { bookId, error });
           // Continue - offline-first means local changes are preserved
@@ -522,13 +491,6 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
           setBooks(prev => prev.map(b => b.id === bookId ? conflictBook : b));
           break;
       }
-
-      // After book sync, sync any assets associated with this book
-      // Note: Asset sync happens in background and doesn't block book sync
-      AssetSyncService.syncBookAssets(bookId).catch(error => {
-        appLog.error('book-context', 'Asset sync failed after book sync', { bookId, error });
-      });
-
     } catch (error) {
       await appLog.error('book-context', 'Failed to sync book', { bookId, error });
       throw error;
@@ -549,14 +511,6 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
         await appLog.error('book-context', 'Failed to sync book in batch', { bookId: book.id, error });
         // Continue with other books
       }
-    }
-
-    // Also sync any pending assets after books are synced
-    try {
-      await AssetSyncService.syncPendingAssets();
-    } catch (error) {
-      await appLog.error('book-context', 'Failed to sync assets in batch', { error });
-      // Asset sync failure doesn't stop book sync
     }
   };
 
@@ -1083,22 +1037,3 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
 };
 
 export default BookContext;
-
-// Hook to get current book and version from URL params
-export const useCurrentBookAndVersion = () => {
-  const { bookId, versionId } = useParams<{ bookId: string; versionId: string }>();
-  const { getBook } = useBookContext();
-  
-  const currentBook = bookId ? getBook(bookId) : null;
-  const currentVersion = currentBook && versionId ? 
-    currentBook.versions.find(v => v.id === versionId) : null;
-  
-  return {
-    bookId,
-    versionId,
-    currentBook,
-    currentVersion,
-    loading: !currentBook && !!bookId, // loading if we have bookId but no book found
-    error: bookId && !currentBook ? 'Book not found' : null
-  };
-};

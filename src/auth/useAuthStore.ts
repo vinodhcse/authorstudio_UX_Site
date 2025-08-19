@@ -59,7 +59,7 @@ export interface AuthState {
   
   // Session management helpers
   updateSessionInContext: (updates: Partial<SessionRow>) => void;
-  saveSessionToDatabase: () => Promise<void>;
+  saveSessionToDatabase: () => Promise<Boolean | null>;
   refreshSessionFromDatabase: () => Promise<SessionRow | null>;
   
   // Internal helpers
@@ -133,7 +133,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   saveSessionToDatabase: async () => {
     const { currentSession } = get();
     if (currentSession) {
-      await upsertSessionRow(currentSession);
+      const updated = await upsertSessionRow(currentSession);
+      return updated;
+    } else {
+      return false;
     }
   },
 
@@ -191,8 +194,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   // Login (online only)
   login: async (email, password) => {
-    const { _setUser, _setAppKey, _setAccessToken, _setLoading } = get();
-    
+    const { _setUser, _setAppKey, _setAccessToken, _setLoading, updateSessionInContext, saveSessionToDatabase } = get();
+
     try {
       _setLoading(true);
       console.log('🔐 [LOGIN] Starting login process for:', email);
@@ -237,7 +240,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // If we had a sealed session, try to activate it for the same user
       if (existingSession && existingSession.session_state === 'sealed') {
         console.log('🔒 [LOGIN] Attempting to activate sealed session for user:', authResponse.userId);
-        const activated = await activateSession(authResponse.userId);
+        updateSessionInContext({
+          session_state: 'active',
+          sealed_at: undefined,
+          updated_at: Date.now(),
+        });
+        const activated = await saveSessionToDatabase();
+        //const activated = await activateSession(authResponse.userId);
         if (activated) {
           console.log('✅ [LOGIN] Sealed session successfully activated for same user');
           
@@ -755,14 +764,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   // Logout (seal session, don't delete data)
   logout: async () => {
-    const { _setUser, _setAppKey, _setAccessToken, user } = get();
+    const { _setUser, _setAppKey, _setAccessToken, user, updateSessionInContext, saveSessionToDatabase } = get();
     
     try {
       await appLog.info('logout', `Starting logout process for user: ${user?.email}`);
       await appLog.info('logout', 'Sealing session to preserve encrypted data...');
       
       // Seal session instead of clearing it
-      await sealSession();
+
+      updateSessionInContext({
+        session_state: 'sealed',
+        sealed_at: Date.now(),
+        updated_at: Date.now(),
+      });
+      await saveSessionToDatabase();
+
+//      await sealSession();
       await appLog.info('logout', 'Session successfully sealed');
       
       // Clear in-memory state
@@ -797,14 +814,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   // Lock app (seal session but stay on the same page - for testing unlock scenario)
   lock: async () => {
-    const { _setAppKey, _setAccessToken, user } = get();
-    
+    const { _setAppKey, _setAccessToken, user, updateSessionInContext, saveSessionToDatabase } = get();
+
     try {
       await appLog.info('lock', `Starting lock process for user: ${user?.email}`);
       await appLog.info('lock', 'Sealing session to preserve encrypted data...');
       
       // Seal session instead of clearing it
-      await sealSession();
+      updateSessionInContext({
+        session_state: 'sealed',
+        sealed_at: Date.now(),
+        updated_at: Date.now(),
+      });
+      await saveSessionToDatabase();
+      //await sealSession();
       await appLog.info('lock', 'Session successfully sealed');
       
       // Clear in-memory state but keep user info for display

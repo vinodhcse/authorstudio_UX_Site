@@ -5,7 +5,7 @@ import { Book } from '../../../types';
 import { PenIcon, ExternalLinkIcon, CloudIcon, RefreshIcon, CheckCircleIcon } from '../../../constants';
 import CoverPicker from '../../../components/CoverPicker';
 import { appLog } from '../../../auth/fileLogger';
-import { AssetService } from '../../../services/AssetService';
+import { SimpleAssetService } from '../../../services/SimpleAssetService';
 import { useBookContext } from '../../../contexts/BookContext';
 
 // Add TrashIcon to the imports if it exists, or define a simple one
@@ -55,7 +55,7 @@ const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void,
     const rotateX = useTransform(y, [-150, 150], [8, -8]);
     const rotateY = useTransform(x, [-150, 150], [-8, 8]);
     const [showCoverPicker, setShowCoverPicker] = useState(false);
-    const [currentCoverId, setCurrentCoverId] = useState<string | undefined>(book.coverImageRef?.assetId);
+    const [currentCoverId, setCurrentCoverId] = useState<string | undefined>(book.coverImageRef?.assetId || (book.coverImageRef as any)?.id);
     const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>();
     const [isSyncing, setIsSyncing] = useState(false);
     
@@ -161,18 +161,15 @@ const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void,
     };
 
     // Load cover image from asset system
-                    useEffect(() => {
+    useEffect(() => {
         const loadCoverImage = async () => {
             if (currentCoverId) {
                 try {
-                    const fileRef = await AssetService.getFileRef(currentCoverId);
-                    if (fileRef) {
-                        // Try to get data URL for local files
-                        const imageUrl = await AssetService.getLocalImageDataUrl(fileRef);
-                        setCoverImageUrl(imageUrl);
-                        // Debug log: show snippet of the resolved URL (data: or remote)
-                        appLog.info('book-hero', 'Resolved cover image URL', { coverId: currentCoverId, urlSnippet: imageUrl ? imageUrl.slice(0, 120) : null });
-                    }
+                    // Use simplified asset loading
+                    const imageUrl = await SimpleAssetService.loadAssetForDisplay(currentCoverId);
+                    setCoverImageUrl(imageUrl);
+                    // Debug log: show snippet of the resolved URL (data: or remote)
+                    appLog.info('book-hero', 'Resolved cover image URL', { coverId: currentCoverId, urlSnippet: imageUrl ? imageUrl.slice(0, 120) : null });
                 } catch (error) {
                     console.warn('Failed to load cover image from assets:', error);
                     appLog.error('book-hero', 'Failed to load cover image', { coverId: currentCoverId, error });
@@ -192,7 +189,7 @@ const BookHero: React.FC<{ book: Book, onEdit: () => void, onDelete: () => void,
 
     // Update currentCoverId when book.coverImageRef changes
     useEffect(() => {
-        setCurrentCoverId(book.coverImageRef?.assetId);
+        setCurrentCoverId(book.coverImageRef?.assetId || (book.coverImageRef as any)?.id);
     }, [book.coverImageRef?.assetId]);
 
     const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {

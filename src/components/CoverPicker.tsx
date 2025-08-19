@@ -1,7 +1,7 @@
 // Cover Picker Component - allows users to select and manage book covers
 import React, { useState, useEffect } from 'react';
-import { AssetService } from '../services/AssetService';
-import { SyncEngine } from '../services/SyncEngine';
+import { SimpleAssetService } from '../services/SimpleAssetService';
+import { appLog } from '../auth/fileLogger';
 import { FileRef } from '../types';
 
 interface CoverPickerProps {
@@ -33,14 +33,13 @@ const CoverPicker: React.FC<CoverPickerProps> = ({
       }
 
       try {
-        const ref = await AssetService.getFileRef(currentCoverId);
-        if (ref) {
-          setCoverRef(ref);
-          const coverUrl = await AssetService.getLocalImageDataUrl(ref);
-          setCoverSrc(coverUrl);
-          // Debug: log the resolved cover source for diagnostics
-          console.info('[CoverPicker] Resolved coverSrc', { assetId: ref.assetId, coverSrc: coverUrl ? coverUrl.slice(0, 120) : null });
-        }
+        // Use simplified asset loading
+        const coverUrl = await SimpleAssetService.loadAssetForDisplay(currentCoverId);
+        setCoverSrc(coverUrl);
+        // Create basic file ref for state
+        setCoverRef({ assetId: currentCoverId } as FileRef);
+        // Debug: log the resolved cover source for diagnostics
+        console.info('[CoverPicker] Resolved coverSrc', { assetId: currentCoverId, coverSrc: coverUrl ? coverUrl.slice(0, 120) : null });
       } catch (err) {
         console.error('Failed to load current cover:', err);
         setError('Failed to load current cover');
@@ -59,45 +58,34 @@ const CoverPicker: React.FC<CoverPickerProps> = ({
     try {
       setIsUploading(true);
       setError(null);
-      setUploadProgress('Importing file...');
+      setUploadProgress('Processing image...');
 
-      // Import the file as a cover asset
-      const importResult = await AssetService.importLocalFile(file, {
-        entityType: 'book',
-        entityId: bookId,
-        role: 'cover',
-        bookId: bookId,
-        tags: ['cover', 'image'],
-        description: `Cover for book ${bookId}`
-      });
+      // Use simplified cover upload
+      const result = await SimpleAssetService.uploadCover(file, bookId);
 
-      setUploadProgress('Uploading...');
+      setUploadProgress('Updating book...');
 
-      // First, notify about the cover change to mark book as dirty
-      onCoverChanged?.(importResult.assetId);
+      // Notify about the cover change to mark book as dirty and update book
+      onCoverChanged?.(result.assetId);
 
-      // Then trigger upload (which will sync when online)
-      await SyncEngine.uploadPending(bookId);
-
-      // Use the import result
-      const fileRef = importResult;
-
-      setUploadProgress('Finalizing...');
-
-      // Get updated asset info after upload (which might include remote URL)
-      const updatedFileRef = await AssetService.getFileRef(fileRef.assetId);
-      const finalFileRef = updatedFileRef || fileRef;
-
-      // Update state with the most current asset info using data URL
-      setCoverRef(finalFileRef);
-      const imageUrl = await AssetService.getLocalImageDataUrl(finalFileRef);
-      setCoverSrc(imageUrl);
+      // Update state with immediate data URL for display
+      setCoverRef(result.fileRef);
+      setCoverSrc(result.dataUrl);
 
       setUploadProgress('');
+      await appLog.success('cover-picker', 'Cover upload completed successfully', { 
+        assetId: result.assetId,
+        bookId 
+      });
     } catch (err) {
       console.error('Failed to set cover:', err);
       setError(err instanceof Error ? err.message : 'Failed to set cover');
       setUploadProgress('');
+      await appLog.error('cover-picker', 'Cover upload failed', { 
+        fileName: file.name,
+        bookId,
+        error: err 
+      });
     } finally {
       setIsUploading(false);
     }
@@ -136,17 +124,25 @@ const CoverPicker: React.FC<CoverPickerProps> = ({
       setIsUploading(true);
       setError(null);
 
-      // Unlink the asset from the book
-      await AssetService.unlinkAsset(currentCoverId, 'book', bookId, 'cover');
-
-      // Update state
+      // Simplified removal - just clear the book's cover reference
+      // The asset file remains for potential reuse or cleanup later
       setCoverRef(null);
       setCoverSrc(undefined);
       onCoverChanged?.(null);
 
+      await appLog.success('cover-picker', 'Cover removed successfully', { 
+        assetId: currentCoverId,
+        bookId 
+      });
+
     } catch (err) {
       console.error('Failed to remove cover:', err);
       setError(err instanceof Error ? err.message : 'Failed to remove cover');
+      await appLog.error('cover-picker', 'Cover removal failed', { 
+        assetId: currentCoverId,
+        bookId,
+        error: err 
+      });
     } finally {
       setIsUploading(false);
     }

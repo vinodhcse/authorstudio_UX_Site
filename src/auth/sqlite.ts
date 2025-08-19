@@ -41,7 +41,7 @@ export async function getSessionRow(userEmail?: string, userId?: string): Promis
       // Convert from our new Session format to SessionRow format
       const result: SessionRow = {
         id: session.id,
-        user_id: session.userId,
+        user_id: session.user_id,
         email: session.email,
         name: session.name,
         device_id: session.device_id,
@@ -110,7 +110,7 @@ export async function clearsession1(userEmail?: string, userId?: string): Promis
   }
 }
 
-export async function upsertSessionRow(data: Partial<SessionRow>): Promise<void> {
+export async function upsertSessionRow(data: Partial<SessionRow>): Promise<Boolean | null> {
   appLog.info('sqlite', 'Upserting session data...', {
     fieldsToUpdate: Object.keys(data),
     hasUserId: !!data.user_id,
@@ -147,11 +147,17 @@ export async function upsertSessionRow(data: Partial<SessionRow>): Promise<void>
     };*/
 
     // Use our new DAL system
-    await invoke('app_save_session', { session: sessionData });
-    appLog.success('sqlite', 'Session upserted successfully', { userId: data.user_id });
+    const response = await invoke('app_save_session', { session: sessionData });
+    appLog.success('sqlite', 'Session upserted successfully', { userId: data.user_id }, response);
+    if (response) {
+      return true;
+    } else {
+      return false;
+    }
   } catch (err) {
     appLog.error('sqlite', 'Failed to upsert session', { error: err, data });
     throw err;
+    return false
   }
 }
 

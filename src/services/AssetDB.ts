@@ -13,29 +13,105 @@ export class AssetDB {
   static async createAsset(asset: Omit<FileAsset, 'created_at' | 'updated_at'>): Promise<void> {
     await this.ensureDb();
     const now = new Date().toISOString();
-    const full: FileAsset = {
-      ...asset,
+    
+    // Map frontend 'id' field to backend 'file_asset_id' field
+    const backendAsset = {
+      file_asset_id: asset.id,
+      sha256: asset.sha256,
+      ext: asset.ext,
+      mime: asset.mime,
+      size_bytes: asset.size_bytes,
+      width: asset.width,
+      height: asset.height,
+      local_path: asset.local_path,
+      remote_id: asset.remote_id,
+      remote_url: asset.remote_url,
+      status: asset.status,
       created_at: now,
       updated_at: now,
-    } as FileAsset;
-    await invoke('asset_create', { asset: full });
+    };
+    
+    await invoke('app_create_file_asset', { fileAsset: backendAsset });
     await appLog.info('assetdb', 'Asset created', { assetId: asset.id, sha256: asset.sha256 });
   }
 
   static async getAssetById(id: string): Promise<FileAsset | null> {
     await this.ensureDb();
-    return (await invoke<FileAsset | null>('asset_get', { id })) ?? null;
+    const result = await invoke<any>('app_get_file_asset_by_id', { assetId: id });
+    if (!result) return null;
+    
+    // Map backend 'file_asset_id' field to frontend 'id' field
+    return {
+      id: result.file_asset_id,
+      sha256: result.sha256,
+      ext: result.ext,
+      mime: result.mime,
+      size_bytes: result.size_bytes,
+      width: result.width,
+      height: result.height,
+      local_path: result.local_path,
+      remote_id: result.remote_id,
+      remote_url: result.remote_url,
+      status: result.status,
+      created_at: result.created_at,
+      updated_at: result.updated_at,
+    };
   }
 
   static async getAssetBySha256(sha256: string): Promise<FileAsset | null> {
     await this.ensureDb();
-    return (await invoke<FileAsset | null>('asset_get_by_sha256', { sha256 })) ?? null;
+    const result = await invoke<any>('app_get_file_asset_by_sha256', { sha256: sha256 });
+    if (!result) return null;
+    
+    // Map backend 'file_asset_id' field to frontend 'id' field
+    return {
+      id: result.file_asset_id,
+      sha256: result.sha256,
+      ext: result.ext,
+      mime: result.mime,
+      size_bytes: result.size_bytes,
+      width: result.width,
+      height: result.height,
+      local_path: result.local_path,
+      remote_id: result.remote_id,
+      remote_url: result.remote_url,
+      status: result.status,
+      created_at: result.created_at,
+      updated_at: result.updated_at,
+    };
   }
 
   static async updateAsset(id: string, updates: Partial<FileAsset>): Promise<void> {
     await this.ensureDb();
     const now = new Date().toISOString();
-    await invoke('asset_update', { id, updates: { ...updates, updated_at: now } });
+    
+    // Get current asset to merge updates
+    const currentAsset = await this.getAssetById(id);
+    if (!currentAsset) {
+      throw new Error(`Asset not found: ${id}`);
+    }
+    
+    // Merge updates with current asset
+    const updatedAsset = { ...currentAsset, ...updates, updated_at: now };
+    
+    // Map frontend fields to backend fields
+    const backendAsset = {
+      file_asset_id: updatedAsset.id,
+      sha256: updatedAsset.sha256,
+      ext: updatedAsset.ext,
+      mime: updatedAsset.mime,
+      size_bytes: updatedAsset.size_bytes,
+      width: updatedAsset.width,
+      height: updatedAsset.height,
+      local_path: updatedAsset.local_path,
+      remote_id: updatedAsset.remote_id,
+      remote_url: updatedAsset.remote_url,
+      status: updatedAsset.status,
+      created_at: updatedAsset.created_at,
+      updated_at: now,
+    };
+    
+    await invoke('app_update_file_asset', { assetId: id, fileAsset: backendAsset });
     await appLog.info('assetdb', 'Asset updated', { assetId: id, updates: Object.keys(updates) });
   }
 
@@ -55,7 +131,24 @@ export class AssetDB {
 
   static async getAssetsByStatus(status: AssetStatus): Promise<FileAsset[]> {
     await this.ensureDb();
-    return await invoke<FileAsset[]>('assets_by_status', { status });
+    const results = await invoke<any[]>('app_get_file_assets_by_status', { status: status });
+    
+    // Map backend 'file_asset_id' field to frontend 'id' field for each asset
+    return results.map(result => ({
+      id: result.file_asset_id,
+      sha256: result.sha256,
+      ext: result.ext,
+      mime: result.mime,
+      size_bytes: result.size_bytes,
+      width: result.width,
+      height: result.height,
+      local_path: result.local_path,
+      remote_id: result.remote_id,
+      remote_url: result.remote_url,
+      status: result.status,
+      created_at: result.created_at,
+      updated_at: result.updated_at,
+    }));
   }
 
   static async deleteAsset(id: string): Promise<void> {
@@ -86,6 +179,7 @@ export class AssetDB {
     await this.ensureDb();
     // Normalize link payload to accept either snake_case (DB) or camelCase (UI) fields
     const payload = {
+      id: (link as any).id,
       asset_id: (link as any).asset_id ?? (link as any).assetId,
       entity_type: (link as any).entity_type ?? (link as any).entityType,
       entity_id: (link as any).entity_id ?? (link as any).entityId,
@@ -95,32 +189,42 @@ export class AssetDB {
       description: (link as any).description ?? null,
     } as any;
 
-    // Build invoke payload with both snake_case and camelCase keys to satisfy either Rust/Tauri naming
-    const invokePayload = {
+    const backendLink = {
+      file_asset_link_id: payload.id || crypto.randomUUID(), // Generate UUID if not provided
       asset_id: payload.asset_id,
-      assetId: payload.asset_id,
       entity_type: payload.entity_type,
-      entityType: payload.entity_type,
       entity_id: payload.entity_id,
-      entityId: payload.entity_id,
       role: payload.role,
       sort_order: payload.sort_order,
-      sortOrder: payload.sort_order,
       tags: payload.tags,
       description: payload.description,
-    } as any;
+    };
 
     // Log final payload for debugging
-    await appLog.info('assetdb', 'Calling link_upsert with payload', invokePayload);
+    await appLog.info('assetdb', 'Calling app_upsert_file_asset_link with payload', backendLink);
 
-    const id = await invoke<string>('link_upsert', invokePayload);
-    await appLog.info('assetdb', 'Asset link upserted', { linkId: id });
-    return id;
+    const result = await invoke<string>('app_upsert_file_asset_link', { link: backendLink });
+    await appLog.info('assetdb', 'Asset link upserted', { linkId: result });
+    return result;
   }
 
   static async getLinksByEntity(entityType: EntityType, entityId: string): Promise<FileAssetLink[]> {
     await this.ensureDb();
-  return await invoke<FileAssetLink[]>('links_by_entity', { entity_type: entityType, entity_id: entityId });
+    const results = await invoke<any[]>('app_get_file_asset_links_by_entity', { entityType: entityType, entityId: entityId });
+    
+    // Map backend 'file_asset_link_id' field to frontend 'id' field for each link
+    return results.map(result => ({
+      id: result.file_asset_link_id,
+      asset_id: result.asset_id,
+      entity_type: result.entity_type,
+      entity_id: result.entity_id,
+      role: result.role,
+      sort_order: result.sort_order,
+      tags: result.tags,
+      description: result.description,
+      created_at: result.created_at,
+      updated_at: result.updated_at,
+    }));
   }
 
   static async getLinksByEntityAndRole(entityType: EntityType, entityId: string, role: AssetRole): Promise<FileAssetLink[]> {

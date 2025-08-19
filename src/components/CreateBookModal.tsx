@@ -21,6 +21,7 @@ const CheckCircleIcon = (props: React.SVGProps<SVGSVGElement>) => (
 const FileInput: React.FC = () => {
     const [isDragging, setIsDragging] = useState(false);
     const [coverFile, setCoverFile] = useState<File | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
     const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
     const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
@@ -40,37 +41,64 @@ const FileInput: React.FC = () => {
         }
     };
 
+    // Create preview URL when cover file changes
+    React.useEffect(() => {
+        if (coverFile) {
+            const url = URL.createObjectURL(coverFile);
+            setPreviewUrl(url);
+            return () => URL.revokeObjectURL(url);
+        } else {
+            setPreviewUrl(null);
+        }
+    }, [coverFile]);
+
     return (
         <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Book Cover (Required)</label>
-            <div
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                className={`mt-1 flex justify-center items-center px-6 pt-5 pb-6 md:pt-10 md:pb-12 border-2 border-dashed rounded-lg transition-colors backdrop-blur-sm ${isDragging ? 'border-purple-500 bg-purple-500/20' : 'border-white/30 dark:border-white/10 bg-white/20 dark:bg-white/5'}`}
-            >
-                <div className="space-y-1 text-center">
-                    {coverFile ? (
-                        <>
-                           <CheckCircleIcon className="mx-auto h-12 w-12 text-green-500" />
-                           <p className="text-sm text-gray-800 dark:text-gray-200 font-semibold">{coverFile.name}</p>
-                           <p className="text-xs text-gray-500 dark:text-gray-400">{(coverFile.size / 1024).toFixed(2)} KB</p>
-                        </>
-                    ) : (
-                        <>
-                            <UploadIcon className="mx-auto h-12 w-12 text-gray-400" />
-                            <div className="flex text-sm text-gray-600 dark:text-gray-300">
-                                <label htmlFor="file-upload" className="relative cursor-pointer bg-transparent rounded-md font-medium text-purple-600 dark:text-purple-400 hover:text-purple-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-purple-500">
-                                    <span>Upload a file</span>
-                                    <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="image/*" />
-                                </label>
-                                <p className="pl-1">or drag and drop</p>
-                            </div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">PNG, JPG, GIF up to 10MB</p>
-                        </>
-                    )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* File Upload Area */}
+                <div
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                    className={`flex justify-center items-center px-6 pt-5 pb-6 md:pt-10 md:pb-12 border-2 border-dashed rounded-lg transition-colors backdrop-blur-sm ${isDragging ? 'border-purple-500 bg-purple-500/20' : 'border-white/30 dark:border-white/10 bg-white/20 dark:bg-white/5'}`}
+                >
+                    <div className="space-y-1 text-center">
+                        {coverFile ? (
+                            <>
+                               <CheckCircleIcon className="mx-auto h-12 w-12 text-green-500" />
+                               <p className="text-sm text-gray-800 dark:text-gray-200 font-semibold">{coverFile.name}</p>
+                               <p className="text-xs text-gray-500 dark:text-gray-400">{(coverFile.size / 1024).toFixed(2)} KB</p>
+                            </>
+                        ) : (
+                            <>
+                                <UploadIcon className="mx-auto h-12 w-12 text-gray-400" />
+                                <div className="flex text-sm text-gray-600 dark:text-gray-300">
+                                    <label htmlFor="file-upload" className="relative cursor-pointer bg-transparent rounded-md font-medium text-purple-600 dark:text-purple-400 hover:text-purple-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-purple-500">
+                                        <span>Upload a file</span>
+                                        <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} accept="image/*" />
+                                    </label>
+                                    <p className="pl-1">or drag and drop</p>
+                                </div>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">PNG, JPG, GIF up to 10MB</p>
+                            </>
+                        )}
+                    </div>
                 </div>
+
+                {/* Cover Preview */}
+                {previewUrl && (
+                    <div className="flex justify-center">
+                        <div className="relative aspect-[3/4] w-full max-w-48 rounded-lg shadow-lg overflow-hidden">
+                            <img 
+                                src={previewUrl} 
+                                alt="Cover preview" 
+                                className="w-full h-full object-cover"
+                            />
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
