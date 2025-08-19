@@ -40,7 +40,6 @@ use whisper_diagnostics::{
 mod surreal;
 use surreal::{
     surreal_init_db,
-    surreal_query,
     book_create, book_get_by_user, book_get, book_put, book_delete, book_mark_sync, book_get_dirty,
     version_get, versions_by_book, version_put, version_content_get, version_content_update,
     chapter_get, chapter_put, chapters_by_version, chapter_mark_sync, chapter_mark_conflict, chapters_get_dirty,
@@ -49,15 +48,12 @@ use surreal::{
     session_get, session_get_by_email, session_get_by_user_id, session_upsert, session_clear, session_seal, session_activate,
     device_get, device_upsert,
     kv_set, kv_get, kv_delete,
-    asset_create, asset_get, asset_get_by_sha256, asset_update, assets_by_status, asset_delete,
-    link_create, link_upsert, links_by_entity, links_by_entity_role, links_by_asset, link_delete, links_delete_by_entity_role, links_delete_by_asset,
     get_config_dir, asset_list_all, link_list_all,
 };
 
 // App Database (main implementation)
 mod app_surreal;
 use app_surreal::{
-    AppDatabase,
     app_create_book, app_get_books, app_get_book_by_id, app_update_book, app_delete_book,
     app_create_version, app_get_versions_by_book,
     app_create_chapter, app_get_chapters_by_version,
@@ -66,6 +62,35 @@ use app_surreal::{
     // Session and user keys commands
     app_get_session, app_save_session, app_clear_session,
     app_get_user_keys, app_save_user_keys,
+    // User Books operations
+    app_get_user_books, app_get_book, app_update_book_by_user, app_delete_book_by_user,
+    // FileAsset operations
+    app_create_file_asset, app_get_file_asset_by_id, app_get_file_asset_by_sha256,
+    app_update_file_asset, app_get_file_assets_by_status, app_delete_file_asset,
+    app_delete_all_file_assets, // NEW: Delete all file assets
+    app_get_asset_file_path, // NEW: Get full filesystem path for asset
+    // FileAssetLink operations
+    app_create_file_asset_link, app_upsert_file_asset_link,
+    app_get_file_asset_links_by_entity, app_get_file_asset_links_by_entity_role,
+    app_get_file_asset_links_by_asset, app_delete_file_asset_link,
+    app_delete_file_asset_links_by_entity_role, app_delete_file_asset_links_by_asset,
+    // World operations
+    app_create_world, app_get_worlds_by_book, app_get_world_by_id,
+    app_update_world, app_delete_world,
+    // Location operations
+    app_create_location, app_get_locations_by_world, app_get_locations_by_book,
+    app_update_location, app_delete_location,
+    // Object operations
+    app_create_object, app_get_objects_by_world, app_get_objects_by_book,
+    app_update_object, app_delete_object,
+    // Lore operations
+    app_create_lore, app_get_lore_by_world, app_get_lore_by_book,
+    app_update_lore, app_delete_lore,
+    // Scene operations
+    app_create_scene, app_get_scene_by_id, app_get_scenes_by_book,
+    app_update_scene, app_delete_scene,
+    // Generic query operation
+    app_surreal_query,
 };
 
 // Asset system commands
@@ -217,9 +242,62 @@ pub fn run() {
             app_clear_session,
             app_get_user_keys,
             app_save_user_keys,
+            // User Books operations
+            app_get_user_books,
+            app_get_book,
+            app_update_book_by_user,
+            app_delete_book_by_user,
+            // FileAsset operations
+            app_create_file_asset,
+            app_get_file_asset_by_id,
+            app_get_file_asset_by_sha256,
+            app_update_file_asset,
+            app_get_file_assets_by_status,
+            app_delete_file_asset,
+            app_delete_all_file_assets, // NEW: Delete all file assets
+            app_get_asset_file_path, // NEW: Get full filesystem path for asset
+            // FileAssetLink operations
+            app_create_file_asset_link,
+            app_upsert_file_asset_link,
+            app_get_file_asset_links_by_entity,
+            app_get_file_asset_links_by_entity_role,
+            app_get_file_asset_links_by_asset,
+            app_delete_file_asset_link,
+            app_delete_file_asset_links_by_entity_role,
+            app_delete_file_asset_links_by_asset,
+            // World operations
+            app_create_world,
+            app_get_worlds_by_book,
+            app_get_world_by_id,
+            app_update_world,
+            app_delete_world,
+            // Location operations
+            app_create_location,
+            app_get_locations_by_world,
+            app_get_locations_by_book,
+            app_update_location,
+            app_delete_location,
+            // Object operations
+            app_create_object,
+            app_get_objects_by_world,
+            app_get_objects_by_book,
+            app_update_object,
+            app_delete_object,
+            // Lore operations
+            app_create_lore,
+            app_get_lore_by_world,
+            app_get_lore_by_book,
+            app_update_lore,
+            app_delete_lore,
+            // Scene operations
+            app_create_scene,
+            app_get_scene_by_id,
+            app_get_scenes_by_book,
+            app_update_scene,
+            app_delete_scene,
             // Surreal commands (legacy)
             surreal_init_db,
-            surreal_query,
+            app_surreal_query,
             book_create,
             book_get_by_user,
             book_get,
@@ -260,21 +338,7 @@ pub fn run() {
             kv_set,
             kv_get,
             kv_delete,
-            // Assets/Links
-            asset_create,
-            asset_get,
-            asset_get_by_sha256,
-            asset_update,
-            assets_by_status,
-            asset_delete,
-            link_create,
-            link_upsert,
-            links_by_entity,
-            links_by_entity_role,
-            links_by_asset,
-            link_delete,
-            links_delete_by_entity_role,
-            links_delete_by_asset,
+            // Assets/Links (removed - using app_surreal versions instead)
             get_config_dir,
             asset_list_all,
             link_list_all,
