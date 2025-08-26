@@ -440,8 +440,19 @@ export async function getChapter(chapterId: string): Promise<any> {
 
 export async function putChapter(chapter: any): Promise<void> {
   try {
-    // TODO: Implement chapter update in versions
-    appLog.warn('dal', 'putChapter not yet implemented in new architecture', { chapterId: chapter.id });
+    // Update chapter using Tauri command
+    await invoke<string>('app_update_chapter', {
+      chapter_id: chapter.id || chapter.chapter_id,
+      chapter: {
+        chapter_id: chapter.id || chapter.chapter_id,
+        title: chapter.title,
+        content: chapter.content || '',
+        order_index: chapter.order_index || 0,
+        last_modified: new Date().toISOString()
+      }
+    });
+    
+    appLog.info('dal', 'Chapter updated successfully in database', { chapterId: chapter.id, title: chapter.title });
   } catch (error) {
     appLog.error('dal', 'Failed to put chapter', { chapterId: chapter.id, error: String(error) });
     throw error;
@@ -554,9 +565,31 @@ export async function updateBook(book: Book): Promise<Book> {
 
 export async function ensureVersionInDatabase(bookId: string, versionId: string): Promise<any> {
   try {
-    // TODO: Implement version database creation in new architecture
-    appLog.warn('dal', 'ensureVersionInDatabase not yet implemented in new architecture', { bookId, versionId });
-    return null;
+    // First check if version exists
+    const existingVersion = await invoke<any>('app_get_version_by_id', { version_id: versionId });
+    
+    if (existingVersion) {
+      appLog.info('dal', 'Version already exists in database', { bookId, versionId });
+      return existingVersion;
+    }
+
+    // Get versions for this book to create if needed
+    const versions = await invoke<any[]>('app_get_versions_by_book', { book_id: bookId });
+    
+    if (versions.length === 0) {
+      // Create a default version
+      const newVersionId = await invoke<string>('app_create_version', {
+        book_id: bookId,
+        title: 'Main Version',
+        user_id: 'current_user' // TODO: Get actual user ID
+      });
+      appLog.info('dal', 'Created new version in database', { bookId, newVersionId });
+      return { version_id: newVersionId };
+    } else {
+      // Use existing version
+      appLog.info('dal', 'Using existing version from database', { bookId, versionId: versions[0].version_id });
+      return versions[0];
+    }
   } catch (error) {
     appLog.error('dal', 'Failed to ensure version in database', { bookId, versionId, error: String(error) });
     throw error;
@@ -608,9 +641,23 @@ export async function putScene(scene: any): Promise<void> {
 
 export async function createChapterAtomic(chapter: any): Promise<any> {
   try {
-    // TODO: Implement atomic chapter creation in new architecture
-    appLog.warn('dal', 'createChapterAtomic not yet implemented in new architecture', { chapterId: chapter.id });
-    return chapter;
+    // Create chapter using Tauri command
+    const chapterId = await invoke<string>('app_create_chapter', {
+      book_id: chapter.book_id,
+      version_id: chapter.version_id,
+      chapter: {
+        chapter_id: chapter.id || chapter.chapter_id,
+        title: chapter.title,
+        content: chapter.content || '',
+        order_index: chapter.order_index || 0,
+        user_id: chapter.user_id || 'current_user',
+        created_at: new Date().toISOString(),
+        last_modified: new Date().toISOString()
+      }
+    });
+    
+    appLog.info('dal', 'Chapter created successfully in database', { chapterId, title: chapter.title });
+    return { ...chapter, id: chapterId, chapter_id: chapterId };
   } catch (error) {
     appLog.error('dal', 'Failed to create chapter atomically', { chapterId: chapter.id, error: String(error) });
     throw error;

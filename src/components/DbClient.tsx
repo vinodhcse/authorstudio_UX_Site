@@ -343,6 +343,20 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
     }
   };
 
+    // Print SurrealDB schema for version table
+  const printVersionTableSchema = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const schema = await invoke<any>('app_surreal_query', { query: 'INFO FOR TABLE version;' });
+      console.log(JSON.stringify(schema, null, 2));
+    } catch (err) {
+      setError('Failed to get version table schema: ' + String(err));
+    }
+    setLoading(false);
+  };
+  
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -634,6 +648,219 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
     }
   };
 
+  const testDeleteVersion = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_delete_versions', { });
+      setRows([{ message: 'Version deleted', result: res }]);
+      appLog.info('db-client', 'Version deleted', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to delete version', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // New CRUD Test Functions
+  const testVersionCRUD = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      // First ensure we have a book
+      const books = await invoke<any[]>('app_get_books');
+      let testBookId: string;
+      
+      if (books.length === 0) {
+        // Create a test book
+        const newBook = await invoke<any>('app_create_book', {
+          book: {
+            title: 'Test Book for Version CRUD',
+            author: 'Test Author',
+            book_id: 'test_book_' + Date.now()
+          }
+        });
+        testBookId = newBook.book_id;
+      } else {
+        testBookId = books[0].book_id || books[0].id;
+      }
+
+      // Test Version CRUD operations
+      const results: any[] = [];
+      let version_id = 'test_version_' + Date.now();
+      // 1. Create Version
+      let version1 = {
+          versionid: version_id,                 // Unique ID for version
+          bookid: "book_67890",                   // Associated book ID
+          name: "Test Version CRUD",              // Display name of the version
+          status: "DRAFT",                        // "DRAFT" | "IN_REVIEW" | "FINAL"
+          wordcount: 12345,                       // Example word count
+          createdat: "2025-08-26T12:30:00Z",      // ISO string for created date
+          contributor: {
+            userid: "test_user",
+            role: "AUTHOR",
+            name: "Jane Doe"
+          },                                      // Can be JSON object with user metadata
+          revlocal: "rev_local_abc123",           // Local revision SHA/ID
+          revcloud: "rev_cloud_def456",           // Cloud revision SHA/ID
+          syncstate: "SYNCED",                    // "SYNCED" | "DIRTY" | "CONFLICT"
+          conflictstate: "NONE",                  // "NONE" | "PENDING" | "RESOLVED"
+          updatedat: Date.now()                   // Epoch timestamp (ms)
+        };
+
+      const versionRecord = await invoke<any>('app_create_version', { version: version1 });
+      results.push({ operation: 'CREATE', status: 'SUCCESS', versionRecord });
+
+      // 2. Get Version
+      const version = await invoke<any>('app_get_version_by_id', { versionId: version_id });
+      
+      results.push({ operation: 'READ', status: version ? 'SUCCESS' : 'FAILED', version });
+
+      
+        const allVersions = await invoke<any>('app_get_versions', { });
+      allVersions.map((v: any) => {
+
+        results.push({ operation: 'READ', status: 'SUCCESS', version: v });
+      });
+      /*
+
+      // 3. Update Version
+      const updateResult = await invoke<string>('app_update_version', {
+        version_id: version_id,
+        version: {
+          version_id: version_id,
+          name: 'Updated Test Version',
+          description: 'Updated description',
+          user_id: 'test_user',
+          book_id: testBookId
+        }
+      });
+      results.push({ operation: 'UPDATE', status: 'SUCCESS', result: updateResult });
+
+      // 4. Get All Versions for Book
+      const versions = await invoke<any[]>('app_get_versions_by_book', { book_id: testBookId });
+      results.push({ operation: 'LIST', status: 'SUCCESS', count: versions.length, versions });
+*/
+      setRows(results);
+      appLog.info('db-client', 'Version CRUD test completed', { results });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Version CRUD test failed', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testChapterCRUD = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      // First ensure we have a book and version
+      const books = await invoke<any[]>('app_get_books');
+      let testBookId: string;
+      let testVersionId: string;
+      
+      if (books.length === 0) {
+        // Create a test book
+        const newBook = await invoke<any>('app_create_book', {
+          book: {
+            title: 'Test Book for Chapter CRUD',
+            author: 'Test Author',
+            book_id: 'test_book_' + Date.now()
+          }
+        });
+        testBookId = newBook.book_id;
+        
+        // Create a version
+        const versionRecord = await invoke<any>('app_create_version', {
+          version: {
+            book_id: testBookId,
+            name: 'Test Version',
+            status: 'DRAFT'
+          }
+        });
+        testVersionId = versionRecord.version_id;
+      } else {
+        testBookId = books[0].book_id || books[0].id;
+        const versions = await invoke<any[]>('app_get_versions_by_book', { book_id: testBookId });
+        
+        if (versions.length === 0) {
+          const versionRecord = await invoke<any>('app_create_version', {
+            version: {
+              book_id: testBookId,
+              name: 'Test Version',
+              status: 'DRAFT'
+            }
+          });
+          testVersionId = versionRecord.version_id;
+        } else {
+          testVersionId = versions[0].version_id || versions[0].id;
+        }
+      }
+
+      // Test Chapter CRUD operations
+      const results: any[] = [];
+
+      // 1. Create Chapter
+      const chapterId = await invoke<string>('app_create_chapter', {
+        book_id: testBookId,
+        version_id: testVersionId,
+        chapter: {
+          title: 'Test Chapter CRUD',
+          content: 'This is test chapter content',
+          order_index: 1
+        }
+      });
+      results.push({ operation: 'CREATE', status: 'SUCCESS', chapterId });
+
+      // 2. Get Chapter
+      const chapter = await invoke<any>('app_get_chapter_by_id', { chapter_id: chapterId });
+      results.push({ operation: 'READ', status: chapter ? 'SUCCESS' : 'FAILED', chapter });
+
+      // 3. Update Chapter
+      const updateResult = await invoke<string>('app_update_chapter', {
+        chapter_id: chapterId,
+        chapter: {
+          title: 'Updated Test Chapter',
+          content: 'Updated chapter content',
+          order_index: 1
+        }
+      });
+      results.push({ operation: 'UPDATE', status: 'SUCCESS', result: updateResult });
+
+      // 4. Get All Chapters for Version
+      const chapters = await invoke<any[]>('app_get_chapters_by_version', { 
+        book_id: testBookId, 
+        version_id: testVersionId 
+      });
+      results.push({ operation: 'LIST', status: 'SUCCESS', count: chapters.length, chapters });
+
+      setRows(results);
+      appLog.info('db-client', 'Chapter CRUD test completed', { results });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Chapter CRUD test failed', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testDatabaseInit = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await invoke<string>('init_database');
+      setRows([{ message: 'Database initialized', result }]);
+      appLog.info('db-client', 'Database initialized', { result });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Database initialization failed', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // File Asset Test Functions
   const testCreateFileAsset = async () => {
     setError(null);
@@ -809,7 +1036,18 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
         </div>
 
         <div className="flex-1 p-4 grid grid-cols-4 gap-4">
-          <div>
+          <div className="flex flex-col h-full">
+            <div className="mb-2 text-xs text-gray-500">Table</div>
+            <select value={table} onChange={e => setTable(e.target.value)} className="w-full mb-4 p-2 border rounded text-sm">
+              <option value="person">person</option>
+              <option value="book">book</option>
+              <option value="version">version</option>
+              <option value="chapter">chapter</option>
+              <option value="scene">scene</option>
+            </select>
+
+            {/* Scrollable button container */}
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4">
             <div className="mb-2 text-xs text-gray-500">Table</div>
             <select value={table} onChange={e => setTable(e.target.value)} className="w-full mb-4 p-2 border rounded text-sm">
               <option value="person">person</option>
@@ -838,6 +1076,49 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
                 className="w-full p-2 text-xs bg-red-700 text-white rounded hover:bg-red-800"
               >
                 Delete All App Books
+              </button>
+            </div>
+
+            <div className="mb-2 mt-4 text-xs text-gray-500">Version & Chapter CRUD</div>
+            <div className="space-y-2">
+              <button
+                onClick={testVersionCRUD}
+                className="w-full p-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Test Version CRUD
+              </button>
+
+            
+              <button
+                onClick={printVersionTableSchema}
+                className="w-full p-2 text-xs bg-blue-900 text-white rounded hover:bg-blue-700"
+              >
+                Print Version Table Schema
+              </button>
+              
+               <button
+                onClick={testDeleteVersion}
+                className="w-full p-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Delete Versions
+              </button>
+              <button
+                onClick={testChapterCRUD}
+                className="w-full p-2 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+              >
+                Test Chapter CRUD
+              </button>
+              <button
+                onClick={testDatabaseInit}
+                className="w-full p-2 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
+              >
+                Initialize Database
+              </button>
+              <button
+                onClick={validateAllDatabases}
+                className="w-full p-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+              >
+                Validate All Databases
               </button>
             </div>
 
@@ -1029,6 +1310,7 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
             </div>
 
             
+            </div> {/* End of scrollable container */}
           </div>
 
           <div className="col-span-3">

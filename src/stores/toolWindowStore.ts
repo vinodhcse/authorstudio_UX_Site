@@ -341,6 +341,12 @@ export const AVAILABLE_TOOLS = {
     route: '/tool/timeline',
     defaultSize: { width: 1000, height: 400 },
   },
+  'revision-history': {
+    title: 'Revision History',
+    icon: '📝',
+    route: '/tool/revision-history',
+    defaultSize: { width: 800, height: 600 },
+  },
 } as const;
 
 export type ToolType = keyof typeof AVAILABLE_TOOLS;

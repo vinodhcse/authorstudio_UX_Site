@@ -1,3 +1,21 @@
+#[tauri::command]
+pub async fn write_file_with_dirs(app_handle: tauri::AppHandle, relative_path: String, bytes: Vec<u8>) -> Result<(), String> {
+    use std::path::PathBuf;
+    use std::fs;
+
+    // Get the base directory for app data
+    let app_data_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
+    let full_path = app_data_dir.join(relative_path);
+
+    // Create parent directories if needed
+    if let Some(parent) = full_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    // Write the file
+    fs::write(&full_path, &bytes).map_err(|e| e.to_string())?;
+    Ok(())
+}
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use surrealdb::{
@@ -17,7 +35,7 @@ pub struct AppRecord {
     id: RecordId,
 }
 
-// Book structures
+// Book structures - Modified to remove embedded versions array
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Book {
     pub book_id: Option<String>,
@@ -52,8 +70,11 @@ pub struct Book {
     pub sync_state: Option<String>, // 'idle' | 'dirty' | 'pushing' | 'pulling' | 'conflict'
     pub conflict_state: Option<String>, // 'none' | 'needs_review' | 'blocked'
     pub updated_at: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub versions: Option<Vec<Value>>,   // <— freeform versions array
+    
+    // REMOVED: versions array - now use separate Version schema with book_id foreign key
+    // #[serde(skip_serializing_if = "Option::is_none")]
+    // pub versions: Option<Vec<Value>>,   // <— freeform versions array
+    
     pub status: Option<String>, // 'ACTIVE' | 'DELETED'
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collaborators: Option<Vec<Collaborator>>,
@@ -95,15 +116,18 @@ pub struct BookRecord {
     pub sync_state: Option<String>,
     pub conflict_state: Option<String>,
     pub updated_at: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub versions: Option<Vec<Value>>,   // <— same on the read model
+    
+    // REMOVED: versions array - now use separate Version schema with book_id foreign key
+    // #[serde(skip_serializing_if = "Option::is_none")]
+    // pub versions: Option<Vec<Value>>,   // <— same on the read model
+    
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collaborators: Option<Vec<CollaboratorRecord>>,
 }
 
 // Version structures
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Version {
+pub struct Version1 {
     pub version_id: Option<String>,
     pub book_id: Option<String>,
     pub name: Option<String>,
@@ -118,17 +142,36 @@ pub struct Version {
     pub updated_at: Option<i64>,
 }
 
+
+// Version structures
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct Version {
+    pub versionid: Option<String>,
+    pub bookid: Option<String>,
+    pub name: Option<String>,
+    pub status: Option<String>, // 'DRAFT' | 'IN_REVIEW' | 'FINAL'
+    pub wordcount: Option<i32>,
+    pub createdat: Option<String>,
+    pub contributor: Option<serde_json::Value>,
+    pub revlocal: Option<String>,
+    pub revcloud: Option<String>,
+    pub syncstate: Option<String>,
+    pub conflictstate: Option<String>,
+    pub updatedat: Option<i64>,    
+}
+
 #[derive(Debug, Deserialize, Serialize)]
-pub struct VersionRecord {
+pub struct VersionRecord1 {
     #[allow(dead_code)]
     id: RecordId,
     pub version_id: Option<String>,
-    pub book_id: String,
-    pub name: String,
-    pub status: String,
-    pub word_count: i32,
-    pub created_at: String,
-    pub contributor: serde_json::Value,
+    pub book_id: Option<String>,
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub word_count:  Option<i32>,
+    pub created_at: Option<String>,
+    pub contributor: Option<serde_json::Value>,
     pub rev_local: Option<String>,
     pub rev_cloud: Option<String>,
     pub sync_state: Option<String>,
@@ -138,7 +181,83 @@ pub struct VersionRecord {
     pub plot_canvas: Option<String>,
 }
 
-// Chapter structures
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct VersionRecord {
+    #[allow(dead_code)]
+    id: RecordId,
+    pub versionid: Option<String>,
+    pub bookid: Option<String>,
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub wordcount:  Option<i32>,
+    pub createdat: Option<String>,
+    pub contributor: Option<serde_json::Value>,
+    pub revlocal: Option<String>,
+    pub revcloud: Option<String>,
+    pub syncstate: Option<String>,
+    pub conflictstate: Option<String>,
+    pub updatedat: Option<i64>,
+
+}
+
+// Chapter Revision structures - Local-only revision history
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterRevision {
+    /// Optional SurrealDB record id (e.g. `chapter_revision:xyz`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<RecordId>,
+
+    pub rev_id: String,              // sha256 of normalized content
+    pub chapter_id: String,
+    pub book_id: String,
+    pub version_id: String,
+    pub device_id: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_rev_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_cloud_rev_id: Option<String>,
+
+    pub timestamp: i64,              // TimestampMs - SystemTime::now() in ms
+    pub author_id: String,
+    pub author_name: String,
+    pub is_minor: bool,              // true=autosave, false=manual commit
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,     // commit message for major revisions
+
+    /// Full TipTap JSON snapshot for the chapter content
+    pub snapshot: Value,
+
+    pub word_count: i64,
+    pub char_count: i64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ChapterRevisionRecord {
+    #[allow(dead_code)]
+    id: RecordId,
+    pub rev_id: String,
+    pub chapter_id: String,
+    pub book_id: String,
+    pub version_id: String,
+    pub device_id: String,
+    pub parent_rev_id: Option<String>,
+    pub base_cloud_rev_id: Option<String>,
+    pub timestamp: i64,
+    pub author_id: String,
+    pub author_name: String,
+    pub is_minor: bool,
+    pub message: Option<String>,
+    pub snapshot: Value,
+    pub word_count: i64,
+    pub char_count: i64,
+}
+
+// Chapter structures - Modified to remove encryption and add plain content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chapter {
     pub chapter_id: Option<String>,
@@ -158,9 +277,16 @@ pub struct Chapter {
     pub reading_time: Option<i32>,
     pub last_edited_by: Option<String>,
     pub last_edited_at: Option<String>,
-    pub enc_scheme: Option<String>,
-    pub content_enc: Option<String>,
-    pub content_iv: Option<String>,
+    
+    // NEW: Plain TipTap JSON content (no encryption)
+    pub content: Option<Value>,
+    
+    // REMOVED: Encryption fields
+    // pub enc_scheme: Option<String>,
+    // pub content_enc: Option<String>,
+    // pub content_iv: Option<String>,
+    
+    // Keep existing sync fields
     pub rev_local: Option<String>,
     pub rev_cloud: Option<String>,
     pub sync_state: Option<String>,
@@ -176,10 +302,15 @@ pub struct Chapter {
     pub status: Option<String>, // 'DRAFT' | 'IN_PROGRESS' | 'REVIEW' | 'APPROVED' | 'PUBLISHED'
     pub author_id: Option<String>,
     pub last_modified_by: Option<String>,
+
+    // NEW: Track current revision for this chapter
+    pub current_revision_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ChapterRecord {
+    #[allow(dead_code)]
+    id: RecordId,
     pub chapter_id: String,
     pub book_id: Option<String>,
     pub version_id: Option<String>,
@@ -197,9 +328,16 @@ pub struct ChapterRecord {
     pub reading_time: Option<i32>,
     pub last_edited_by: Option<String>,
     pub last_edited_at: Option<String>,
-    pub enc_scheme: Option<String>,
-    pub content_enc: Option<String>,
-    pub content_iv: Option<String>,
+    
+    // NEW: Plain TipTap JSON content (no encryption)
+    pub content: Option<Value>,
+    
+    // REMOVED: Encryption fields
+    // pub enc_scheme: Option<String>,
+    // pub content_enc: Option<String>,
+    // pub content_iv: Option<String>,
+    
+    // Keep existing sync fields
     pub rev_local: Option<String>,
     pub rev_cloud: Option<String>,
     pub sync_state: Option<String>,
@@ -215,6 +353,9 @@ pub struct ChapterRecord {
     pub status: Option<String>,
     pub author_id: Option<String>,
     pub last_modified_by: Option<String>,
+    
+    // NEW: Track current revision for this chapter
+    pub current_revision_id: Option<String>,
 }
 
 // Character structures
@@ -598,6 +739,7 @@ impl AppDatabase {
                 .await?;
             // Ensure the transaction is flushed
             db.query("COMMIT TRANSACTION").await?;
+            println!("Book created: {:?}", res);
             res
         };
         Ok(created)
@@ -609,6 +751,7 @@ impl AppDatabase {
             db.query("BEGIN TRANSACTION").await?;
             let result: Vec<BookRecord> = db.query("SELECT * FROM book ORDER BY last_modified DESC").await?.take(0)?;
             db.query("COMMIT TRANSACTION").await?;
+            println!("Books retrieved: {:?}", result);
             result
         };
         Ok(books)
@@ -655,42 +798,101 @@ impl AppDatabase {
     // Version operations
     pub async fn create_version(
         &self,
-        version: Version,
-    ) -> Result<Option<AppRecord>, surrealdb::Error> {
+        mut version: Version,
+    ) -> Result<Version, surrealdb::Error> {
+        // Ensure version_id is set if not provided
+         println!("Creating version with version data");
+        if version.versionid.is_none() {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
+            version.versionid = Some(format!("version_{}", timestamp));
+        }
+
+        let versionid = version.versionid.clone().unwrap();
+        let version_for_content = version.clone();
+        println!("Creating version with version {:?}", version_for_content);
         let created = {
-            let db = self.db.lock().await;
-            let res = db
-                .create("version")
-                .content(version)
+            let db: tokio::sync::MutexGuard<'_, Surreal<Db>> = self.db.lock().await;
+            db.query("BEGIN TRANSACTION").await?;
+            // Create with explicit ID using the proper SurrealDB syntax
+            let created: Option<Version> = db
+                .create(("version", &versionid))
+                .content(version_for_content)
                 .await?;
             db.query("COMMIT TRANSACTION").await?;
-            res
+            created
         };
-        Ok(created)
+        
+        match created {
+            Some(record) => Ok(record),
+            None => {
+                // If creation failed, try to fetch what was created
+                match self.get_version_by_id_record(versionid).await? {
+                    Some(record) => Ok(record),
+                    None => Err(surrealdb::Error::Db(surrealdb::error::Db::Thrown("Failed to create version".to_string())))
+                }
+            }
+        }
     }
 
-    pub async fn get_versions_by_book(&self, book_id: String) -> Result<Vec<VersionRecord>, surrealdb::Error> {
+    pub async fn get_versions_by_book(&self, book_id: String) -> Result<Vec<Version>, surrealdb::Error> {
         let versions = {
             let db = self.db.lock().await;
             db.query("BEGIN TRANSACTION").await?;
             let mut result = db.query("SELECT * FROM version WHERE book_id = $book_id ORDER BY created_at DESC").bind(("book_id", book_id)).await?;
-            let versions: Vec<VersionRecord> = result.take(0)?;
+            let versions: Vec<Version> = result.take(0)?;
             db.query("COMMIT TRANSACTION").await?;
             versions
         };
         Ok(versions)
     }
 
-    pub async fn get_version_by_id(&self, version_id: String) -> Result<Option<VersionRecord>, surrealdb::Error> {
-        let version = {
+    pub async fn get_version_by_id(&self, version_id: String) -> Result<Option<Version>, surrealdb::Error> {
+        let version: Option<Version> = {
             let db = self.db.lock().await;
             db.query("BEGIN TRANSACTION").await?;
-            let mut result = db.query("SELECT * FROM version WHERE id = $version_id").bind(("version_id", format!("version:{}", version_id))).await?;
-            let version: Option<VersionRecord> = result.take(0)?;
+            let mut result = db.query("SELECT * FROM version WHERE version_id = $version_id").bind(("version_id", version_id)).await?;
+            let version: Option<Version> = result.take(0)?;
             db.query("COMMIT TRANSACTION").await?;
             version
         };
         Ok(version)
+    }
+
+    // Helper function to get version record (with full record structure)
+    pub async fn get_version_by_id_record(&self, version_id: String) -> Result<Option<Version>, surrealdb::Error> {
+        let version: Option<Version> = {
+            let db = self.db.lock().await;
+            db.query("BEGIN TRANSACTION").await?;
+            let mut result = db.query("SELECT * FROM version WHERE version_id = $version_id").bind(("version_id", version_id)).await?;
+            let version: Option<Version> = result.take(0)?;
+            db.query("COMMIT TRANSACTION").await?;
+            version
+        };
+        Ok(version)
+    }
+
+    pub async fn get_versions(&self) -> Result<Vec<Version>, surrealdb::Error> {
+        let versions = {
+            let db = self.db.lock().await;
+            db.query("BEGIN TRANSACTION").await?;
+            let mut result = db.query("SELECT * FROM version").await?;
+            let versions: Vec<Version> = result.take(0)?;
+            db.query("COMMIT TRANSACTION").await?;
+            versions
+        };
+        Ok(versions)
+    }
+
+    pub async fn clear_versions(&self) -> Result<String, surrealdb::Error> {
+        let db = self.db.lock().await;
+        db.query("BEGIN TRANSACTION").await?;
+        db.query("DELETE FROM version").await?;
+        db.query("COMMIT TRANSACTION").await?;
+        Ok("Versions cleared successfully".to_string())
     }
 
     // Chapter operations
@@ -1018,6 +1220,124 @@ impl AppDatabase {
         let count: Option<usize> = response.take("count").unwrap_or(Some(0));
         db.query("COMMIT TRANSACTION").await?;
         Ok(count.unwrap_or(0))
+    }
+
+    // Chapter Revision Management Methods
+    pub async fn create_chapter_revision(
+        &self,
+        revision: ChapterRevision
+    ) -> Result<ChapterRevision, surrealdb::Error> {
+        let created = {
+            let db = self.db.lock().await;
+            let res: Option<ChapterRevision> = db
+                .create("chapter_revision")
+                .content(revision)
+                .await?;
+            db.query("COMMIT TRANSACTION").await?;
+            res
+        };
+        
+        created.ok_or_else(|| {
+            let err = std::io::Error::new(std::io::ErrorKind::Other, "Failed to create chapter revision");
+            surrealdb::Error::Db(err.into())
+        })
+    }
+    
+    pub async fn get_chapter_revisions(
+        &self,
+        chapter_id: String
+    ) -> Result<Vec<ChapterRevision>, surrealdb::Error> {
+        let revisions = {
+            let db = self.db.lock().await;
+            db.query("BEGIN TRANSACTION").await?;
+            let mut result = db.query("SELECT * FROM chapter_revision WHERE chapter_id = $chapter_id ORDER BY timestamp DESC")
+                .bind(("chapter_id", chapter_id))
+                .await?;
+            let revisions: Vec<ChapterRevision> = result.take(0)?;
+            db.query("COMMIT TRANSACTION").await?;
+            revisions
+        };
+        Ok(revisions)
+    }
+    
+    pub async fn get_chapter_revision(
+        &self,
+        rev_id: String
+    ) -> Result<Option<ChapterRevision>, surrealdb::Error> {
+        let revision = {
+            let db = self.db.lock().await;
+            let revision: Option<ChapterRevision> = db
+                .select(("chapter_revision", rev_id))
+                .await?;
+            revision
+        };
+        Ok(revision)
+    }
+    
+    pub async fn get_child_revisions(
+        &self,
+        parent_rev_id: String
+    ) -> Result<Vec<ChapterRevision>, surrealdb::Error> {
+        let revisions = {
+            let db = self.db.lock().await;
+            db.query("BEGIN TRANSACTION").await?;
+            let mut result = db.query("SELECT * FROM chapter_revision WHERE parent_rev_id = $parent_rev_id ORDER BY timestamp ASC")
+                .bind(("parent_rev_id", parent_rev_id))
+                .await?;
+            let revisions: Vec<ChapterRevision> = result.take(0)?;
+            db.query("COMMIT TRANSACTION").await?;
+            revisions
+        };
+        Ok(revisions)
+    }
+    
+    pub async fn update_chapter_current_revision(
+        &self,
+        chapter_id: String,
+        revision_id: String
+    ) -> Result<Option<ChapterRecord>, surrealdb::Error> {
+        let updated = {
+            let db = self.db.lock().await;
+            let mut result = db.query("UPDATE chapter SET current_revision_id = $revision_id WHERE chapter_id = $chapter_id")
+                .bind(("chapter_id", chapter_id))
+                .bind(("revision_id", revision_id))
+                .await?;
+            let updated: Option<ChapterRecord> = result.take(0)?;
+            db.query("COMMIT TRANSACTION").await?;
+            updated
+        };
+        Ok(updated)
+    }
+    
+    pub async fn cleanup_old_revisions(
+        &self,
+        chapter_id: String,
+        keep_count: usize
+    ) -> Result<usize, surrealdb::Error> {
+        let db = self.db.lock().await;
+        
+        // Get all revision IDs for this chapter, ordered by timestamp DESC
+        let mut result = db.query("SELECT rev_id FROM chapter_revision WHERE chapter_id = $chapter_id ORDER BY timestamp DESC")
+            .bind(("chapter_id", chapter_id))
+            .await?;
+        let revisions: Vec<ChapterRevision> = result.take(0)?;
+        
+        if revisions.len() > keep_count {
+            let to_delete = &revisions[keep_count..];
+            let mut deleted_count = 0;
+            
+            for revision in to_delete {
+                let _: Option<ChapterRevision> = db
+                    .delete(("chapter_revision", &revision.rev_id))
+                    .await?;
+                deleted_count += 1;
+            }
+            
+            db.query("COMMIT TRANSACTION").await?;
+            Ok(deleted_count)
+        } else {
+            Ok(0)
+        }
     }
 
     // FileAssetLink operations
@@ -1421,6 +1741,76 @@ impl AppDatabase {
         let value: surrealdb::Value = result.take(0)?;
         db.query("COMMIT TRANSACTION").await?;
         Ok(value)
+    }
+
+    // Missing Version CRUD operations (methods only, get_version_by_id already exists)
+    pub async fn update_version(&self, version_id: String, version: Version) -> Result<String, surrealdb::Error> {
+        let db = self.db.lock().await;
+        db.query("BEGIN TRANSACTION").await?;
+        let _: Option<VersionRecord> = db
+            .update(("version", &version_id))
+            .content(version)
+            .await?;
+        db.query("COMMIT TRANSACTION").await?;
+        Ok(format!("Version {} updated successfully", version_id))
+    }
+
+    pub async fn delete_version(&self, version_id: String) -> Result<String, surrealdb::Error> {
+        let db = self.db.lock().await;
+        db.query("BEGIN TRANSACTION").await?;
+        let _: Option<VersionRecord> = db.delete(("version", &version_id)).await?;
+        db.query("COMMIT TRANSACTION").await?;
+        Ok(format!("Version {} deleted successfully", version_id))
+    }
+
+    // Missing Chapter CRUD operations (methods only, get_chapter_by_id already exists)
+    pub async fn update_chapter(&self, chapter_id: String, chapter: Chapter) -> Result<String, surrealdb::Error> {
+        let db = self.db.lock().await;
+        db.query("BEGIN TRANSACTION").await?;
+        let _: Option<ChapterRecord> = db
+            .update(("chapter", &chapter_id))
+            .content(chapter)
+            .await?;
+        db.query("COMMIT TRANSACTION").await?;
+        Ok(format!("Chapter {} updated successfully", chapter_id))
+    }
+
+    pub async fn delete_chapter(&self, chapter_id: String) -> Result<String, surrealdb::Error> {
+        let db = self.db.lock().await;
+        db.query("BEGIN TRANSACTION").await?;
+        let _: Option<ChapterRecord> = db.delete(("chapter", &chapter_id)).await?;
+        db.query("COMMIT TRANSACTION").await?;
+        Ok(format!("Chapter {} deleted successfully", chapter_id))
+    }
+
+    // Database initialization
+    pub async fn init(&self) -> Result<(), surrealdb::Error> {
+        let db = self.db.lock().await;
+        
+        // Initialize tables and relationships
+        db.query("
+            DEFINE TABLE book SCHEMAFULL;
+            DEFINE TABLE version SCHEMAFULL;
+            DEFINE FIELD versionid ON version TYPE string;
+            DEFINE FIELD bookid ON version TYPE string;
+            DEFINE FIELD name ON version TYPE string;
+            DEFINE FIELD status ON version TYPE string;
+            DEFINE FIELD wordcount ON version TYPE int;
+            DEFINE FIELD createdat ON version TYPE string;
+            DEFINE FIELD contributor ON version TYPE object;
+            DEFINE FIELD revlocal ON version TYPE string;
+            DEFINE FIELD revcloud ON version TYPE string;
+            DEFINE FIELD syncstate ON version TYPE string;
+            DEFINE FIELD conflictstate ON version TYPE string;
+            DEFINE FIELD updatedat ON version TYPE int;
+            DEFINE TABLE chapter SCHEMAFULL;
+            DEFINE TABLE character SCHEMAFULL;
+            DEFINE TABLE file_asset SCHEMAFULL;
+            DEFINE TABLE session SCHEMAFULL;
+            DEFINE TABLE user_keys SCHEMAFULL;
+        ").await?;
+        
+        Ok(())
     }
 }
 
@@ -1844,15 +2234,15 @@ pub async fn app_delete_book(db: State<'_, AppDatabase>, book_id: String) -> Res
 pub async fn app_create_version(
     db: State<'_, AppDatabase>,
     version: Version,
-) -> Result<String, String> {
-    db.create_version(version.clone())
-        .await
-        .map(|_| format!("Created version: {}", version.name.unwrap_or_default()))
-        .map_err(|e| e.to_string())
+) -> Result<Version, String> {
+    match db.create_version(version).await {
+        Ok(version_record) => Ok(version_record),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
-pub async fn app_get_versions_by_book(db: State<'_, AppDatabase>, book_id: String) -> Result<Vec<VersionRecord>, String> {
+pub async fn app_get_versions_by_book(db: State<'_, AppDatabase>, book_id: String) -> Result<Vec<Version>, String> {
     match db.get_versions_by_book(book_id).await {
         Ok(versions) => Ok(versions),
         Err(e) => Err(e.to_string()),
@@ -1995,3 +2385,176 @@ pub async fn app_surreal_query(db: State<'_, AppDatabase>, query: String) -> Res
         Err(e) => Err(e.to_string()),
     }
 }
+
+// Chapter Revision Tauri Commands
+#[tauri::command]
+pub async fn app_create_chapter_revision(
+    db: State<'_, AppDatabase>,
+    revision: ChapterRevision
+) -> Result<ChapterRevision, String> {
+    match db.create_chapter_revision(revision).await {
+        Ok(revision) => Ok(revision),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn app_get_chapter_revisions(
+    db: State<'_, AppDatabase>,
+    chapter_id: String
+) -> Result<Vec<ChapterRevision>, String> {
+    match db.get_chapter_revisions(chapter_id).await {
+        Ok(revisions) => Ok(revisions),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn app_get_chapter_revision(
+    db: State<'_, AppDatabase>,
+    rev_id: String
+) -> Result<Option<ChapterRevision>, String> {
+    match db.get_chapter_revision(rev_id).await {
+        Ok(revision) => Ok(revision),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn app_get_child_revisions(
+    db: State<'_, AppDatabase>,
+    parent_rev_id: String
+) -> Result<Vec<ChapterRevision>, String> {
+    match db.get_child_revisions(parent_rev_id).await {
+        Ok(revisions) => Ok(revisions),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn app_update_chapter_current_revision(
+    db: State<'_, AppDatabase>,
+    chapter_id: String,
+    revision_id: String
+) -> Result<Option<ChapterRecord>, String> {
+    match db.update_chapter_current_revision(chapter_id, revision_id).await {
+        Ok(chapter) => Ok(chapter),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn app_cleanup_old_revisions(
+    db: State<'_, AppDatabase>,
+    chapter_id: String,
+    keep_count: usize
+) -> Result<usize, String> {
+    match db.cleanup_old_revisions(chapter_id, keep_count).await {
+        Ok(deleted_count) => Ok(deleted_count),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+// Missing Version CRUD operations
+#[tauri::command]
+pub async fn app_get_version_by_id(
+    db: State<'_, AppDatabase>,
+    version_id: String
+) -> Result<Option<Version>, String> {
+    match db.get_version_by_id(version_id).await {
+        Ok(version) => Ok(version),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+
+#[tauri::command]
+pub async fn app_get_versions(
+    db: State<'_, AppDatabase>
+) -> Result<Vec<Version>, String> {
+    match db.get_versions().await {
+        Ok(versions) => Ok(versions),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+
+#[tauri::command]
+pub async fn app_delete_versions(
+    db: State<'_, AppDatabase>
+) -> Result<String, String> {
+    match db.clear_versions().await {
+        Ok(_) => Ok("Versions deleted successfully".to_string()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn app_update_version(
+    db: State<'_, AppDatabase>,
+    version_id: String,
+    version: Version
+) -> Result<String, String> {
+    match db.update_version(version_id, version).await {
+        Ok(result) => Ok(result),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn app_delete_version(
+    db: State<'_, AppDatabase>,
+    version_id: String
+) -> Result<String, String> {
+    match db.delete_version(version_id).await {
+        Ok(result) => Ok(result),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+// Missing Chapter CRUD operations
+#[tauri::command]
+pub async fn app_get_chapter_by_id(
+    db: State<'_, AppDatabase>,
+    chapter_id: String
+) -> Result<Option<ChapterRecord>, String> {
+    match db.get_chapter_by_id(chapter_id).await {
+        Ok(chapter) => Ok(chapter),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn app_update_chapter(
+    db: State<'_, AppDatabase>,
+    chapter_id: String,
+    chapter: Chapter
+) -> Result<String, String> {
+    match db.update_chapter(chapter_id, chapter).await {
+        Ok(result) => Ok(result),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn app_delete_chapter(
+    db: State<'_, AppDatabase>,
+    chapter_id: String
+) -> Result<String, String> {
+    match db.delete_chapter(chapter_id).await {
+        Ok(result) => Ok(result),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+// Database initialization command for DbClient
+#[tauri::command]
+pub async fn init_database(
+    db: State<'_, AppDatabase>
+) -> Result<String, String> {
+    match db.init().await {
+        Ok(_) => Ok("Database initialized successfully".to_string()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+

@@ -89,8 +89,18 @@ use app_surreal::{
     // Scene operations
     app_create_scene, app_get_scene_by_id, app_get_scenes_by_book,
     app_update_scene, app_delete_scene,
+    // Chapter Revision operations
+    app_create_chapter_revision, app_get_chapter_revisions, app_get_chapter_revision,
+    app_get_child_revisions, app_update_chapter_current_revision, app_cleanup_old_revisions,
     // Generic query operation
     app_surreal_query,
+    // Missing Version CRUD operations
+    app_get_version_by_id, app_update_version, app_delete_version, app_get_versions, app_delete_versions,
+    // Missing Chapter CRUD operations  
+    app_get_chapter_by_id, app_update_chapter, app_delete_chapter,
+    write_file_with_dirs,
+    // Database initialization
+    init_database,
 };
 
 // Asset system commands
@@ -295,6 +305,26 @@ pub fn run() {
             app_get_scenes_by_book,
             app_update_scene,
             app_delete_scene,
+            // Chapter Revision operations
+            app_create_chapter_revision,
+            app_get_chapter_revisions,
+            app_get_chapter_revision,
+            app_get_child_revisions,
+            app_update_chapter_current_revision,
+            app_cleanup_old_revisions,
+            // Missing Version CRUD operations
+            app_get_version_by_id,
+            app_update_version,
+            app_delete_version,
+            app_get_versions,
+            app_delete_versions,
+            // Missing Chapter CRUD operations
+            app_get_chapter_by_id,
+            app_update_chapter,
+            app_delete_chapter,
+            write_file_with_dirs,
+            // Database initialization
+            init_database,
             // Surreal commands (legacy)
             surreal_init_db,
             app_surreal_query,

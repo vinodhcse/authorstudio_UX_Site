@@ -57,6 +57,7 @@ import { SimpleExtension } from '../../../extensions/SimpleExtension';
 import { useClipboard } from '../../../hooks/useClipboard';
 import { toast } from '../../../hooks/use-toast';
 import { Toaster } from '../../../components/ui/toaster';
+import { ChapterRevisionManager } from '../../../services/ChapterRevisionManager';
 
 const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }> = ({ trigger, children }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -1897,6 +1898,24 @@ const Editor: React.FC<{
     // Get initial content for editor
     const editorContent = currentChapter?.content || '';
     
+    // Initialize revision manager for the current chapter
+    const revisionManager = useRef(ChapterRevisionManager.getInstance());
+    
+    // Start revision session when chapter changes
+    useEffect(() => {
+        if (currentChapterId && currentChapter) {
+            console.log('🔄 Starting revision session for chapter:', currentChapterId);
+            revisionManager.current.startSession(currentChapterId);
+        }
+        
+        // Cleanup on unmount or chapter change
+        return () => {
+            if (currentChapterId) {
+                revisionManager.current.endSession(currentChapterId);
+            }
+        };
+    }, [currentChapterId, currentChapter]);
+    
     // Expose the function to parent components through useEffect
     useEffect(() => {
         if (onOpenTypographySettings) {
@@ -2031,6 +2050,13 @@ const Editor: React.FC<{
             }),
         ],
         content: editorContent,
+        onUpdate: ({ editor }) => {
+            // Track content changes for revision management
+            if (currentChapterId) {
+                const content = editor.getJSON();
+                revisionManager.current.onContentChange(currentChapterId, content);
+            }
+        },
         editorProps: {
             attributes: {
                 class: 'prose dark:prose-invert prose-lg max-w-none focus:outline-none font-serif text-gray-800 dark:text-gray-300 leading-relaxed book-prose',

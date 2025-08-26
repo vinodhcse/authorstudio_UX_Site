@@ -16,6 +16,7 @@ import CharacterDetailsPage from './pages/CharacterDetailsPage';
 import CustomNodeTest from './components/CustomNodeTest';
 import NameGeneratorPage from './pages/Tools/NameGeneratorPage';
 import CharacterProfileBuilder from './pages/Tools/CharacterProfileBuilder';
+import RevisionHistoryTool from './pages/Tools/RevisionHistoryTool';
 import WhisperTestPage from './pages/WhisperTestPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
@@ -180,6 +181,9 @@ const App: React.FC = () => {
                 } />
                 <Route path="/tool/character-tracker" element={
                   <CharacterProfileBuilder theme={theme} setTheme={handleThemeChange} />
+                } />
+                <Route path="/tool/revision-history" element={
+                  <RevisionHistoryTool />
                 } />
                 
                 {/* BookForgePage - Full screen editor */}

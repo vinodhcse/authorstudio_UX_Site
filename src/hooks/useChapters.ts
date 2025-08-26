@@ -1002,6 +1002,51 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
     loadChapters();
   }, [loadChapters]);
 
+  // Set up revision manager event listeners
+  useEffect(() => {
+    const handleAutoSave = async (event: CustomEvent) => {
+      const { chapterId, content } = event.detail;
+      console.log('🔄 [useChapters] Handling auto-save for chapter:', chapterId);
+      
+      try {
+        await saveChapterContent(chapterId, content, true); // true = minor revision
+        console.log('✅ [useChapters] Auto-save completed for chapter:', chapterId);
+      } catch (error) {
+        console.error('❌ [useChapters] Auto-save failed for chapter:', chapterId, error);
+      }
+    };
+
+    const handleMajorCommit = async (event: CustomEvent) => {
+      const { chapterId, content, message } = event.detail;
+      console.log('🔄 [useChapters] Handling major commit for chapter:', chapterId, 'Message:', message);
+      
+      try {
+        await saveChapterContent(chapterId, content, false); // false = major revision
+        console.log('✅ [useChapters] Major commit completed for chapter:', chapterId);
+      } catch (error) {
+        console.error('❌ [useChapters] Major commit failed for chapter:', chapterId, error);
+      }
+    };
+
+    const handleRevisionError = (event: CustomEvent) => {
+      const { chapterId, error } = event.detail;
+      console.error('❌ [useChapters] Revision error for chapter:', chapterId, error);
+      setError(`Revision error: ${error.message || error}`);
+    };
+
+    // Add event listeners
+    window.addEventListener('chapterRevisionAutoSave', handleAutoSave as any);
+    window.addEventListener('chapterRevisionMajorCommit', handleMajorCommit as any);
+    window.addEventListener('chapterRevisionError', handleRevisionError as any);
+
+    return () => {
+      // Cleanup event listeners
+      window.removeEventListener('chapterRevisionAutoSave', handleAutoSave as any);
+      window.removeEventListener('chapterRevisionMajorCommit', handleMajorCommit as any);
+      window.removeEventListener('chapterRevisionError', handleRevisionError as any);
+    };
+  }, [saveChapterContent]);
+
   return {
     chapters,
     isLoading,
