@@ -1,19 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Chapter } from '../types';
-import { NarrativeFlowNode } from '../types/narrative-layout';
+import { NarrativeFlowNode, NarrativeEdge } from '../types/narrative-layout';
 import { appLog } from '../auth/fileLogger';
 import { 
-  getChaptersByVersion, 
-  getChapter,
-  putChapter, 
-  ChapterRow,
+  getChaptersByVersion as dalGetChaptersByVersion,
+  getChapter as dalGetChapter,
+  putChapter as dalPutChapter,
   ensureDefaultVersion,
   ensureVersionInDatabase,
-  syncChaptersToVersionData
-,
-  createChapterAtomic,
-  deleteChapterAtomic,
-  bumpChapterMetadataAtomic
+  syncChaptersToVersionData,
+  deleteChapter as dalDeleteChapter,
+  createChapter as dalCreateChapter
 } from '../data/dal';
 import { useAuthStore } from '../auth/useAuthStore';
 // Note: encryptionService is imported dynamically to ensure singleton consistency
@@ -48,7 +45,22 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
   const [error, setError] = useState<string | null>(null);
 
   const { user } = useAuthStore();
-  const { getPlotCanvas, updatePlotCanvas, updateVersion, getVersion } = useBookContext();
+  const { getPlotCanvas, updatePlotCanvas } = useBookContext();
+  // Cache encryptionService once per component instance
+  const encryptionRef = useRef<any>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const mod = await import('../services/encryptionService');
+        if (mounted) encryptionRef.current = mod.encryptionService;
+      } catch (e) {
+        appLog.warn('useChapters', 'Failed to preload encryptionService', { error: e });
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   // Log hook initialization and parameter changes
   useEffect(() => {
@@ -72,146 +84,76 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       setError(null);
 
       // Load chapters from local database
-      const chapterRows = user?.id ? await getChaptersByVersion(bookId, versionId, user.id) : [];
+  const rows = user?.id ? await dalGetChaptersByVersion(bookId, versionId) : [];
 
-      // Dynamic import to ensure singleton consistency
-      const { encryptionService } = await import('../services/encryptionService');
-
-      // Convert chapter rows to Chapter objects
-      const chaptersData: Chapter[] = [];
-      for (const row of chapterRows) {
-        try {
-          let decryptedContent = null;
-          
-          // Only try to decrypt if there's actually encrypted content
-          if (user?.id && row.content_enc && row.content_enc.length > 0) {
-            try {
-              decryptedContent = await encryptionService.loadChapterContent(row.chapter_id, user.id);
-            } catch (decryptError) {
-              console.warn('Failed to decrypt chapter content, using fallback:', decryptError);
-              // Use fallback content for chapters with empty/corrupted content
-              decryptedContent = {
-                type: "doc" as const,
-                content: [
-                  {
-                    type: 'heading',
-                    attrs: { level: 2 },
-                    content: [{ type: 'text', text: row.title || 'Untitled Chapter' }]
-                  },
-                  {
-                    type: 'paragraph',
-                    content: [{ type: 'text', text: 'Start writing your chapter here...' }]
-                  }
-                ],
-                metadata: {
-                  totalCharacters: 0,
-                  totalWords: 0,
-                  lastEditedAt: new Date().toISOString()
-                }
-              };
-            }
-          } else {
-            // No encrypted content, use default content
-            decryptedContent = {
-              type: "doc" as const,
-              content: [
-                {
-                  type: 'heading',
-                  attrs: { level: 2 },
-                  content: [{ type: 'text', text: row.title || 'Untitled Chapter' }]
-                },
-                {
-                  type: 'paragraph',
-                  content: [{ type: 'text', text: 'Start writing your chapter here...' }]
-                }
-              ],
-              metadata: {
-                totalCharacters: 0,
-                totalWords: 0,
-                lastEditedAt: new Date().toISOString()
-              }
-            };
+      // Decrypt content once per load cycle using a single encryptionService import
+      const defaultDoc = { type: 'doc' as const, content: [], metadata: { totalCharacters: 0, totalWords: 0, lastEditedAt: new Date().toISOString() } };
+  let mapped: Chapter[] = [];
+  const encSvc = encryptionRef.current;
+  const canDecrypt = !!(user?.id && encSvc && encSvc.isInitialized());
+      if (canDecrypt) {
+        mapped = await Promise.all(rows.map(async (row: any, idx: number) => {
+          let content = defaultDoc;
+          try {
+    const decrypted = await encSvc.loadChapterContent(row.id, user!.id);
+            if (decrypted) content = decrypted;
+          } catch (e) {
+            appLog.warn('useChapters', 'Failed to decrypt chapter content, using empty doc', { chapterId: row.id, error: e });
           }
-          
-          console.log('🔓 [LOAD] Decrypted chapter content:', decryptedContent);
-          chaptersData.push({
-            id: row.chapter_id,
+          return {
+            id: row.id,
             title: row.title || 'Untitled Chapter',
-            position: row.order_index || 0,
-            createdAt: new Date(row.updated_at || Date.now()).toISOString(),
-            updatedAt: new Date(row.updated_at || Date.now()).toISOString(),
-            authorId: row.owner_user_id,
-            lastModifiedBy: row.owner_user_id,
-            linkedPlotNodeId: '', // TODO: Link to actual narrative nodes
-            linkedAct: '', // TODO: Link to actual narrative nodes
-            linkedOutline: '', // TODO: Link to actual narrative nodes
-            linkedScenes: [], // TODO: Link to actual narrative nodes
-            content: decryptedContent,
-            wordCount: row.word_count || 0,
-            hasProposals: Boolean(row.has_proposals),
-            characters: [],
-            isComplete: false,
-            status: 'DRAFT',
-            revisions: [],
-            currentRevisionId: '',
-            collaborativeState: {
-              pendingChanges: [],
-              needsReview: false,
-              reviewerIds: [],
-              approvedBy: [],
-              rejectedBy: [],
-              mergeConflicts: []
-            }
-          });
-        } catch (error) {
-          // If decryption fails, add chapter with basic data
-          chaptersData.push({
-            id: row.chapter_id,
-            title: row.title || 'Untitled Chapter',
-            position: row.order_index || 0,
-            createdAt: new Date(row.updated_at || Date.now()).toISOString(),
-            updatedAt: new Date(row.updated_at || Date.now()).toISOString(),
-            authorId: row.owner_user_id,
-            lastModifiedBy: row.owner_user_id,
+            position: idx + 1,
+            createdAt: row.createdAt || new Date().toISOString(),
+            updatedAt: row.updatedAt || new Date().toISOString(),
+            authorId: (row as any).authorId || (user ? user.id : ''),
+            lastModifiedBy: (row as any).lastModifiedBy || (user ? user.id : ''),
             linkedPlotNodeId: '',
             linkedAct: '',
             linkedOutline: '',
             linkedScenes: [],
-            content: { 
-              type: 'doc' as const, 
-              content: [], 
-              metadata: { 
-                totalCharacters: 0, 
-                totalWords: 0, 
-                lastEditedAt: new Date().toISOString() 
-              } 
-            },
-            wordCount: row.word_count || 0,
-            hasProposals: Boolean(row.has_proposals),
+            content,
+            wordCount: (content as any)?.metadata?.totalWords || row.wordCount || 0,
+            hasProposals: Boolean((row as any).hasProposals),
             characters: [],
             isComplete: false,
             status: 'DRAFT',
             revisions: [],
             currentRevisionId: '',
-            collaborativeState: {
-              pendingChanges: [],
-              needsReview: false,
-              reviewerIds: [],
-              approvedBy: [],
-              rejectedBy: [],
-              mergeConflicts: []
-            }
-          });
-        }
+            collaborativeState: { pendingChanges: [], needsReview: false, reviewerIds: [], approvedBy: [], rejectedBy: [], mergeConflicts: [] }
+          } as Chapter;
+        }));
+      } else {
+        mapped = rows.map((row: any, idx: number) => ({
+          id: row.id,
+          title: row.title || 'Untitled Chapter',
+          position: idx + 1,
+          createdAt: row.createdAt || new Date().toISOString(),
+          updatedAt: row.updatedAt || new Date().toISOString(),
+          authorId: (row as any).authorId || (user ? user.id : ''),
+          lastModifiedBy: (row as any).lastModifiedBy || (user ? user.id : ''),
+          linkedPlotNodeId: '',
+          linkedAct: '',
+          linkedOutline: '',
+          linkedScenes: [],
+          content: defaultDoc,
+          wordCount: row.wordCount || 0,
+          hasProposals: Boolean((row as any).hasProposals),
+          characters: [],
+          isComplete: false,
+          status: 'DRAFT',
+          revisions: [],
+          currentRevisionId: '',
+          collaborativeState: { pendingChanges: [], needsReview: false, reviewerIds: [], approvedBy: [], rejectedBy: [], mergeConflicts: [] }
+        }));
       }
 
-      setChapters(chaptersData);
-      
+      setChapters(mapped);
       appLog.info('useChapters', 'Loaded chapters from local storage', {
         bookId,
         versionId,
-        chapterCount: chaptersData.length,
-        chapterTitles: chaptersData.map(ch => ({ id: ch.id, title: ch.title, position: ch.position }))
+        chapterCount: mapped.length,
+        chapterTitles: mapped.map(ch => ({ id: ch.id, title: ch.title, position: ch.position }))
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load chapters';
@@ -251,13 +193,13 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       appLog.info('useChapters', 'Generated chapter ID', { chapterId });
       
       // Get current plot canvas
-      const plotCanvas = getPlotCanvas(bookId, finalVersionId);
+      const plotCanvas = await getPlotCanvas(bookId, finalVersionId);
       appLog.info('useChapters', 'Retrieved plot canvas', { 
         hasPlotCanvas: !!plotCanvas, 
-        nodeCount: plotCanvas?.nodes?.length || 0 
+        nodeCount: (plotCanvas && (plotCanvas as any).nodes ? (plotCanvas as any).nodes.length : 0) 
       });
-      let narrativeNodes = plotCanvas?.nodes || [];
-      let narrativeEdges = plotCanvas?.edges || [];
+      let narrativeNodes: NarrativeFlowNode[] = (plotCanvas?.nodes as NarrativeFlowNode[]) || [];
+      let narrativeEdges: NarrativeEdge[] = (plotCanvas?.edges as NarrativeEdge[]) || [];
       
       // Calculate position (add to end)
       const position = chapters.length + 1;
@@ -267,7 +209,7 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       let actNode: NarrativeFlowNode | null = null;
       
       // Find or create outline node
-      const existingOutline = narrativeNodes.find(node => node.data.type === 'outline');
+  const existingOutline = narrativeNodes.find((node: NarrativeFlowNode) => (node as any).data.type === 'outline');
       if (existingOutline) {
         outlineNode = existingOutline;
       } else {
@@ -299,7 +241,7 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       // Find existing act or create new one
       if (actId) {
         // Use specified act
-        const existingAct = narrativeNodes.find(node => node.id === actId && node.data.type === 'act');
+  const existingAct = narrativeNodes.find((node: NarrativeFlowNode) => node.id === actId && (node as any).data.type === 'act');
         if (existingAct) {
           actNode = existingAct;
         } else {
@@ -307,8 +249,8 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         }
       } else {
         // Find or create Act 1 (default act for new chapters)
-        const existingAct = narrativeNodes.find(node => 
-          node.data.type === 'act' && node.data.parentId === outlineNode!.id
+        const existingAct = narrativeNodes.find((node: NarrativeFlowNode) => 
+          (node as any).data.type === 'act' && (node as any).data.parentId === outlineNode!.id
         );
         if (existingAct) {
           actNode = existingAct;
@@ -338,7 +280,7 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
           narrativeNodes = [...narrativeNodes, actNode];
           
           // Update outline node to include new act
-          narrativeNodes = narrativeNodes.map(node => 
+          narrativeNodes = narrativeNodes.map((node: NarrativeFlowNode) => 
             node.id === outlineNode!.id 
               ? { ...node, data: { ...node.data, childIds: [...node.data.childIds, newActId] } }
               : node
@@ -401,14 +343,14 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       narrativeNodes = [...narrativeNodes, chapterNode, sceneNode];
       
       // Update act node to include new chapter
-      narrativeNodes = narrativeNodes.map(node => 
+  narrativeNodes = narrativeNodes.map((node: NarrativeFlowNode) => 
         node.id === actNode!.id 
           ? { ...node, data: { ...node.data, childIds: [...node.data.childIds, chapterNodeId] } }
           : node
       );
       
       // Update chapter node to include new scene
-      narrativeNodes = narrativeNodes.map(node => 
+  narrativeNodes = narrativeNodes.map((node: NarrativeFlowNode) => 
         node.id === chapterNodeId 
           ? { ...node, data: { ...node.data, childIds: [...node.data.childIds, sceneNodeId] } }
           : node
@@ -448,41 +390,41 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         }
       };
 
-      const chapterRow: ChapterRow = {
-        chapter_id: chapterId,
-        book_id: bookId,
-        version_id: finalVersionId,
-        owner_user_id: user.id,
+  const dbChapter = { id: chapterId, bookId, versionId: finalVersionId, title, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), wordCount: initialContent.metadata.totalWords };
+  const newChapterForState: Chapter = {
+        id: chapterId,
+        authorId: user.id,
         title,
-        order_index: position,
-        enc_scheme: 'udek',
-        content_enc: new Uint8Array(), // Will be set by encryptionService
-        content_iv: new Uint8Array(),  // Will be set by encryptionService
-        has_proposals: 0,
-        rev_local: '',  // Will be set by encryptionService
-        rev_cloud: undefined,
-        pending_ops: 0,
-        sync_state: 'dirty',
-        conflict_state: 'none',
-        word_count: initialContent.metadata.totalWords,
-        character_count: initialContent.metadata.totalCharacters,
-        created_at: Date.now(),
-        updated_at: Date.now()
+        position,
+        content: initialContent,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        wordCount: initialContent.metadata.totalWords,
+        hasProposals: false,
+        characters: [],
+        isComplete: false,
+        status: 'DRAFT',
+        lastModifiedBy: user.id,
+        revisions: [],
+        currentRevisionId: '',
+        linkedPlotNodeId: '',
+        linkedAct: '',
+        linkedOutline: '',
+        linkedScenes: [],
+        collaborativeState: {
+          pendingChanges: [],
+          needsReview: false,
+          reviewerIds: [],
+          approvedBy: [],
+          rejectedBy: [],
+          mergeConflicts: []
+        }
       };
 
-      // Save to local database (will be updated by encryptionService)
-      appLog.info('useChapters', 'About to save chapter to database', { 
-        chapterId, 
-        title: chapterRow.title,
-        titleFromInput: title,
-        bookId,
-        versionId: finalVersionId
-      });
-      await createChapterAtomic(chapterRow, user.id);
-      appLog.info('useChapters', 'Chapter saved to database successfully', { 
-        chapterId, 
-        titleSaved: chapterRow.title 
-      });
+  // Save to local database
+  appLog.info('useChapters', 'About to save chapter to database', { chapterId, title, bookId, versionId: finalVersionId });
+  await dalCreateChapter(dbChapter as any);
+  appLog.info('useChapters', 'Chapter saved to database successfully', { chapterId, titleSaved: title });
       
       // Dynamic import to ensure singleton consistency
       const { encryptionService } = await import('../services/encryptionService');
@@ -545,12 +487,12 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       };
 
       // Update local state immediately
-      const newChaptersState = [...chapters, newChapter];
+  const newChaptersState = [...chapters, newChapterForState];
       setChapters(newChaptersState);
       
       appLog.info('useChapters', 'Updated local state with new chapter', {
-        chapterId: newChapter.id,
-        title: newChapter.title,
+  chapterId: newChapterForState.id,
+  title: newChapterForState.title,
         totalChapters: newChaptersState.length,
         chapterTitles: newChaptersState.map(ch => ch.title)
       });
@@ -562,16 +504,13 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
 appLog.info('useChapters', 'Synced chapters to version content_data', { 
             bookId, 
             versionId: finalVersionId,
-            chapterId: newChapter.id,
-            title: newChapter.title
+            chapterId: newChapterForState.id,
+            title: newChapterForState.title
           });
 
           // Mark chapter as properly synced locally since it was successfully saved and synced
-          const syncedChapterRow: ChapterRow = {
-            ...chapterRow,
-            sync_state: 'idle' // Mark as successfully committed locally
-          };
-          await putChapter(syncedChapterRow);
+          const syncedChapter = { ...dbChapter, updatedAt: new Date().toISOString() };
+          await dalPutChapter(syncedChapter as any);
           
           appLog.info('useChapters', 'Chapter marked as locally synced', {
             chapterId: newChapter.id,
@@ -581,14 +520,14 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
           appLog.warn('useChapters', 'Failed to sync chapters to version data, but chapter was created', { 
             bookId, 
             versionId: finalVersionId,
-            chapterId: newChapter.id,
+            chapterId: newChapterForState.id,
             error 
           });
         }
       }
       
       appLog.info('useChapters', `Created chapter: ${title} with narrative nodes`, { 
-        chapterId: newChapter.id,
+  chapterId: newChapterForState.id,
         chapterNodeId,
         sceneNodeId,
         actId: actNode!.id,
@@ -598,7 +537,7 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
       // Dispatch event to notify other components (like EditorHeader) to refresh
       window.dispatchEvent(new CustomEvent('chapterCreated', { 
         detail: { 
-          chapter: newChapter,
+          chapter: newChapterForState,
           bookId,
           versionId: finalVersionId
         } 
@@ -615,7 +554,7 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
         }
       }, 1000); // Delay to ensure local save is complete
       
-      return newChapter;
+  return newChapterForState;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create chapter';
       setError(errorMessage);
@@ -640,22 +579,16 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
     try {
       setError(null);
       
-      const existingChapter = chapters.find(c => c.id === chapterId);
+  const existingChapter = chapters.find(c => c.id === chapterId);
       if (!existingChapter) {
         throw new Error(`Chapter not found: ${chapterId}`);
       }
       
       // Update the chapter in local database if needed
       if (updates.title || updates.position) {
-        const chapterRow = await getChapter(chapterId, user.id);
-        if (chapterRow) {
-          const updatedRow: ChapterRow = {
-            ...chapterRow,
-            title: updates.title || chapterRow.title,
-            order_index: updates.position || chapterRow.order_index,
-            updated_at: Date.now()
-          };
-          await putChapter(updatedRow);
+        const dbRow = await dalGetChapter(chapterId);
+        if (dbRow) {
+          await dalPutChapter({ ...dbRow, title: updates.title ?? dbRow.title } as any);
         }
       }
       
@@ -671,7 +604,7 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
       // Sync chapters to version content_data after update
       if (bookId && versionId) {
         try {
-          await syncChaptersToVersionData(bookId, versionId, user.id);
+          await syncChaptersToVersionData(bookId, versionId);
           appLog.info('useChapters', 'Synced chapters to version content_data after update', { 
             bookId, 
             versionId,
@@ -714,14 +647,14 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
       setError(null);
       
       // Remove from local database
-      await deleteChapterAtomic(chapterId, versionId, user.id);
+  await dalDeleteChapter(chapterId);
 // Update local state
       setChapters(prev => prev.filter(chapter => chapter.id !== chapterId));
       
       // Sync chapters to version content_data after deletion
       if (bookId && versionId) {
         try {
-          await syncChaptersToVersionData(bookId, versionId, user.id);
+          await syncChaptersToVersionData(bookId, versionId);
           appLog.info('useChapters', 'Synced chapters to version content_data after deletion', { 
             bookId, 
             versionId,
@@ -783,25 +716,9 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
       await encryptionService.saveChapterContent(chapterId, bookId, versionId, user.id, content);
 
       // Update database row to mark as dirty (needs sync)
-      const existingChapterRow = await getChapter(chapterId, user.id);
+      const existingChapterRow = await dalGetChapter(chapterId);
       if (existingChapterRow) {
-        const updatedChapterRow: ChapterRow = {
-          ...existingChapterRow,
-          word_count: content.metadata?.totalWords || 0,
-          character_count: content.metadata?.totalCharacters || 0,
-          updated_at: Date.now(),
-          sync_state: 'dirty' // Mark as needing sync after content change
-        };
-        await bumpChapterMetadataAtomic(chapterId, versionId, user.id, {
-          wordCount: content.metadata?.totalWords || 0,
-          charCount: content.metadata?.totalCharacters || 0
-        });
-        
-        appLog.info('useChapters', 'Chapter database row updated after content save', {
-          chapterId,
-          wordCount: updatedChapterRow.word_count,
-          syncState: updatedChapterRow.sync_state
-        });
+        await dalPutChapter({ ...existingChapterRow, updatedAt: new Date().toISOString(), wordCount: content.metadata?.totalWords || 0 } as any);
       }
 
       // Update local chapter content
@@ -838,12 +755,12 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
       setError(null);
       
       // Get current plot canvas
-      const plotCanvas = getPlotCanvas(bookId, versionId);
-      let narrativeNodes = plotCanvas?.nodes || [];
-      let narrativeEdges = plotCanvas?.edges || [];
+  const plotCanvas = await getPlotCanvas(bookId, versionId);
+  let narrativeNodes: NarrativeFlowNode[] = (plotCanvas?.nodes as NarrativeFlowNode[]) || [];
+  let narrativeEdges: NarrativeEdge[] = (plotCanvas?.edges as NarrativeEdge[]) || [];
       
       // Find existing acts to calculate position
-      const existingActs = narrativeNodes.filter(node => node.data.type === 'act');
+  const existingActs = narrativeNodes.filter((node: NarrativeFlowNode) => (node as any).data.type === 'act');
       
       const actId = generateId();
       const newActNode: NarrativeFlowNode = {
@@ -889,16 +806,16 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
       setError(null);
       
       // Get current plot canvas
-      const plotCanvas = getPlotCanvas(bookId, versionId);
-      let narrativeNodes = plotCanvas?.nodes || [];
-      let narrativeEdges = plotCanvas?.edges || [];
+  const plotCanvas = await getPlotCanvas(bookId, versionId);
+  let narrativeNodes: NarrativeFlowNode[] = (plotCanvas?.nodes as NarrativeFlowNode[]) || [];
+  let narrativeEdges: NarrativeEdge[] = (plotCanvas?.edges as NarrativeEdge[]) || [];
       
       // Find chapters linked to this act
       const actChapters = chapters.filter(chapter => chapter.linkedAct === actId);
       
       if (actChapters.length > 0) {
         // Find next available act
-        const availableActs = narrativeNodes.filter(node => node.data.type === 'act' && node.id !== actId);
+  const availableActs = narrativeNodes.filter((node: NarrativeFlowNode) => (node as any).data.type === 'act' && node.id !== actId);
         const nextAct = availableActs[0];
         
         if (nextAct) {
@@ -966,11 +883,12 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
   // Helper function to get current acts from narrative flow
   const getCurrentActs = useCallback((): NarrativeFlowNode[] => {
     if (!bookId || !versionId) return [];
-    
-    const plotCanvas = getPlotCanvas(bookId, versionId);
-    return (plotCanvas?.nodes || [])
-      .filter(node => node.data.type === 'act')
-      .sort((a, b) => a.position.y - b.position.y);
+    // getPlotCanvas may return a promise; handle both cases
+    const pc = getPlotCanvas(bookId, versionId) as any;
+    const nodes: NarrativeFlowNode[] = (pc && pc.nodes) ? pc.nodes : [];
+    return nodes
+      .filter((node: NarrativeFlowNode) => (node as any).data.type === 'act')
+      .sort((a: NarrativeFlowNode, b: NarrativeFlowNode) => (a.position as any).y - (b.position as any).y);
   }, [bookId, versionId, getPlotCanvas]);
 
   // Helper function to move chapter to different act
@@ -1000,6 +918,13 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
   // Load chapters on mount and when bookId/versionId changes
   useEffect(() => {
     loadChapters();
+  }, [loadChapters]);
+
+  // Refresh once when encryption becomes available (e.g., after unlock on relaunch)
+  useEffect(() => {
+    const handler = () => loadChapters();
+    window.addEventListener('encryptionInitialized', handler as any);
+    return () => window.removeEventListener('encryptionInitialized', handler as any);
   }, [loadChapters]);
 
   // Set up revision manager event listeners

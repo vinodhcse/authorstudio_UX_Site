@@ -33,54 +33,15 @@ export function mergeBookLocalAndCloud(local: Book, cloud: Book): Book {
     merged.lastModified = cloud.lastModified;
   }
 
-  // Version-level merge by ID
-  const localVersionsMap = new Map(local.versions.map(v => [v.id, v]));
-  const cloudVersionsMap = new Map(cloud.versions.map(v => [v.id, v]));
-  const allVersionIds = new Set([...localVersionsMap.keys(), ...cloudVersionsMap.keys()]);
-
-  const mergedVersions: Version[] = [];
-
-  for (const versionId of allVersionIds) {
-    const localVersion = localVersionsMap.get(versionId);
-    const cloudVersion = cloudVersionsMap.get(versionId);
-
-    if (localVersion && cloudVersion) {
-      // Both exist - merge by Last Writer Wins
-      const localVersionTime = localVersion.updatedAt || 0;
-      const cloudVersionTime = cloudVersion.updatedAt || 0;
-
-      let mergedVersion: Version;
-      if (cloudVersionTime > localVersionTime) {
-        mergedVersion = { ...cloudVersion };
-        // If both were dirty, mark as conflict for user review
-        if (localVersion.syncState === 'dirty' && cloudVersion.syncState === 'dirty') {
-          mergedVersion.conflictState = 'needs_review';
-        }
-      } else {
-        mergedVersion = { ...localVersion };
-      }
-
-      mergedVersions.push(mergedVersion);
-    } else if (localVersion) {
-      // Only local exists - keep it
-      mergedVersions.push(localVersion);
-    } else if (cloudVersion) {
-      // Only cloud exists - add it
-      mergedVersions.push(cloudVersion);
-    }
-  }
-
-  merged.versions = mergedVersions;
+  // Versions: keep IDs only; accept strings or objects defensively
+  const toId = (v: any) => (typeof v === 'string' ? v : v?.id);
+  const localIds = Array.isArray(local.versions) ? (local.versions as any[]).map(toId).filter(Boolean) : [];
+  const cloudIds = Array.isArray(cloud.versions) ? (cloud.versions as any[]).map(toId).filter(Boolean) : [];
+  const mergedIds = Array.from(new Set<string>([...localIds, ...cloudIds]));
+  merged.versions = mergedIds;
   merged.revCloud = cloud.revCloud || cloud.revLocal;
   merged.syncState = 'idle';
-
-  // Check if any versions still have conflicts
-  const hasConflicts = mergedVersions.some(v => v.conflictState === 'needs_review');
-  if (hasConflicts) {
-    merged.conflictState = 'needs_review';
-  } else {
-    merged.conflictState = 'none';
-  }
+  merged.conflictState = 'none';
 
   return merged;
 }
@@ -167,28 +128,13 @@ export function resolveBookConflict(
 /**
  * Mark a book as dirty after local changes
  */
-export function markBookDirty(book: Book, versionId?: string): Book {
+export function markBookDirty(book: Book, _versionId?: string): Book {
   const updatedBook = {
     ...book,
     revLocal: newRev(),
     syncState: 'dirty' as const,
     updatedAt: now()
   };
-
-  // If a specific version was changed, mark it dirty too
-  if (versionId) {
-    updatedBook.versions = book.versions.map(version => {
-      if (version.id === versionId) {
-        return {
-          ...version,
-          revLocal: newRev(),
-          syncState: 'dirty' as const,
-          updatedAt: now()
-        };
-      }
-      return version;
-    });
-  }
 
   return updatedBook;
 }
@@ -198,23 +144,12 @@ export function markBookDirty(book: Book, versionId?: string): Book {
  */
 export function updateVersionInBook(
   book: Book, 
-  versionId: string, 
-  updates: Partial<Version>
+  _versionId: string, 
+  _updates: Partial<Version>
 ): Book {
-  const updatedVersions = book.versions.map(version => {
-    if (version.id === versionId) {
-      return {
-        ...version,
-        ...updates,
-        updatedAt: now()
-      };
-    }
-    return version;
-  });
-
   return {
     ...book,
-    versions: updatedVersions,
+  // No-op on versions array (string IDs only); version row is updated elsewhere
     revLocal: newRev(),
     syncState: 'dirty',
     updatedAt: now()
@@ -224,24 +159,11 @@ export function updateVersionInBook(
 /**
  * Add a new version to a book
  */
-export function addVersionToBook(book: Book, newVersion: Omit<Version, 'id'>): Book {
-  const version: Version = {
-    ...newVersion,
-    id: crypto.randomUUID(),
-    revLocal: newRev(),
-    syncState: 'dirty',
-    conflictState: 'none',
-    updatedAt: now(),
-    chapters: newVersion.chapters || [],
-    characters: newVersion.characters || [],
-    plotArcs: newVersion.plotArcs || [],
-    worlds: newVersion.worlds || [],
-    plotCanvas: newVersion.plotCanvas || null
-  };
-
+export function addVersionToBook(book: Book, _newVersion: Omit<Version, 'id'>): Book {
+  const newId = crypto.randomUUID();
   return {
     ...book,
-    versions: [...book.versions, version],
+    versions: [...(Array.isArray(book.versions) ? book.versions : []), newId],
     revLocal: newRev(),
     syncState: 'dirty',
     updatedAt: now()
@@ -254,7 +176,7 @@ export function addVersionToBook(book: Book, newVersion: Omit<Version, 'id'>): B
 export function removeVersionFromBook(book: Book, versionId: string): Book {
   return {
     ...book,
-    versions: book.versions.filter(v => v.id !== versionId),
+  versions: (Array.isArray(book.versions) ? book.versions : []).filter(v => v !== versionId),
     revLocal: newRev(),
     syncState: 'dirty',
     updatedAt: now()

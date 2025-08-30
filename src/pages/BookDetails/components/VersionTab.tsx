@@ -14,7 +14,7 @@ const StatusBadge: React.FC<{ status: VersionStatus }> = ({ status }) => {
     };
     return (
         <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusStyles[status]}`}>
-            {status.replace('_', ' ')}
+            {status?.replace('_', ' ')}
         </span>
     );
 };
@@ -118,8 +118,16 @@ const VersionTab: React.FC<VersionTabProps> = ({ versions, onOpenCreateModal, on
                                 <div className="flex-1 min-w-0">
                                     <p className="font-semibold text-gray-800 dark:text-gray-200">{version.name}</p>
                                     <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                        <img src={version.contributor.avatar} alt={version.contributor.name} className="w-5 h-5 rounded-full" />
-                                        <span>{version.contributor.name} • Created {version.createdAt}</span>
+                                        {version.contributor?.avatar && (
+                                            <img 
+                                                src={version.contributor.avatar} 
+                                                alt={version.contributor?.name || 'Contributor'} 
+                                                className="w-5 h-5 rounded-full" 
+                                            />
+                                        )}
+                                        <span>
+                                            {version.contributor?.name || 'Unknown'} • Created {version.createdAt || 'Unknown date'}
+                                        </span>
                                     </div>
                                 </div>
                                 <div className="flex-shrink-0 flex items-center gap-4 w-full sm:w-auto justify-between">
@@ -132,7 +140,7 @@ const VersionTab: React.FC<VersionTabProps> = ({ versions, onOpenCreateModal, on
                                                 revCloud={version.revCloud} 
                                             />
                                         </div>
-                                        <p className="text-sm text-gray-600 dark:text-gray-300 w-28 text-right">{version.wordCount.toLocaleString()} words</p>
+                                        <p className="text-sm text-gray-600 dark:text-gray-300 w-28 text-right">{(version.wordCount || 0).toLocaleString()} words</p>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <Link to={`/book/${bookId}/version/${version.id}`} className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 hover:text-sky-500 dark:hover:text-sky-400 transition-colors text-sm font-semibold">

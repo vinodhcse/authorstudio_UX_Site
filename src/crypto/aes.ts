@@ -71,7 +71,12 @@ export async function aesGcmDecrypt(ciphertext: Uint8Array, iv: Uint8Array, key:
  * Convert Uint8Array to base64 string
  */
 export function uint8ArrayToBase64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes));
+  // Avoid using spread which can overflow the call stack for large arrays
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 /**

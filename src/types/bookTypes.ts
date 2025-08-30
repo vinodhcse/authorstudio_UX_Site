@@ -8,18 +8,19 @@ export interface FileRef {
 
 export interface Version {
   id: string;
+  bookId: string;
   name: string;
   status?: 'active' | 'archived';
   wordCount?: number;
   createdAt?: string;
   contributor?: { name?: string; avatar?: string };
   
-  // Free-form children under each version:
-  chapters?: any[];        // encrypted or rich-json blocks
+  // For now, keep content at version level (can migrate later)
+  chapters?: string[];        // Array of chapter IDs pointing to chapter table
+  characters?: any[];         // Keep for backward compatibility
+  plotArcs?: any[];          // Keep for backward compatibility
+  worlds?: any[];            // Keep for backward compatibility
   plotCanvas?: { nodes: any[]; edges: any[] } | null;
-  characters?: any[];
-  plotArcs?: any[];
-  worlds?: any[];
   
   // Sync/meta at the version level
   revLocal?: string;
@@ -61,8 +62,14 @@ export interface Book {
   // Collaboration (optional to keep existing UI happy)
   collaborators?: Array<{ id: string; role: 'AUTHOR' | 'EDITOR' | 'REVIEWER' | 'ADMIN'; name?: string; avatar?: string }>;
 
-  // IMPORTANT: Free-form JSON array of versions with all children
-  versions: Version[];
+  // IMPORTANT: Array of version IDs - actual versions stored in version table
+  versions: string[];
+
+  // Content data stays at book level (not in versions)
+  plotCanvas?: { nodes: any[]; edges: any[] } | null;
+  characters?: any[];
+  plotArcs?: any[];
+  worlds?: any[];
 
   // Sync / conflict
   isShared?: boolean;

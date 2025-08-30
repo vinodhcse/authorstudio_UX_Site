@@ -1,6 +1,6 @@
 
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Book, BookDetailsTab, Version } from '../../types';
@@ -16,18 +16,42 @@ import { useBookContext } from '../../contexts/BookContext';
 const BookDetailsPage: React.FC = () => {
     const { bookId } = useParams<{ bookId: string }>();
     const navigate = useNavigate();
-    const { books, createVersion, updateBook, deleteBook, deleteVersion } = useBookContext();
+    const { books, createVersion, updateBook, deleteBook, deleteVersion, getBookVersions } = useBookContext();
     const [activeTab, setActiveTab] = useState<BookDetailsTab>('Versions');
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
     const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [versions, setVersions] = useState<Version[]>([]);
 
     const book = books.find(b => b.id === bookId);
 
     if (!book) {
         return <Navigate to="/" replace />;
     }
+
+    // 2) a loader that calls your context function
+    const loadVersions = async () => {
+    if (!book) return;
+    try {
+        const list = await getBookVersions(book.id);
+        setVersions(list  || []); // ensure array
+    } catch (err: any) {
+        console.error('Failed to load versions:', err);
+        
+    } finally {
+        
+    }
+    };
+
+   // 3) fetch when the component mounts / when book changes
+    useEffect(() => {
+    loadVersions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [book?.id]);
+
+
+    
 
     const handleUpdateBook = async (updatedData: Partial<Book>) => {
         if(book) {
@@ -114,7 +138,7 @@ const BookDetailsPage: React.FC = () => {
         switch (activeTab) {
             case 'Versions':
                 return <VersionTab 
-                            versions={book.versions || []}
+                            versions={versions}
                             onOpenCreateModal={() => setCreateVersionModalOpen(true)}
                             onDeleteVersion={handleDeleteVersion}
                         />;

@@ -24,7 +24,7 @@ import {
   putChapter,
   computeRevisionHash,
   SceneRow,
-  ChapterRow
+  
 } from '../data/dal';export class EncryptionService {
   private appKey: CryptoKey | null = null;
   private udek: Uint8Array | null = null;
@@ -40,13 +40,7 @@ import {
     return null;
   }
 
-  /**
-   * Upload encryption keys to server for multi-device support
-   */
-  private async uploadKeysToServer(_userId: string, _encryptedData: Uint8Array, _salt: Uint8Array, _iterations: number): Promise<void> {
-    // TODO: Implement server API call to store encrypted keys
-    console.log('🌐 [EncryptionService] uploadKeysToServer not yet implemented');
-  }
+  // (Optional) uploadKeysToServer intentionally omitted until server API exists
 
   /**
    * Initialize encryption service with user passphrase
@@ -54,7 +48,7 @@ import {
    */
   async initialize(userId: string, passphrase: string): Promise<void> {
     // Get user keys outside try block for recovery access
-    let userKeys = await getUserKeys(userId);
+  let userKeys: any = await getUserKeys(userId);
     
     try {
       appLog.info('encryption', 'Initializing encryption service', { userId });
@@ -69,7 +63,7 @@ import {
           if (userKeys) {
             console.log('✅ [EncryptionService] Keys downloaded from server');
             // Store locally for offline access
-            await setUserKeys(userKeys);
+            await setUserKeys(userKeys); // Persist downloaded keys
           }
         } catch (serverError) {
           console.log('ℹ️ [EncryptionService] No keys on server or server unavailable, will generate new keys');
@@ -106,7 +100,7 @@ import {
         // Existing user - decrypt UDEK
         appLog.info('encryption', 'Existing user - decrypting UDEK');
         
-        this.appKey = await deriveAppKey(passphrase, userKeys.kdf_salt, userKeys.kdf_iters);
+  this.appKey = await deriveAppKey(passphrase, userKeys.kdf_salt, userKeys.kdf_iters);
         
         // Convert wrapped data from storage format to Uint8Array
         let wrappedData: Uint8Array;
@@ -179,51 +173,23 @@ import {
         hasUdek: !!this.udek,
         isInitialized: this.isInitialized()
       });
+
+      // Notify UI that encryption is ready so components can refresh/decrypt
+      try {
+        window.dispatchEvent(new CustomEvent('encryptionInitialized', { detail: { userId } }));
+      } catch (_) {}
       
     } catch (error) {
       console.error('🔐 [EncryptionService] Initialization failed:', error);
       
-      // Check if this is a corruption issue and offer recovery
-      if (error instanceof Error && error.message === 'Failed to unwrap UDEK' && userKeys) {
-        console.log('🔄 [EncryptionService] Attempting encryption key recovery...');
-        
-        try {
-          // Clear corrupted keys and regenerate
-          console.log('🔄 [EncryptionService] Clearing corrupted encryption data and regenerating...');
-          
-          // Generate new encryption keys
-          const salt = generateSalt();
-          const iterations = 100000;
-          this.appKey = await deriveAppKey(passphrase, salt, iterations);
-          
-          this.udek = generateUDEK();
-          const { wrapped, iv } = await wrapUDEKWithAppKey(this.udek, this.appKey);
-          
-          // Combine IV and wrapped data for storage
-          const combinedData = new Uint8Array(iv.length + wrapped.length);
-          combinedData.set(iv, 0);
-          combinedData.set(wrapped, iv.length);
-          
-          // Store new encrypted UDEK (handle the id=1 constraint)
-          await setUserKeys({
-            user_id: userId,
-            udek_wrap_appkey: combinedData,
-            kdf_salt: salt,
-            kdf_iters: iterations,
-            updated_at: Date.now()
-          });
-          
-          console.log('✅ [EncryptionService] Recovery successful - new encryption keys generated');
-          appLog.success('encryption', 'Encryption keys recovered and regenerated successfully');
-          
-          return; // Exit successfully after recovery
-        } catch (recoveryError) {
-          console.error('❌ [EncryptionService] Recovery failed:', recoveryError);
-          appLog.error('encryption', 'Failed to recover encryption keys', recoveryError);
-          throw new Error('Failed to initialize encryption service and recovery failed');
-        }
+      // If unwrap failed, do NOT generate new keys automatically; require correct passphrase
+      if (error instanceof Error && error.message === 'Failed to unwrap UDEK') {
+        appLog.error('encryption', 'Passphrase incorrect for stored keys; initialization aborted');
+        this.appKey = null;
+        this.udek = null;
+        throw new Error('Incorrect passphrase. Unable to unlock encryption keys.');
       }
-      
+
       appLog.error('encryption', 'Failed to initialize encryption service', error);
       throw error;
     }
@@ -258,7 +224,7 @@ import {
     try {
       appLog.debug('encryption', 'Loading scene content', { sceneId });
       
-      const sceneRow = await getScene(sceneId, userId);
+      const sceneRow = await getScene(sceneId);
       if (!sceneRow) {
         throw new Error(`Scene not found: ${sceneId}`);
       }
@@ -355,64 +321,73 @@ import {
       appLog.debug('encryption', 'Loading chapter content', { chapterId });
       
       // Get the chapter from the database
-      const chapterRow = await getChapter(chapterId, userId);
+      const chapterRow = await getChapter(chapterId);
       if (!chapterRow) {
         appLog.debug('encryption', 'Chapter not found in database', { chapterId });
         return null; // Return null instead of throwing error for missing chapters
       }
 
       // If no content stored yet, return null
-      if (!chapterRow.content_enc || !chapterRow.content_iv) {
+      if (!chapterRow.contentEnc || !chapterRow.contentIv) {
         appLog.debug('encryption', 'No encrypted content found for chapter', { chapterId });
         return null;
       }
 
       // Check for empty content arrays that can't be decrypted
-      const hasValidContent = (chapterRow.content_enc.length > 0 && chapterRow.content_iv.length > 0);
+      const hasValidContent = (chapterRow.contentEnc.length > 0 && chapterRow.contentIv.length > 0);
       if (!hasValidContent) {
         appLog.debug('encryption', 'Empty content arrays found for chapter', { chapterId });
         return null;
       }
 
       // Determine encryption scheme and get appropriate key
-      const isShared = chapterRow.enc_scheme === 'bsk';
-      const key = await this.getBookKey(userId, chapterRow.book_id, isShared);
+      const isShared = chapterRow.encScheme === 'bsk';
+      const key = await this.getBookKey(userId, chapterRow.bookId, isShared);
 
       // Debug the raw data from database first
       console.log('🔍 [EncryptionService] Raw database data:', {
         chapterId,
-        contentEncType: typeof chapterRow.content_enc,
-        contentIvType: typeof chapterRow.content_iv,
-        contentEncConstructor: chapterRow.content_enc?.constructor?.name,
-        contentIvConstructor: chapterRow.content_iv?.constructor?.name,
-        contentEncLength: chapterRow.content_enc?.length,
-        contentIvLength: chapterRow.content_iv?.length,
-        contentEncSample: chapterRow.content_enc instanceof Uint8Array ? 
-          Array.from(chapterRow.content_enc.slice(0, 8)) : 
-          typeof chapterRow.content_enc === 'string' ? (chapterRow.content_enc as string).substring(0, 20) : 'unknown',
-        contentIvSample: chapterRow.content_iv instanceof Uint8Array ? 
-          Array.from(chapterRow.content_iv.slice(0, 8)) : 
-          typeof chapterRow.content_iv === 'string' ? (chapterRow.content_iv as string).substring(0, 20) : 'unknown'
+        contentEncType: typeof (chapterRow as any).contentEnc,
+        contentIvType: typeof (chapterRow as any).contentIv,
+        contentEncConstructor: (chapterRow as any).contentEnc?.constructor?.name,
+        contentIvConstructor: (chapterRow as any).contentIv?.constructor?.name,
+        contentEncLength: (chapterRow as any).contentEnc?.length,
+        contentIvLength: (chapterRow as any).contentIv?.length,
+        contentEncSample: (chapterRow as any).contentEnc instanceof Uint8Array ? 
+          Array.from(((chapterRow as any).contentEnc as Uint8Array).slice(0, 8)) : 
+          typeof (chapterRow as any).contentEnc === 'string' ? ((chapterRow as any).contentEnc as string).substring(0, 20) : 'unknown',
+        contentIvSample: (chapterRow as any).contentIv instanceof Uint8Array ? 
+          Array.from(((chapterRow as any).contentIv as Uint8Array).slice(0, 8)) : 
+          typeof (chapterRow as any).contentIv === 'string' ? ((chapterRow as any).contentIv as string).substring(0, 20) : 'unknown'
       });
 
       // Convert database data to Uint8Array (handle JSON string format)
       let contentEncBinary: Uint8Array;
       let contentIvBinary: Uint8Array;
       
-      if (typeof chapterRow.content_enc === 'string') {
-        // Parse JSON string format from database
-        const encArray = JSON.parse(chapterRow.content_enc);
+      const rawEnc: any = (chapterRow as any).contentEnc;
+      const rawIv: any = (chapterRow as any).contentIv;
+
+      if (typeof rawEnc === 'string') {
+        const encArray = JSON.parse(rawEnc);
         contentEncBinary = new Uint8Array(encArray);
+      } else if (rawEnc instanceof Uint8Array) {
+        contentEncBinary = rawEnc;
+      } else if (Array.isArray(rawEnc)) {
+        contentEncBinary = new Uint8Array(rawEnc);
       } else {
-        contentEncBinary = chapterRow.content_enc;
+        throw new Error('Unsupported contentEnc type');
       }
-      
-      if (typeof chapterRow.content_iv === 'string') {
-        // Parse JSON string format from database
-        const ivArray = JSON.parse(chapterRow.content_iv);
+
+      if (typeof rawIv === 'string') {
+        const ivArray = JSON.parse(rawIv);
         contentIvBinary = new Uint8Array(ivArray);
+      } else if (rawIv instanceof Uint8Array) {
+        contentIvBinary = rawIv;
+      } else if (Array.isArray(rawIv)) {
+        contentIvBinary = new Uint8Array(rawIv);
       } else {
-        contentIvBinary = chapterRow.content_iv;
+        throw new Error('Unsupported contentIv type');
       }
 
       console.log('🔧 [EncryptionService] After JSON parsing:', {
@@ -428,11 +403,11 @@ import {
 
       console.log('🔓 [EncryptionService] Decryption details:', {
         chapterId,
-        encScheme: chapterRow.enc_scheme,
-        contentEncLength: chapterRow.content_enc.length,
-        contentIvLength: chapterRow.content_iv.length,
-        contentEncSample: Array.from(chapterRow.content_enc.slice(0, 8)),
-        contentIvSample: Array.from(chapterRow.content_iv.slice(0, 8)),
+  encScheme: (chapterRow as any).encScheme,
+  contentEncLength: (chapterRow as any).contentEnc.length,
+  contentIvLength: (chapterRow as any).contentIv.length,
+  contentEncSample: Array.from(((chapterRow as any).contentEnc as Uint8Array).slice(0, 8)),
+  contentIvSample: Array.from(((chapterRow as any).contentIv as Uint8Array).slice(0, 8)),
         keyType: isShared ? 'BSK' : 'UDEK',
         hasUdek: !!this.udek,
         hasAppKey: !!this.appKey
@@ -489,38 +464,29 @@ import {
       });
 
       // Compute revision hash
-      const revLocal = await computeRevisionHash({
-        content,
-        chapterId,
-        timestamp: Date.now()
-      });
+  // Optionally compute a local revision hash for diagnostics or future sync
+  // await computeRevisionHash({ content, chapterId, timestamp: Date.now() });
 
       // Calculate word count (rough estimate)
       const contentText = JSON.stringify(content);
       const wordCount = contentText.split(/\s+/).length;
 
-      // Create chapter row
-      const chapterRow: ChapterRow = {
-        chapter_id: chapterId,
-        book_id: bookId,
-        version_id: versionId,
-        owner_user_id: userId,
+      // Persist encrypted payload into simplified chapters table
+      const dbChapter = {
+        id: chapterId,
+        bookId,
+        versionId,
         title: content.title || 'Untitled Chapter',
-        order_index: 0, // Will be updated by useChapters
-        enc_scheme: isShared ? 'bsk' : 'udek',
-        content_enc: contentEncBinary,
-        content_iv: contentIvBinary,
-        has_proposals: 0,
-        rev_local: revLocal,
-        rev_cloud: undefined,
-        pending_ops: 0,
-        sync_state: 'dirty',
-        conflict_state: 'none',
-        word_count: wordCount,
-        updated_at: Date.now()
-      };
+        encScheme: isShared ? 'bsk' : 'udek',
+        contentEnc: contentEncBinary,
+        contentIv: contentIvBinary,
+        wordCount,
+        updatedAt: new Date().toISOString(),
+        revLocal: (Math.random().toString(36).slice(2)),
+        syncState: 'dirty',
+      } as any;
 
-      await putChapter(chapterRow);
+      await putChapter(dbChapter);
       
       appLog.success('encryption', 'Chapter content encrypted and saved', { chapterId, wordCount });
     } catch (error) {

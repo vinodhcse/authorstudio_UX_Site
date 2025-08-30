@@ -65,7 +65,7 @@ export class ApiClient {
 
   async updateUserKeys(userKeyWraps: { recovery: string }) {
     return this.makeRequest('/users/me', {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify({ userKeyWraps })
     });
   }
@@ -81,7 +81,7 @@ export class ApiClient {
 
   async putBook(bookId: string, bookData: any) {
     return this.makeRequest(`/books/${bookId}`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(bookData)
     });
   }
@@ -100,7 +100,7 @@ export class ApiClient {
 
   async putVersion(bookId: string, versionId: string, versionData: any) {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(versionData)
     });
   }
@@ -117,9 +117,10 @@ export class ApiClient {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}/chapters/${chapterId}`);
   }
 
+  // Send decrypted content for chapters to keep payloads small. Expect `chapterData.content` to be plain JSON.
   async putChapter(bookId: string, versionId: string, chapterId: string, chapterData: any) {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}/chapters/${chapterId}`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(chapterData)
     });
   }
@@ -139,7 +140,7 @@ export class ApiClient {
     updatedAt: number;
   }) {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}/chapters/${chapterId}/scenes/${sceneId}`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(sceneData)
     });
   }
@@ -147,28 +148,28 @@ export class ApiClient {
   // Bulk content operations
   async putVersionContent(bookId: string, versionId: string, contentData: any) {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}/content`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(contentData)
     });
   }
 
   async putPlotArcs(bookId: string, versionId: string, plotArcsData: any) {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}/plotArcs`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(plotArcsData)
     });
   }
 
   async putCharacters(bookId: string, versionId: string, charactersData: any) {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}/characters`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(charactersData)
     });
   }
 
   async putWorldBuilding(bookId: string, versionId: string, worldBuildingData: any) {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}/worldBuilding`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(worldBuildingData)
     });
   }
@@ -193,7 +194,7 @@ export class ApiClient {
 
   async updateChapter(bookId: string, versionId: string, chapterId: string, chapterData: any) {
     return this.makeRequest(`/books/${bookId}/versions/${versionId}/chapters/${chapterId}`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(chapterData)
     });
   }

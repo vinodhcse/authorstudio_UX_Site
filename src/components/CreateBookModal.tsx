@@ -180,18 +180,7 @@ const CreateBookModal: React.FC<CreateBookModalProps> = ({ onClose }) => {
                 prose: 'Fiction',
                 publisher: '',
                 publishedStatus: 'Unpublished',
-                versions: [{
-                    id: `v${Date.now()}`,
-                    name: formData.initialVersionName,
-                    status: 'DRAFT',
-                    wordCount: 0,
-                    createdAt: new Date().toISOString(),
-                    contributor: { name: formData.author || 'Unknown Author', avatar: '' },
-                    characters: [],
-                    plotArcs: [],
-                    worlds: [],
-                    chapters: []
-                }],
+                versions: [],
                 activity: []
             };
 

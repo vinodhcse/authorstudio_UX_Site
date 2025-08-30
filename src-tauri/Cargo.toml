@@ -32,6 +32,7 @@ chrono = "0.4"
 
 tauri-plugin-fs = "2.0"
 tauri-plugin-http = "2.0"
+tauri-plugin-store = "2.4.0"
 
 # Asset system dependencies
 sha2 = "0.10"

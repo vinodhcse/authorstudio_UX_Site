@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { appLog } from '../auth/fileLogger';
 import { useAuthStore } from '../auth/useAuthStore';
 import * as dal from '../data/dal'; // Import the new DAL
+import * as sqlite from '../auth/sqlite';
 import CoverPicker from './CoverPicker';
 
 interface DbClientProps {
@@ -76,13 +77,12 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
       try {
         let sessionData = null;
         if (userEmail) {
-          sessionData = await invoke<any>('session_get_by_email', { email: userEmail });
+          sessionData = await sqlite.getSessionRow(userEmail);
         } else if (authenticatedUserId) {
-          sessionData = await invoke<any>('session_get_by_user_id', { user_id: authenticatedUserId });
+          sessionData = await sqlite.getSessionRow(undefined, authenticatedUserId);
         } else {
-          sessionData = await invoke<any>('session_get');
+          sessionData = await sqlite.getSessionRow();
         }
-        
         results.session = {
           exists: !!sessionData,
           data: sessionData,
@@ -96,18 +96,25 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
       // Test 3: Books Validation
       appLog.info('db-validation', 'Testing books...');
       try {
-        const books = await dal.getUserBooks('test_user_123');
+        const books = await dal.getUserBooks(testUserId);
         results.books = {
           count: books.length,
           data: books,
           status: `Found ${books.length} books`
         };
-
-        // Test book creation if no books exist
         if (books.length === 0) {
-          const newBook = await dal.createBook('Validation Test Book', 'test_user_123');
-          const updatedBooks = await dal.getUserBooks('test_user_123');
-          results.books.created = !!newBook;
+          const newBook = {
+            book_id: `book_${Date.now()}`,
+            owner_user_id: testUserId,
+            title: 'Validation Test Book',
+            is_shared: 0,
+            sync_state: 'idle',
+            conflict_state: 'none',
+            updated_at: Date.now()
+          };
+          await dal.createBook(newBook);
+          const updatedBooks = await dal.getUserBooks(testUserId);
+          results.books.created = true;
           results.books.count = updatedBooks.length;
           results.books.status = `Created test book, now have ${updatedBooks.length} books`;
         }
@@ -115,24 +122,36 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
         results.books = { error: String(err), status: 'Failed' };
       }
 
-      // Test 4: Versions Validation  
+      // Test 4: Versions Validation
       appLog.info('db-validation', 'Testing versions...');
       try {
-        const books = await dal.getUserBooks('test_user_123');
+        const books = await dal.getUserBooks(testUserId);
         if (books.length > 0) {
-          const versions = await dal.getVersionsByBook(books[0].book_id, 'test_user_123');
+          const versions = await dal.getVersionsByBook(books[0].book_id);
           results.versions = {
             count: versions.length,
             bookId: books[0].book_id,
             data: versions,
             status: `Found ${versions.length} versions for book ${books[0].title}`
           };
-
-          // Create version if none exist
           if (versions.length === 0) {
-            const newVersion = await dal.createVersion(books[0].book_id, 'Test Version', 'test_user_123');
-            const updatedVersions = await dal.getVersionsByBook(books[0].book_id, 'test_user_123');
-            results.versions.created = !!newVersion;
+            const newVersion = {
+              version_id: `version_${Date.now()}`,
+              book_id: books[0].book_id,
+              owner_user_id: testUserId,
+              title: 'Test Version',
+              enc_scheme: '',
+              is_current: 1,
+              has_proposals: 0,
+              pending_ops: 0,
+              sync_state: 'idle',
+              conflict_state: 'none',
+              created_at: Date.now(),
+              updated_at: Date.now()
+            };
+            await dal.createVersion(newVersion);
+            const updatedVersions = await dal.getVersionsByBook(books[0].book_id);
+            results.versions.created = true;
             results.versions.count = updatedVersions.length;
             results.versions.status = `Created test version, now have ${updatedVersions.length} versions`;
           }
@@ -146,11 +165,11 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
       // Test 5: Chapters Validation
       appLog.info('db-validation', 'Testing chapters...');
       try {
-        const books = await dal.getUserBooks('test_user_123');
+        const books = await dal.getUserBooks(testUserId);
         if (books.length > 0) {
-          const versions = await dal.getVersionsByBook(books[0].book_id, 'test_user_123');
+          const versions = await dal.getVersionsByBook(books[0].book_id);
           if (versions.length > 0) {
-            const chapters = await dal.getChaptersByVersion(books[0].book_id, versions[0].version_id, 'test_user_123');
+            const chapters = await dal.getChaptersByVersion(books[0].book_id, versions[0].version_id);
             results.chapters = {
               count: chapters.length,
               bookId: books[0].book_id,
@@ -158,12 +177,25 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
               data: chapters,
               status: `Found ${chapters.length} chapters`
             };
-
-            // Create chapter if none exist
             if (chapters.length === 0) {
-              const newChapter = await dal.createChapter(books[0].book_id, versions[0].version_id, 'Test Chapter', 'test_user_123');
-              const updatedChapters = await dal.getChaptersByVersion(books[0].book_id, versions[0].version_id, 'test_user_123');
-              results.chapters.created = !!newChapter;
+              const newChapter = {
+                chapter_id: `chapter_${Date.now()}`,
+                book_id: books[0].book_id,
+                version_id: versions[0].version_id,
+                owner_user_id: testUserId,
+                enc_scheme: '',
+                content_enc: new Uint8Array(),
+                content_iv: new Uint8Array(),
+                has_proposals: 0,
+                pending_ops: 0,
+                sync_state: 'idle',
+                conflict_state: 'none',
+                created_at: Date.now(),
+                updated_at: Date.now()
+              };
+              await dal.createChapter(newChapter);
+              const updatedChapters = await dal.getChaptersByVersion(books[0].book_id, versions[0].version_id);
+              results.chapters.created = true;
               results.chapters.count = updatedChapters.length;
               results.chapters.status = `Created test chapter, now have ${updatedChapters.length} chapters`;
             }
@@ -265,10 +297,19 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
     setError(null);
     setLoading(true);
     try {
-      const book = await dal.createBook(`DAL Test Book ${Date.now()}`, 'test_user_123');
-      appLog.info('dal-test', 'Created book via DAL', { book });
-      setRows([book]);
-      await dalGetBooks(); // Refresh the list
+      const newBook = {
+        book_id: `book_${Date.now()}`,
+        owner_user_id: 'test_user_123',
+        title: `DAL Test Book ${Date.now()}`,
+        is_shared: 0,
+        sync_state: 'idle',
+        conflict_state: 'none',
+        updated_at: Date.now()
+      };
+      await dal.createBook(newBook);
+      appLog.info('dal-test', 'Created book via DAL', { newBook });
+      setRows([newBook]);
+      await dalGetBooks();
     } catch (err: any) {
       setError(String(err));
       appLog.error('dal-test', 'Failed to create book via DAL', { error: String(err) });
@@ -298,14 +339,27 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
       setError('No books available. Create a book first.');
       return;
     }
-    
     setError(null);
     setLoading(true);
     try {
       const book = dalBooks[0];
-      const version = await dal.createVersion(book.book_id, `Version ${Date.now()}`, 'test_user_123');
-      appLog.info('dal-test', 'Created version via DAL', { version });
-      setRows([version]);
+      const newVersion = {
+        version_id: `version_${Date.now()}`,
+        book_id: book.book_id,
+        owner_user_id: 'test_user_123',
+        title: `Version ${Date.now()}`,
+        enc_scheme: '',
+        is_current: 1,
+        has_proposals: 0,
+        pending_ops: 0,
+        sync_state: 'idle',
+        conflict_state: 'none',
+        created_at: Date.now(),
+        updated_at: Date.now()
+      };
+      await dal.createVersion(newVersion);
+      appLog.info('dal-test', 'Created version via DAL', { newVersion });
+      setRows([newVersion]);
     } catch (err: any) {
       setError(String(err));
       appLog.error('dal-test', 'Failed to create version via DAL', { error: String(err) });
@@ -319,22 +373,48 @@ const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
       setError('No books available. Create a book first.');
       return;
     }
-    
     setError(null);
     setLoading(true);
     try {
       const book = dalBooks[0];
-      // First ensure there's a version
-      const versions = await dal.getVersionsByBook(book.book_id, 'test_user_123');
+      const versions = await dal.getVersionsByBook(book.book_id);
       let version = versions.find(v => v.is_current === 1);
-      
       if (!version) {
-        version = await dal.createVersion(book.book_id, 'Draft', 'test_user_123');
+        const newVersion = {
+          version_id: `version_${Date.now()}`,
+          book_id: book.book_id,
+          owner_user_id: 'test_user_123',
+          title: 'Draft',
+          enc_scheme: '',
+          is_current: 1,
+          has_proposals: 0,
+          pending_ops: 0,
+          sync_state: 'idle',
+          conflict_state: 'none',
+          created_at: Date.now(),
+          updated_at: Date.now()
+        };
+        await dal.createVersion(newVersion);
+        version = newVersion;
       }
-      
-      const chapter = await dal.createChapter(book.book_id, version.version_id, `Chapter ${Date.now()}`, 'test_user_123');
-      appLog.info('dal-test', 'Created chapter via DAL', { chapter });
-      setRows([chapter]);
+      const newChapter = {
+        chapter_id: `chapter_${Date.now()}`,
+        book_id: book.book_id,
+        version_id: version.version_id,
+        owner_user_id: 'test_user_123',
+        enc_scheme: '',
+        content_enc: new Uint8Array(),
+        content_iv: new Uint8Array(),
+        has_proposals: 0,
+        pending_ops: 0,
+        sync_state: 'idle',
+        conflict_state: 'none',
+        created_at: Date.now(),
+        updated_at: Date.now()
+      };
+      await dal.createChapter(newChapter);
+      appLog.info('dal-test', 'Created chapter via DAL', { newChapter });
+      setRows([newChapter]);
     } catch (err: any) {
       setError(String(err));
       appLog.error('dal-test', 'Failed to create chapter via DAL', { error: String(err) });

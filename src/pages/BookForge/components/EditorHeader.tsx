@@ -103,7 +103,7 @@ const ChapterProgressBar: React.FC<{
             
             try {
                 // Get narrative flow nodes to resolve act titles
-                const plotCanvas = getPlotCanvas(bookId, versionId);
+                const plotCanvas = await getPlotCanvas(bookId, versionId);
                 console.log('Debug - plotCanvas:', plotCanvas);
                 
                 const narrativeNodes = plotCanvas?.nodes || [];
@@ -125,7 +125,7 @@ const ChapterProgressBar: React.FC<{
             if (bookId && versionId) {
                 const refreshActData = async () => {
                     try {
-                        const plotCanvas = getPlotCanvas(bookId, versionId);
+                        const plotCanvas = await getPlotCanvas(bookId, versionId);
                         const narrativeNodes = plotCanvas?.nodes || [];
                         const acts = narrativeNodes.filter((node: any) => node.type === 'act');
                         setActNodes(acts);

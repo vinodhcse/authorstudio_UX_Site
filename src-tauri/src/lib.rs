@@ -1,5 +1,13 @@
+mod dexie_backup;
+use dexie_backup::{write_dexie_backup_json, read_dexie_backup_json};
+use std::fs;
+use tauri::AppHandle;
+use serde_json::Value;
+use tauri_plugin_store::StoreExt;
 
-use tauri::{Manager, State, Emitter};
+
+// Only one definition of each command should exist. Remove duplicates if present.
+use tauri::{State, Emitter};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use sysinfo::{System};
@@ -36,72 +44,8 @@ use whisper_diagnostics::{
     test_whisper_silence, test_whisper_noise, test_whisper_microphone_noise
 };
 
-// SurrealDB backend
-mod surreal;
-use surreal::{
-    surreal_init_db,
-    book_create, book_get_by_user, book_get, book_put, book_delete, book_mark_sync, book_get_dirty,
-    version_get, versions_by_book, version_put, version_content_get, version_content_update,
-    chapter_get, chapter_put, chapters_by_version, chapter_mark_sync, chapter_mark_conflict, chapters_get_dirty,
-    scene_get, scenes_by_book, scene_put, scenes_get_dirty, scene_mark_sync, scene_mark_conflict,
-    user_keys_get, user_keys_set,
-    session_get, session_get_by_email, session_get_by_user_id, session_upsert, session_clear, session_seal, session_activate,
-    device_get, device_upsert,
-    kv_set, kv_get, kv_delete,
-    get_config_dir, asset_list_all, link_list_all,
-};
-
-// App Database (main implementation)
-mod app_surreal;
-use app_surreal::{
-    app_create_book, app_get_books, app_get_book_by_id, app_update_book, app_delete_book,
-    app_create_version, app_get_versions_by_book,
-    app_create_chapter, app_get_chapters_by_version,
-    app_create_character, app_get_characters_by_book,
-    app_delete_all_data,
-    // Session and user keys commands
-    app_get_session, app_save_session, app_clear_session,
-    app_get_user_keys, app_save_user_keys,
-    // User Books operations
-    app_get_user_books, app_get_book, app_update_book_by_user, app_delete_book_by_user,
-    // FileAsset operations
-    app_create_file_asset, app_get_file_asset_by_id, app_get_file_asset_by_sha256,
-    app_update_file_asset, app_get_file_assets_by_status, app_delete_file_asset,
-    app_delete_all_file_assets, // NEW: Delete all file assets
-    app_get_asset_file_path, // NEW: Get full filesystem path for asset
-    // FileAssetLink operations
-    app_create_file_asset_link, app_upsert_file_asset_link,
-    app_get_file_asset_links_by_entity, app_get_file_asset_links_by_entity_role,
-    app_get_file_asset_links_by_asset, app_delete_file_asset_link,
-    app_delete_file_asset_links_by_entity_role, app_delete_file_asset_links_by_asset,
-    // World operations
-    app_create_world, app_get_worlds_by_book, app_get_world_by_id,
-    app_update_world, app_delete_world,
-    // Location operations
-    app_create_location, app_get_locations_by_world, app_get_locations_by_book,
-    app_update_location, app_delete_location,
-    // Object operations
-    app_create_object, app_get_objects_by_world, app_get_objects_by_book,
-    app_update_object, app_delete_object,
-    // Lore operations
-    app_create_lore, app_get_lore_by_world, app_get_lore_by_book,
-    app_update_lore, app_delete_lore,
-    // Scene operations
-    app_create_scene, app_get_scene_by_id, app_get_scenes_by_book,
-    app_update_scene, app_delete_scene,
-    // Chapter Revision operations
-    app_create_chapter_revision, app_get_chapter_revisions, app_get_chapter_revision,
-    app_get_child_revisions, app_update_chapter_current_revision, app_cleanup_old_revisions,
-    // Generic query operation
-    app_surreal_query,
-    // Missing Version CRUD operations
-    app_get_version_by_id, app_update_version, app_delete_version, app_get_versions, app_delete_versions,
-    // Missing Chapter CRUD operations  
-    app_get_chapter_by_id, app_update_chapter, app_delete_chapter,
-    write_file_with_dirs,
-    // Database initialization
-    init_database,
-};
+// SurrealDB backend removed for Dexie migration. App Database implementation will use Dexie and JSON backup.
+// All SurrealDB and app_surreal commands removed for Dexie migration. Only non-database commands remain.
 
 // Asset system commands
 mod asset_commands;
@@ -228,150 +172,15 @@ pub fn run() {
     // Removed SQL plugin; SurrealDB is used for local storage
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            write_dexie_backup_json,
+            read_dexie_backup_json,
             set_user_role,
             can_access_clipboard,
             controlled_copy_to_clipboard,
             get_current_user_role,
             get_cpu_gpu_specs,
-            // App database commands (main implementation)
-            app_create_book,
-            app_get_books,
-            app_get_book_by_id,
-            app_update_book,
-            app_delete_book,
-            app_create_version,
-            app_get_versions_by_book,
-            app_create_chapter,
-            app_get_chapters_by_version,
-            app_create_character,
-            app_get_characters_by_book,
-            app_delete_all_data,
-            app_get_session,
-            app_save_session,
-            app_clear_session,
-            app_get_user_keys,
-            app_save_user_keys,
-            // User Books operations
-            app_get_user_books,
-            app_get_book,
-            app_update_book_by_user,
-            app_delete_book_by_user,
-            // FileAsset operations
-            app_create_file_asset,
-            app_get_file_asset_by_id,
-            app_get_file_asset_by_sha256,
-            app_update_file_asset,
-            app_get_file_assets_by_status,
-            app_delete_file_asset,
-            app_delete_all_file_assets, // NEW: Delete all file assets
-            app_get_asset_file_path, // NEW: Get full filesystem path for asset
-            // FileAssetLink operations
-            app_create_file_asset_link,
-            app_upsert_file_asset_link,
-            app_get_file_asset_links_by_entity,
-            app_get_file_asset_links_by_entity_role,
-            app_get_file_asset_links_by_asset,
-            app_delete_file_asset_link,
-            app_delete_file_asset_links_by_entity_role,
-            app_delete_file_asset_links_by_asset,
-            // World operations
-            app_create_world,
-            app_get_worlds_by_book,
-            app_get_world_by_id,
-            app_update_world,
-            app_delete_world,
-            // Location operations
-            app_create_location,
-            app_get_locations_by_world,
-            app_get_locations_by_book,
-            app_update_location,
-            app_delete_location,
-            // Object operations
-            app_create_object,
-            app_get_objects_by_world,
-            app_get_objects_by_book,
-            app_update_object,
-            app_delete_object,
-            // Lore operations
-            app_create_lore,
-            app_get_lore_by_world,
-            app_get_lore_by_book,
-            app_update_lore,
-            app_delete_lore,
-            // Scene operations
-            app_create_scene,
-            app_get_scene_by_id,
-            app_get_scenes_by_book,
-            app_update_scene,
-            app_delete_scene,
-            // Chapter Revision operations
-            app_create_chapter_revision,
-            app_get_chapter_revisions,
-            app_get_chapter_revision,
-            app_get_child_revisions,
-            app_update_chapter_current_revision,
-            app_cleanup_old_revisions,
-            // Missing Version CRUD operations
-            app_get_version_by_id,
-            app_update_version,
-            app_delete_version,
-            app_get_versions,
-            app_delete_versions,
-            // Missing Chapter CRUD operations
-            app_get_chapter_by_id,
-            app_update_chapter,
-            app_delete_chapter,
-            write_file_with_dirs,
-            // Database initialization
-            init_database,
-            // Surreal commands (legacy)
-            surreal_init_db,
-            app_surreal_query,
-            book_create,
-            book_get_by_user,
-            book_get,
-            book_put,
-            book_delete,
-            book_mark_sync,
-            book_get_dirty,
-            version_get,
-            versions_by_book,
-            version_put,
-            version_content_get,
-            version_content_update,
-            chapter_get,
-            chapter_put,
-            chapters_by_version,
-            chapter_mark_sync,
-            chapter_mark_conflict,
-            chapters_get_dirty,
-            scene_get,
-            scenes_by_book,
-            scene_put,
-            scenes_get_dirty,
-            scene_mark_sync,
-            scene_mark_conflict,
-            // Keys
-            user_keys_get,
-            user_keys_set,
-            // Session/Device/KV
-            session_get,
-            session_get_by_email,
-            session_get_by_user_id,
-            session_upsert,
-            session_clear,
-            session_seal,
-            session_activate,
-            device_get,
-            device_upsert,
-            kv_set,
-            kv_get,
-            kv_delete,
-            // Assets/Links (removed - using app_surreal versions instead)
-            get_config_dir,
-            asset_list_all,
-            link_list_all,
             open_tool_window,
             minimize_tool_window,
             restore_tool_window,
@@ -410,30 +219,7 @@ pub fn run() {
                 )?;
             }
 
-            // Initialize the new unified database only
-            let app_handle = app.handle();
-            /*let new_db = tauri::async_runtime::block_on(async {
-                // Get the data directory path
-                let data_dir = app_handle.path().app_data_dir().map_err(|e| format!("Failed to get data dir: {}", e))?;
-                let data_dir_str = data_dir.to_string_lossy();
-                database::AppDatabase::new(&data_dir_str).await.map_err(|e| format!("Database error: {}", e))
-            });*/
-            let handle = app.handle().clone();
-            let new_db = tauri::async_runtime::block_on(async {
-                app_surreal::AppDatabase::new(handle).await
-                    .map_err(|e| format!("Database error: {}", e))
-            });
-
-            match new_db {
-                Ok(db) => {
-                    app.manage(db);
-                    println!("App database initialized successfully");
-                },
-                Err(e) => {
-                    eprintln!("Failed to initialize app database: {}", e);
-                }
-            }
-
+            // Database setup for Dexie/JSON backup handled in frontend. No SurrealDB/app_surreal initialization.
             Ok(())
         })
         .run(tauri::generate_context!())

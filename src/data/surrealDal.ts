@@ -1,9 +1,7 @@
 // SurrealDB-backed DAL accessed via Tauri commands
 // Mirrors original dal.ts signatures to minimize UI changes
 
-import { invoke } from '@tauri-apps/api/core';
-import { appDataDir } from '@tauri-apps/api/path';
-import { appLog } from '../auth/fileLogger';
+// Dexie migration: SurrealDB code removed. Use dexieDal.ts for DB operations.
 
 // Types mirrored from existing DAL
 export interface BookMetadata {
@@ -124,182 +122,71 @@ export type ConflictState = 'none' | 'local' | 'remote' | 'both';
 
 // Database bootstrap
 // Database bootstrap
-export async function initializeDatabase(): Promise<void> {
-  // Use Tauri's app dataDir for persistent SurrealDB storage
-  const dir = await appDataDir();
-  const dbPath = `${dir}surreal.db`;
-  appLog.info('surreal-dal', 'Initializing SurrealDB', { dbPath });
-  try {
-    const res = await invoke('surreal_init_db', { path: dbPath });
-    appLog.info('surreal-dal', 'surreal_init_db invoke returned', { res });
-  } catch (err) {
-    appLog.error('surreal-dal', 'surreal_init_db invoke failed', { error: String(err), dbPath });
-    throw err;
-  }
+  // Dexie migration: No DB bootstrap needed. Dexie handles DB creation automatically.
+  return;
 }
 
 // Books
-export async function getUserBooks(userId: string): Promise<BookRow[]> {
-  appLog.info('surreal-dal', 'Calling book_get_by_user with userId', { userId });
-  const rows = await invoke<BookRow[]>('book_get_by_user', { ownerUserId: userId });
-  return rows;
+  // Dexie migration: Use dexieDal.ts
+  // return await db.books.where('owner_user_id').equals(userId).toArray();
+  throw new Error('getUserBooks: migrated to dexieDal.ts');
 }
 
-export async function getBook(bookId: string, userId: string): Promise<BookRow | null> {
-  const row = await invoke<BookRow | null>('app_get_book', { bookId, userId });
-  return row;
+  throw new Error('getBook: migrated to dexieDal.ts');
 }
 
-export async function putBook(data: BookRow): Promise<void> {
-  // Convert number fields to i64-compatible where needed is handled in Rust via serde
-  appLog.info('surreal-dal', 'Calling book_put with row', { bookId: data.book_id, title: data.title, hasCoverRef: Boolean((data as any).cover_image_ref) });
-  await invoke('book_put', { row: data });
+  throw new Error('putBook: migrated to dexieDal.ts');
 }
 
-export async function deleteBook(bookId: string, userId: string): Promise<void> {
-  await invoke('book_delete', { bookId, ownerUserId: userId });
+  throw new Error('deleteBook: migrated to dexieDal.ts');
 }
 
-export async function markBookSyncState(bookId: string, userId: string, syncState: SyncState): Promise<void> {
-  await invoke('book_mark_sync', { bookId, ownerUserId: userId, syncState });
+  throw new Error('markBookSyncState: migrated to dexieDal.ts');
 }
 
-export async function getDirtyBooks(userId: string): Promise<BookRow[]> {
-  return await invoke<BookRow[]>('book_get_dirty', { ownerUserId: userId });
+  throw new Error('getDirtyBooks: migrated to dexieDal.ts');
 }
 
-export async function getConflictedBooks(userId: string): Promise<BookRow[]> {
-  // Surreal query directly since a dedicated command isn't strictly necessary
-  const rows = await invoke<any>('surreal_query', {
-    query: "SELECT * FROM book WHERE owner_user_id = $uid AND conflict_state != 'none'",
-    vars: { uid: userId },
-  });
-  return rows as BookRow[];
+  throw new Error('getConflictedBooks: migrated to dexieDal.ts');
+// ...existing code...
 }
 
-// Versions
-export async function getVersion(versionId: string): Promise<VersionRow | null> {
-  return await invoke<VersionRow | null>('app_get_version_by_id', { versionId });
+  throw new Error('getDirtyChapters: migrated to dexieDal.ts');
 }
 
-export async function getVersionsByBook(bookId: string): Promise<VersionRow[]> {
-  return await invoke<VersionRow[]>('app_get_versions_by_book', { bookId });
+  throw new Error('updateChapterSyncState: migrated to dexieDal.ts');
 }
 
-export async function putVersion(data: VersionRow): Promise<void> {
-  await invoke('version_put', { row: data });
-}
-
-// Version content JSON helpers
-export interface VersionContentData {
-  version?: string;
-  chapters?: any[];
-  characters?: any[];
-  worlds?: any[];
-  plotArcs?: any[];
-  [key: string]: any;
-}
-
-export async function getVersionContentData(versionId: string, userId: string): Promise<VersionContentData | null> {
-  const v = await invoke<any>('version_content_get', { versionId, ownerUserId: userId });
-  return v ?? null;
-}
-
-export async function updateVersionContentData(versionId: string, userId: string, updates: Partial<VersionContentData>): Promise<void> {
-  await invoke('version_content_update', { versionId, ownerUserId: userId, updates });
-}
-
-// Chapters
-export async function getChapter(chapterId: string): Promise<ChapterRow | null> {
-  return await invoke<ChapterRow | null>('app_get_chapter_by_id', { chapterId });
-}
-
-export async function putChapter(data: ChapterRow): Promise<void> {
-  await invoke('chapter_put', { row: data });
-}
-
-export async function getChaptersByVersion(bookId: string, versionId: string): Promise<ChapterRow[]> {
-  return await invoke<ChapterRow[]>('app_get_chapters_by_version', { bookId, versionId });
-}
-
-export async function getDirtyChapters(userId: string): Promise<ChapterRow[]> {
-  return await invoke<ChapterRow[]>('chapters_get_dirty', { ownerUserId: userId });
-}
-
-export async function updateChapterSyncState(chapterId: string, userId: string, syncState: SyncState): Promise<void> {
-  await invoke('chapter_mark_sync', { chapterId, ownerUserId: userId, syncState });
-}
-
-export async function updateChapterConflictState(chapterId: string, userId: string, conflictState: ConflictState): Promise<void> {
-  await invoke('chapter_mark_conflict', { chapterId, ownerUserId: userId, conflictState });
+  throw new Error('updateChapterConflictState: migrated to dexieDal.ts');
 }
 
 // Scenes
-export async function getScene(sceneId: string): Promise<SceneRow | null> {
-  return await invoke<SceneRow | null>('app_get_scene_by_id', { sceneId });
+  throw new Error('getScene: migrated to dexieDal.ts');
 }
 
-export async function putScene(data: SceneRow): Promise<void> {
-  await invoke('scene_put', { row: data });
+  throw new Error('putScene: migrated to dexieDal.ts');
 }
 
-export async function getScenesByBook(bookId: string): Promise<SceneRow[]> {
-  return await invoke<SceneRow[]>('app_get_scenes_by_book', { bookId });
+  throw new Error('getScenesByBook: migrated to dexieDal.ts');
 }
 
-export async function getDirtyScenes(userId: string): Promise<SceneRow[]> {
-  return await invoke<SceneRow[]>('scenes_get_dirty', { ownerUserId: userId });
+  throw new Error('getDirtyScenes: migrated to dexieDal.ts');
 }
 
-export async function markSceneSyncState(sceneId: string, userId: string, syncState: SyncState): Promise<void> {
-  await invoke('scene_mark_sync', { sceneId, ownerUserId: userId, syncState });
+  throw new Error('markSceneSyncState: migrated to dexieDal.ts');
 }
 
-export async function markSceneConflict(sceneId: string, userId: string, conflictState: ConflictState): Promise<void> {
-  await invoke('scene_mark_conflict', { sceneId, ownerUserId: userId, conflictState });
+  throw new Error('markSceneConflict: migrated to dexieDal.ts');
 }
 
 // User Keys (now stored in Surreal)
-export async function getUserKeys(userId: string): Promise<UserKeysRow | null> {
-  // ...existing code...
-  return (await invoke<UserKeysRow | null>('user_keys_get', { userId })) ?? null;
+  throw new Error('getUserKeys: migrated to Tauri Store or local storage');
 }
 
 // Overloaded to support both historical signatures:
 // 1) setUserKeys({ user_id, udek_wrap_appkey, kdf_salt, kdf_iters, updated_at })
 // 2) setUserKeys(userId, { udekWrapAppkey, kdfSalt, kdfIters })
-export async function setUserKeys(
-  userId: string,
-  data: { udekWrapAppkey: Uint8Array; kdfSalt: Uint8Array; kdfIters: number }
-): Promise<void>;
-export async function setUserKeys(data: {
-  user_id: string;
-  udek_wrap_appkey: Uint8Array;
-  kdf_salt: Uint8Array;
-  kdf_iters: number;
-  updated_at: number;
-}): Promise<void>;
-export async function setUserKeys(
-  arg1: any,
-  arg2?: { udekWrapAppkey: Uint8Array; kdfSalt: Uint8Array; kdfIters: number }
-): Promise<void> {
-  // ...existing code...
-  let row: any;
-  if (typeof arg1 === 'string' && arg2) {
-    row = {
-      user_id: arg1,
-      udek_wrap_appkey: arg2.udekWrapAppkey,
-      kdf_salt: arg2.kdfSalt,
-      kdf_iters: arg2.kdfIters,
-      updated_at: Date.now(),
-    };
-  } else if (typeof arg1 === 'object' && arg1) {
-    row = arg1;
-  } else {
-    throw new Error('Invalid arguments to setUserKeys');
-  }
-  await invoke('user_keys_set', { row });
-  await appLog.info('dal', 'User keys saved', { userId: row.user_id });
+  throw new Error('setUserKeys: migrated to Tauri Store or local storage');
 }
 
 // Compatibility helpers used by existing DAL
@@ -325,193 +212,33 @@ export interface GrantRow {
   updated_at: number;
 }
 
-export async function getGrants(userId: string): Promise<GrantRow[]> {
-  // ...existing code...
-  const rows = await invoke<any>('surreal_query', {
-    query: "SELECT * FROM grants WHERE owner_user_id = $uid AND revoked = 0",
-    vars: { uid: userId },
-  });
-  return rows as GrantRow[];
+  throw new Error('getGrants: migrated to dexieDal.ts');
 }
 
-export async function putGrant(data: GrantRow): Promise<void> {
-  // ...existing code...
-  await invoke('surreal_query', {
-    query: "UPDATE grants SET owner_user_id = $ouid, book_id = $bid, issuer_user_id = $iuid, bsk_wrap_for_me = $wrap, perms = $perms, revoked = $rev, issued_at = $iat, updated_at = $uat WHERE grant_id = $gid; IF none(SELECT * FROM grants WHERE grant_id = $gid) THEN CREATE grants SET grant_id = $gid, owner_user_id = $ouid, book_id = $bid, issuer_user_id = $iuid, bsk_wrap_for_me = $wrap, perms = $perms, revoked = $rev, issued_at = $iat, updated_at = $uat;",
-    vars: {
-      gid: data.grant_id,
-      ouid: data.owner_user_id,
-      bid: data.book_id,
-      iuid: data.issuer_user_id,
-      wrap: data.bsk_wrap_for_me,
-      perms: data.perms,
-      rev: data.revoked,
-      iat: data.issued_at,
-      uat: data.updated_at,
-    },
-  });
-  await appLog.info('dal', 'Grant saved', { grantId: data.grant_id });
+  throw new Error('putGrant: migrated to dexieDal.ts');
 }
 
 // Helpers used around chapters/versions
-export async function syncChaptersToVersionData(
-  bookId: string,
-  versionId: string,
-  userId: string
-): Promise<void> {
-  const chapterRows = await getChaptersByVersion(bookId, versionId);
-  const chapterMetadata = chapterRows
-    .map((row) => ({
-      id: row.chapter_id,
-      title: row.title || 'Untitled Chapter',
-      position: row.order_index || 0,
-      createdAt: new Date(row.created_at || Date.now()).toISOString(),
-      updatedAt: new Date(row.updated_at || Date.now()).toISOString(),
-      linkedPlotNodeId: '',
-      linkedAct: '',
-      linkedOutline: '',
-      linkedScenes: [],
-      content: {
-        type: 'doc' as const,
-        content: [],
-        metadata: {
-          totalWords: row.word_count || 0,
-          totalCharacters: row.character_count || 0,
-        },
-      },
-      revisions: [],
-      currentRevisionId: '',
-      collaborativeState: {
-        pendingChanges: [],
-        needsReview: false,
-        reviewerIds: [],
-        approvedBy: [],
-        rejectedBy: [],
-        mergeConflicts: [],
-      },
-      syncState: row.sync_state as SyncState,
-      conflictState: row.conflict_state as ConflictState,
-      wordCount: row.word_count || 0,
-      hasProposals: row.has_proposals === 1,
-      characters: [],
-      isComplete: false,
-      status: 'DRAFT' as const,
-      authorId: userId,
-      lastModifiedBy: userId,
-    }))
-    .sort((a, b) => a.position - b.position);
-
-  await updateVersionContentData(versionId, userId, { chapters: chapterMetadata });
-  await appLog.info('dal', 'Synced chapters to version content_data', {
-    bookId,
-    versionId,
-    chapterCount: chapterMetadata.length,
-  });
+  throw new Error('syncChaptersToVersionData: migrated to dexieDal.ts');
 }
 
-export async function ensureDefaultVersion(bookId: string, userId: string): Promise<string> {
-  const versions = await getVersionsByBook(bookId);
-  if (versions.length > 0) {
-    await appLog.info('dal', 'Using existing version', { bookId, versionId: versions[0].version_id });
-    return versions[0].version_id;
-  }
-  const versionId = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-  const now = Date.now();
-  const defaultRow: VersionRow = {
-    version_id: versionId,
-    book_id: bookId,
-    owner_user_id: userId,
-    title: 'Main',
-    description: 'Default version',
-    is_current: 1,
-    enc_scheme: 'udek',
-    has_proposals: 0,
-    pending_ops: 0,
-    sync_state: 'dirty',
-    conflict_state: 'none',
-    created_at: now,
-    updated_at: now,
-  } as VersionRow;
-  await putVersion(defaultRow);
-  await appLog.success('dal', 'Created default version', { bookId, versionId });
-  return versionId;
+  throw new Error('ensureDefaultVersion: migrated to dexieDal.ts');
 }
 
-export async function ensureVersionInDatabase(versionId: string, bookId: string, userId: string): Promise<boolean> {
-  try {
-    const v = await getVersion(versionId);
-    if (v) {
-      await appLog.info('dal', 'Version exists', { versionId });
-      return true;
-    }
-    const now = Date.now();
-    const row: VersionRow = {
-      version_id: versionId,
-      book_id: bookId,
-      owner_user_id: userId,
-      title: 'Synced Version',
-      description: 'Version synced from UI state',
-      is_current: 1,
-      enc_scheme: 'udek',
-      has_proposals: 0,
-      pending_ops: 0,
-      sync_state: 'dirty',
-      conflict_state: 'none',
-      created_at: now,
-      updated_at: now,
-    } as VersionRow;
-    await putVersion(row);
-    await appLog.success('dal', 'Created missing version', { versionId, bookId });
-    return true;
-  } catch (error) {
-    await appLog.error('dal', 'Failed to ensure version', { versionId, error });
-    return false;
-  }
+  throw new Error('ensureVersionInDatabase: migrated to dexieDal.ts');
 }
 
-export async function forceUnlockDatabase(): Promise<void> {
-  // ...existing code...
-  await appLog.info('dal', 'forceUnlockDatabase is a no-op under SurrealDB');
+  throw new Error('forceUnlockDatabase: migrated to dexieDal.ts');
 }
 
 // Atomic helpers for chapters
-export async function createChapterAtomic(row: ChapterRow, userId: string): Promise<void> {
-  await putChapter(row);
-  await syncChaptersToVersionData(row.book_id, row.version_id, userId);
+  throw new Error('createChapterAtomic: migrated to dexieDal.ts');
 }
 
-export async function deleteChapterAtomic(chapterId: string, versionId: string, userId: string): Promise<void> {
-  const row = await getChapter(chapterId);
-  const bookId = row?.book_id;
-  // Delete from Surreal
-  await invoke('surreal_query', {
-    query: "DELETE chapter WHERE chapter_id = $cid AND owner_user_id = $uid",
-    vars: { cid: chapterId, uid: userId },
-  });
-  if (bookId) {
-    await syncChaptersToVersionData(bookId, versionId, userId);
-  }
+  throw new Error('deleteChapterAtomic: migrated to dexieDal.ts');
 }
 
-export async function bumpChapterMetadataAtomic(
-  chapterId: string,
-  versionId: string,
-  userId: string,
-  opts: { wordCount?: number; charCount?: number; revLocal?: string }
-): Promise<void> {
-  await invoke('surreal_query', {
-    query:
-      "UPDATE chapter SET word_count = coalesce($wc, word_count), character_count = coalesce($cc, character_count), sync_state = 'dirty', rev_local = coalesce($rl, rev_local), updated_at = time::now() WHERE chapter_id = $cid AND owner_user_id = $uid;" +
-      "UPDATE version SET updated_at = time::now() WHERE version_id = $vid AND owner_user_id = $uid;",
-    vars: {
-      wc: opts.wordCount ?? null,
-      cc: opts.charCount ?? null,
-      rl: opts.revLocal ?? null,
-      cid: chapterId,
-      vid: versionId,
-      uid: userId,
-    },
-  });
+  throw new Error('bumpChapterMetadataAtomic: migrated to dexieDal.ts');
 }
 
 
