@@ -24,6 +24,12 @@ import {
 import { useAuthStore } from '../auth/useAuthStore';
 import { apiClient } from '../lib/apiClient';
 import { syncBookToCloud } from '../data/dal';
+import { encryptionService } from '../services/encryptionService';
+import { syncVersionsForBook } from '../sync/versionSync';
+import { simpleDb } from '../data/simpleDexie';
+import { enqueueOutbox } from '../data/simpleDexie';
+import { listLocalRevisions } from '../services/chapterRevisionService';
+import { drainOutbox, installOnlineDrain } from '../services/outboxService';
 import { dalEvents } from '../data/events';
 
 // Helper function to create a token getter for API calls
@@ -150,6 +156,15 @@ interface BookContextType {
   generateId: () => string;
   refreshData: () => void;
   createSampleData: () => Promise<void>;
+  // Revisions
+  listChapterRevisions?: (chapterId: string) => Promise<any[]>;
+  restoreChapterRevision?: (bookId: string, versionId: string, chapterId: string, rev: any) => Promise<void>;
+  // Editor sync signals (avoid window events)
+  lastRestored?: { chapterId: string; content: any; at: number } | null;
+  notifyChapterRestored?: (chapterId: string, content: any) => void;
+  restoringChapterId?: string | null;
+  startRestore?: (chapterId: string) => void;
+  endRestore?: () => void;
 }
 
 // Create context
@@ -172,6 +187,9 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedWorldId, setSelectedWorldId] = useState<string | null>(null);
+  // Signal so Editor can react to restores without global events
+  const [lastRestored, setLastRestored] = useState<{ chapterId: string; content: any; at: number } | null>(null);
+  const [restoringChapterId, setRestoringChapterId] = useState<string | null>(null);
 
   // Computed book categories based on user permissions
   const authoredBooks = books.filter(book => book.authorId === user?.id);
@@ -241,6 +259,13 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
     };
   }, []);
 
+  // Auto-drain outbox on online status
+  useEffect(() => {
+    if (!user?.id) return;
+    const uninstall = installOnlineDrain(user.id);
+    return () => { try { uninstall && uninstall(); } catch { /* ignore */ } };
+  }, [user?.id]);
+
   /**
    * Load books from local database and sync with cloud
    */
@@ -262,7 +287,7 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
 
       await appLog.success('book-context', 'Loaded local books', { count: localBooks.length });
 
-      // If online, sync with cloud
+  // If online, sync with cloud
       if (navigator.onLine) {
         await syncWithCloud(localBooks);
       }
@@ -389,6 +414,17 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
         totalBooks: syncedBooks.length,
         conflicts: syncedBooks.filter(b => b.conflictState === 'needs_review').length
       });
+
+      // After book-level sync, perform nested version/chapter sync for each book
+      if (navigator.onLine && user?.id) {
+        for (const b of syncedBooks) {
+          try {
+            await syncVersionsForBook(b.id, user.id);
+          } catch (e) {
+            await appLog.warn('book-context', 'Nested sync failed for book', { bookId: b.id, error: e });
+          }
+        }
+      }
 
     } catch (error) {
       await appLog.error('book-context', 'Cloud sync failed', { error });
@@ -844,7 +880,7 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
   // World operations
   const getWorlds = async (bookId: string, versionId: string): Promise<WorldData[]> => {
     const version = await getVersion(bookId, versionId);
-    return version?.worlds?.filter((w: any) => w.versionId === versionId) || [];
+    return version?.worlds || [];
   };
 
   const getWorld = async (bookId: string, versionId: string, worldId: string): Promise<WorldData | null> => {
@@ -1203,20 +1239,20 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
   // Chapter operations (encrypted content with local storage)
   const getChapterContent = async (chapterId: string): Promise<any> => {
     try {
-      // TODO: Implement proper chapter content retrieval
-      // const result = await apiClient.getChapterContent(chapterId);
-      // return result?.content || null;
-      return null;
+      if (!user?.id) return null;
+      return await encryptionService.loadChapterContent(chapterId, user.id);
     } catch (error) {
       await appLog.error('book-context', 'Failed to get chapter content', { chapterId, error });
       return null;
     }
   };
  
-  const saveChapterContentLocal = async (chapterId: string, _bookId: string, _versionId: string, _content: any): Promise<void> => {
+  const saveChapterContentLocal = async (chapterId: string, bookId: string, versionId: string, content: any): Promise<void> => {
     try {
-      // TODO: Implement proper chapter content saving
-      // await apiClient.saveChapterContentLocal(chapterId, { bookId, versionId, content });
+      if (!user?.id) throw new Error('No user');
+      await encryptionService.saveChapterContent(chapterId, bookId, versionId, user.id, content, false);
+  // Enqueue an outbox update to push when online
+  await enqueueOutbox({ entity: 'chapter', action: 'update', bookId, versionId, chapterId, payload: { title: content?.title, updatedAt: Date.now() } });
       await appLog.success('book-context', 'Chapter content saved locally', { chapterId });
     } catch (error) {
       await appLog.error('book-context', 'Failed to save chapter content locally', { chapterId, error });
@@ -1224,10 +1260,43 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   };
 
-  const getChaptersByVersion = async (_bookId: string, _versionId: string): Promise<Chapter[]> => {
-    // For now, return empty array to avoid type conflicts
-    // TODO: Implement proper chapter fetching when chapter table is fully integrated
-    return [];
+  const getChaptersByVersion = async (_bookId: string, versionId: string): Promise<Chapter[]> => {
+    // Use simplified Dexie chapters table; map to UI Chapter type minimally
+    const rows = await simpleDb.chapters.where('versionId').equals(versionId).toArray();
+    return rows.map((r: any) => ({
+      id: r.id,
+      title: r.title || 'Untitled Chapter',
+      position: 0,
+      createdAt: r.createdAt || new Date().toISOString(),
+      updatedAt: r.updatedAt || new Date().toISOString(),
+      image: undefined,
+      linkedPlotNodeId: '',
+      linkedAct: '',
+      linkedOutline: '',
+      linkedScenes: [],
+      content: { type: 'doc', content: [], metadata: { totalCharacters: 0, totalWords: r.wordCount || 0 } },
+      revisions: [],
+      currentRevisionId: '',
+      collaborativeState: { pendingChanges: [], needsReview: false, reviewerIds: [], approvedBy: [], rejectedBy: [], mergeConflicts: [] },
+      revLocal: r.revLocal,
+      revCloud: r.revCloud,
+      syncState: r.syncState,
+      conflictState: r.conflictState,
+      encScheme: r.encScheme,
+      contentEnc: (r.contentEnc ? JSON.stringify(Array.from(r.contentEnc)) : undefined) as any,
+      contentIv: (r.contentIv ? JSON.stringify(Array.from(r.contentIv)) : undefined) as any,
+      wordCount: r.wordCount || 0,
+      hasProposals: false,
+      summary: '',
+      goals: '',
+      characters: [],
+      tags: [],
+      notes: '',
+      isComplete: false,
+      status: 'DRAFT',
+      authorId: user?.id || '',
+      lastModifiedBy: user?.id || '',
+    }));
   };
 
   // Sync operations
@@ -1262,8 +1331,31 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const syncChapters = async (): Promise<void> => {
-    // TODO: Implement chapter sync logic
+    if (!navigator.onLine || !user?.id) return;
+    for (const b of books) {
+      try {
+        await syncVersionsForBook(b.id, user.id);
+      } catch (e) {
+        await appLog.warn('book-context', 'Chapter sync failed', { bookId: b.id, error: e });
+      }
+    }
+    // Drain any queued outbox items at the end of sync
+    try { await drainOutbox(user?.id); } catch { /* ignore */ }
   };
+
+  // Expose simple revision helpers (optional, for UI usage later)
+  const listChapterRevisions = async (chapterId: string) => {
+    return await listLocalRevisions(chapterId);
+  };
+  const restoreChapterRevision = async (bookId: string, versionId: string, chapterId: string, rev: any) => {
+    // rev.snapshot should be a TipTap JSON snapshot
+    await saveChapterContentLocal(chapterId, bookId, versionId, rev.snapshot);
+  };
+  const notifyChapterRestored = (chapterId: string, content: any) => {
+    setLastRestored({ chapterId, content, at: Date.now() });
+  };
+  const startRestore = (chapterId: string) => setRestoringChapterId(chapterId);
+  const endRestore = () => setRestoringChapterId(null);
 
   const resolveConflict = async (bookId: string, resolution: 'local' | 'cloud' | 'merge'): Promise<void> => {
     const book = getBook(bookId);
@@ -1381,6 +1473,15 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
     generateId,
     refreshData,
     createSampleData,
+  // Optional revision helpers
+  listChapterRevisions,
+  restoreChapterRevision,
+  // Editor sync signals
+  lastRestored,
+  notifyChapterRestored,
+  restoringChapterId,
+  startRestore,
+  endRestore,
   };
 
   return (
@@ -1399,33 +1500,100 @@ export const useBookContextSafe = () => {
 // Custom hook to get current book and version from URL params
 export const useCurrentBookAndVersion = () => {
   const { bookId, versionId } = useParams<{ bookId: string; versionId: string }>();
-  
+
   // Use safe hook first to check if context is available
   const contextSafe = useBookContextSafe();
-  
-  if (!contextSafe) {
-    return {
-      bookId,
-      versionId,
-      currentBook: null,
-      currentVersion: null,
-      loading: false,
-      error: 'BookContext not available'
+
+  const [currentBook, setCurrentBook] = React.useState<Book | null>(null);
+  const [currentVersion, setCurrentVersion] = React.useState<Version | null>(null);
+  const [loading, setLoading] = React.useState<boolean>(!!(bookId && versionId));
+  const [error, setError] = React.useState<string | null>(null);
+  const isContextLoading = contextSafe?.loading ?? false;
+  const lastResolvedRef = React.useRef<{ bookId?: string; versionId?: string } | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!contextSafe) {
+      setCurrentBook(null);
+      setCurrentVersion(null);
+      setLoading(false);
+      setError('BookContext not available');
+      return;
+    }
+
+    const { getBook, getVersion } = contextSafe;
+
+    // Resolve current book synchronously from context state
+    const book = bookId ? getBook(bookId) : null;
+    setCurrentBook(book);
+
+    // If the context is still loading, reflect that and avoid producing errors yet
+    if (isContextLoading) {
+      // Only show loading spinner during initial hydration or when IDs actually change
+      if (!lastResolvedRef.current || lastResolvedRef.current.bookId !== bookId || lastResolvedRef.current.versionId !== versionId) {
+        setLoading(!!(bookId && versionId));
+      }
+      setError(null);
+      // don't try resolving version until base data is ready
+      return () => { cancelled = true; };
+    }
+
+    // If we have no bookId or versionId, nothing to resolve
+    if (!bookId || !versionId) {
+      setCurrentVersion(null);
+      setLoading(false);
+      setError(null);
+      return () => { cancelled = true; };
+    }
+
+    // If the book isn't found yet, keep loading until the context has some books loaded
+    if (!book) {
+      const booksCount = contextSafe.books?.length ?? 0;
+      if (booksCount === 0) {
+        // Likely initial mount before books hydrate; keep loading
+        setLoading(true);
+        setError(null);
+        return () => { cancelled = true; };
+      } else {
+        // Books are present but this ID wasn't found
+        setCurrentVersion(null);
+        setLoading(false);
+        setError('Book not found');
+        return () => { cancelled = true; };
+      }
+    }
+
+  // Resolve version asynchronously; avoid toggling loading during routine context updates
+    setError(null);
+    getVersion(bookId, versionId)
+      .then(v => {
+        if (cancelled) return;
+        setCurrentVersion(v);
+    setLoading(false);
+    // Track the last resolved IDs to prevent redundant reloads on saves/dirty events
+    lastResolvedRef.current = { bookId, versionId };
+        if (!v) setError('Version not found');
+      })
+      .catch(err => {
+        if (cancelled) return;
+        console.error('Failed to resolve current version', err);
+        setError('Version not found');
+        setCurrentVersion(null);
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
     };
-  }
-  
-  const { getBook, getVersion } = contextSafe;
-  
-  const currentBook = bookId ? getBook(bookId) : null;
-  const currentVersion = currentBook && versionId && bookId ? getVersion(bookId, versionId) : null;
-  
+  }, [bookId, versionId, isContextLoading]);
+
   return {
     bookId,
     versionId,
     currentBook,
     currentVersion,
-    loading: !currentBook && !!bookId, // loading if we have bookId but no book found
-    error: bookId && !currentBook ? 'Book not found' : null
+    loading,
+    error,
   };
 };
 

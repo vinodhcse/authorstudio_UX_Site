@@ -433,8 +433,9 @@ import {
     versionId: string, 
     userId: string, 
     content: any,
-    isShared: boolean = false
-  ): Promise<void> {
+    isShared: boolean = false,
+    opts?: { revisionId?: string; isMinor?: boolean; setHead?: boolean }
+  ): Promise<{ revisionId: string }> {
     try {
       appLog.debug('encryption', 'Saving chapter content', { chapterId });
 
@@ -471,24 +472,50 @@ import {
       const contentText = JSON.stringify(content);
       const wordCount = contentText.split(/\s+/).length;
 
+      // Revision semantics
+      const isMinor = opts?.isMinor !== false; // default to minor unless explicitly false
+      const revisionId = opts?.revisionId || `rev_${Math.random().toString(36).slice(2)}`;
+      const setHead = opts?.setHead ?? !isMinor; // set chapter.revLocal when this is a manual/major save
+
       // Persist encrypted payload into simplified chapters table
+      const prev = await getChapter(chapterId).catch(() => undefined as any);
       const dbChapter = {
+        ...(prev || {}),
         id: chapterId,
         bookId,
         versionId,
-        title: content.title || 'Untitled Chapter',
+        title: content.title || prev?.title || 'Untitled Chapter',
         encScheme: isShared ? 'bsk' : 'udek',
         contentEnc: contentEncBinary,
         contentIv: contentIvBinary,
         wordCount,
         updatedAt: new Date().toISOString(),
-        revLocal: (Math.random().toString(36).slice(2)),
+        revLocal: setHead ? revisionId : (prev?.revLocal ?? undefined),
         syncState: 'dirty',
       } as any;
 
       await putChapter(dbChapter);
+      // Record a local minor revision snapshot
+      try {
+        const { createLocalRevision } = await import('./chapterRevisionService');
+        await createLocalRevision({
+          rev_id: revisionId,
+          chapter_id: chapterId,
+          book_id: bookId,
+          version_id: versionId,
+          device_id: isMinor ? 'autosave' : 'manual',
+          parent_rev_id: prev?.revLocal || null,
+          base_cloud_rev_id: dbChapter.revCloud || null,
+          is_minor: isMinor,
+          message: null,
+          snapshot: content,
+          word_count: wordCount,
+          char_count: contentText.length,
+        } as any);
+      } catch (_) {}
       
-      appLog.success('encryption', 'Chapter content encrypted and saved', { chapterId, wordCount });
+      appLog.success('encryption', 'Chapter content encrypted and saved', { chapterId, wordCount, revisionId, isMinor, setHead });
+      return { revisionId };
     } catch (error) {
       appLog.error('encryption', 'Failed to save chapter content', { chapterId, error });
       throw error;

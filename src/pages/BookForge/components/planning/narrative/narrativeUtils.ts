@@ -18,7 +18,7 @@ export const generateHierarchicalLayout = (nodes: NarrativeFlowNode[]): Narrativ
   };
 
   // Find root nodes and categorize nodes
-  const rootNodes = nodes.filter(node => !node.data.parentId);
+  // const rootNodes = nodes.filter(node => !node.data.parentId);
   const plotNodes = nodes.filter(node => 
     ['outline', 'act', 'chapter', 'scene'].includes(node.type)
   );
@@ -81,7 +81,18 @@ export const generateHierarchicalLayout = (nodes: NarrativeFlowNode[]): Narrativ
     const node = nodeMap.get(nodeId);
     if (!node || positionedNodes.has(nodeId)) return;
 
-    const children = nodes.filter(n => n.data.parentId === nodeId);
+    // Determine children primarily from parent's childIds (canonical order),
+    // fallback to scanning by parentId when not defined.
+    const parentNode = nodeMap.get(nodeId);
+    const childOrder: string[] | undefined = (parentNode as any)?.data?.childIds;
+    let children: NarrativeFlowNode[] = [];
+    if (Array.isArray(childOrder) && childOrder.length > 0) {
+      children = childOrder
+        .map(id => nodeMap.get(id))
+        .filter(Boolean) as NarrativeFlowNode[];
+    } else {
+      children = nodes.filter(n => n.data.parentId === nodeId);
+    }
     
     let preferredX: number;
     let preferredY = level * config.levelHeight;
@@ -111,8 +122,15 @@ export const generateHierarchicalLayout = (nodes: NarrativeFlowNode[]): Narrativ
     const position = findAvailablePosition(preferredX, preferredY);
     positionedNodes.set(nodeId, position);
 
-    // Sort children for consistent positioning
-    const sortedChildren = children.sort((a, b) => a.data.data.title.localeCompare(b.data.data.title));
+    // If we built children from childIds they're already in the right order.
+    // Otherwise, fallback stable sort by title if no explicit order
+    const sortedChildren = (Array.isArray(childOrder) && childOrder.length > 0)
+      ? children
+      : [...children].sort((a, b) => {
+          const at = (a as any).data?.data?.title ?? (a as any).data?.title ?? '';
+          const bt = (b as any).data?.data?.title ?? (b as any).data?.title ?? '';
+          return String(at).localeCompare(String(bt));
+        });
     
     // Recursively position children
     sortedChildren.forEach((child, index) => {
@@ -123,7 +141,6 @@ export const generateHierarchicalLayout = (nodes: NarrativeFlowNode[]): Narrativ
   // Position outline nodes first (main story structure)
   const outlineNodes = plotNodes.filter(node => node.type === 'outline');
   outlineNodes.forEach((outline, index) => {
-    const startX = index * config.nodeSpacing * 2; // Space out multiple outlines
     calculateTreeLayout(outline.id, 0, index, outlineNodes.length);
   });
 

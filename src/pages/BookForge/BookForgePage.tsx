@@ -397,8 +397,8 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
             transition={{ duration: 0.5 }}
         >
             <EditorHeader 
-                book={compatibilityBook} 
-                version={compatibilityVersion} 
+                book={compatibilityBook as any} 
+                version={compatibilityVersion as any} 
                 currentChapter={currentChapter || undefined}
                 chapters={chapters}
                 theme={theme} 
@@ -467,8 +467,11 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                     onEditorReady={setEditorInstance}
                     bookId={bookId!}
                     versionId={versionId!}
-                    book={compatibilityBook}
-                    version={compatibilityVersion}
+                    book={compatibilityBook as any}
+                    version={compatibilityVersion as any}
+                    chapters={chapters as any}
+                    createChapter={createChapter as any}
+                    saveChapterContent={saveChapterContent as any}
                     theme={theme}
                     activeMode={activeMode}
                     planningTab={activePlanningTab}
@@ -476,11 +479,12 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                 />
             </div>
             <EditorFooter 
-                book={compatibilityBook} 
+                book={compatibilityBook as any} 
                 mode={activeMode}
                 activePlanningTab={activePlanningTab}
                 onPlanningNavigation={handlePlanningNavigation}
                 currentChapterId={selectedChapterId || undefined}
+                currentVersionId={versionId!}
                 chapterSyncState={currentChapter?.syncState === 'pulling' ? 'pushing' : currentChapter?.syncState as any}
                 chapterWordCount={currentChapter?.wordCount || 0}
                 chapterCharCount={currentChapter?.content?.metadata?.totalCharacters || 0}

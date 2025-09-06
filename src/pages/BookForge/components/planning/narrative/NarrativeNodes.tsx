@@ -363,10 +363,20 @@ const CompactNode: React.FC<BaseNodeProps & { nodeType: string; color: string }>
           </div>
 
           {/* Action buttons */}
-          <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-30">
             {/* Select button */}
             {onSelect && (
               <motion.button
+                onMouseDown={(e) => {
+                  // Prevent React Flow from treating this as a node selection/drag
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
+                onPointerDown={(e) => {
+                  // Defensive: block pointer to avoid drag start
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   e.preventDefault();
@@ -376,7 +386,7 @@ const CompactNode: React.FC<BaseNodeProps & { nodeType: string; color: string }>
                   e.stopPropagation();
                   e.preventDefault();
                 }}
-                className="w-6 h-6 bg-green-500/70 hover:bg-green-500 rounded-full flex items-center justify-center transition-colors z-20"
+                className="w-6 h-6 bg-green-500/70 hover:bg-green-500 rounded-full flex items-center justify-center transition-colors z-40 nodrag nopan nowheel pointer-events-auto"
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 title="Select as root node"
@@ -396,7 +406,7 @@ const CompactNode: React.FC<BaseNodeProps & { nodeType: string; color: string }>
                 e.stopPropagation();
                 e.preventDefault();
               }}
-              className="w-6 h-6 bg-blue-500/70 hover:bg-blue-500 rounded-full flex items-center justify-center transition-colors z-20"
+              className="w-6 h-6 bg-blue-500/70 hover:bg-blue-500 rounded-full flex items-center justify-center transition-colors z-40 nodrag nopan nowheel pointer-events-auto"
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               title="Edit node"
@@ -688,7 +698,7 @@ const ExpandedNode: React.FC<BaseNodeProps & {
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
-              className="absolute -top-2 -right-2 flex gap-1 z-30"
+              className="absolute -top-2 -right-2 flex gap-1 z-30 pointer-events-none group-hover:pointer-events-auto"
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -697,6 +707,14 @@ const ExpandedNode: React.FC<BaseNodeProps & {
               {/* Select button */}
               {onSelect && (
                 <motion.button
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
                     e.preventDefault();
@@ -706,7 +724,7 @@ const ExpandedNode: React.FC<BaseNodeProps & {
                     e.stopPropagation();
                     e.preventDefault();
                   }}
-                  className="p-2 rounded-full bg-green-500/30 hover:bg-green-500/50 transition-colors backdrop-blur-sm"
+                  className="p-2 rounded-full bg-green-500/30 hover:bg-green-500/50 transition-colors backdrop-blur-sm nodrag nopan nowheel pointer-events-auto"
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
                   title="Select as root node"
@@ -725,7 +743,7 @@ const ExpandedNode: React.FC<BaseNodeProps & {
                   e.stopPropagation();
                   e.preventDefault();
                 }}
-                className="p-2 rounded-full bg-blue-500/30 hover:bg-blue-500/50 transition-colors backdrop-blur-sm"
+                className="p-2 rounded-full bg-blue-500/30 hover:bg-blue-500/50 transition-colors backdrop-blur-sm nodrag nopan nowheel pointer-events-auto"
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
               >
@@ -742,7 +760,7 @@ const ExpandedNode: React.FC<BaseNodeProps & {
                   e.stopPropagation();
                   e.preventDefault();
                 }}
-                className="p-2 rounded-full bg-amber-500/30 hover:bg-amber-500/50 transition-colors backdrop-blur-sm"
+                className="p-2 rounded-full bg-amber-500/30 hover:bg-amber-500/50 transition-colors backdrop-blur-sm nodrag nopan nowheel pointer-events-auto"
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
               >
@@ -759,7 +777,7 @@ const ExpandedNode: React.FC<BaseNodeProps & {
                   e.stopPropagation();
                   e.preventDefault();
                 }}
-                className="p-2 rounded-full bg-red-500/30 hover:bg-red-500/50 transition-colors backdrop-blur-sm"
+                className="p-2 rounded-full bg-red-500/30 hover:bg-red-500/50 transition-colors backdrop-blur-sm nodrag nopan nowheel pointer-events-auto"
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
               >
@@ -1267,10 +1285,18 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
         </div>
 
         {/* Action buttons - top-right positioning for consistency */}
-        <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute -top-1 -right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-30">
           {/* Select button */}
           {onSelect && (
             <motion.button
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -1280,7 +1306,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
                 e.stopPropagation();
                 e.preventDefault();
               }}
-              className="w-6 h-6 bg-green-500/70 hover:bg-green-500 rounded-full flex items-center justify-center transition-colors z-20"
+              className="w-6 h-6 bg-green-500/70 hover:bg-green-500 rounded-full flex items-center justify-center transition-colors z-40 nodrag nopan nowheel pointer-events-auto"
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               title="Focus on this Scene"
@@ -1300,7 +1326,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
               e.stopPropagation();
               e.preventDefault();
             }}
-            className="w-6 h-6 bg-blue-500/70 hover:bg-blue-500 rounded-full flex items-center justify-center transition-colors z-20"
+            className="w-6 h-6 bg-blue-500/70 hover:bg-blue-500 rounded-full flex items-center justify-center transition-colors z-40 nodrag nopan nowheel pointer-events-auto"
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             title="Edit Scene"
@@ -1319,7 +1345,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
               e.stopPropagation();
               e.preventDefault();
             }}
-            className="w-6 h-6 bg-purple-500/70 hover:bg-purple-500 rounded-full flex items-center justify-center transition-colors z-20"
+            className="w-6 h-6 bg-purple-500/70 hover:bg-purple-500 rounded-full flex items-center justify-center transition-colors z-40 nodrag nopan nowheel pointer-events-auto"
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             title="Add Child Scene"
@@ -1339,7 +1365,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
                 e.stopPropagation();
                 e.preventDefault();
               }}
-              className="w-6 h-6 bg-gray-500/70 hover:bg-gray-500 rounded-full flex items-center justify-center transition-colors z-20"
+              className="w-6 h-6 bg-gray-500/70 hover:bg-gray-500 rounded-full flex items-center justify-center transition-colors z-40 nodrag nopan nowheel pointer-events-auto"
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               title="Collapse"
@@ -1359,7 +1385,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
               e.stopPropagation();
               e.preventDefault();
             }}
-            className="w-6 h-6 bg-red-500/70 hover:bg-red-500 rounded-full flex items-center justify-center transition-colors z-20"
+            className="w-6 h-6 bg-red-500/70 hover:bg-red-500 rounded-full flex items-center justify-center transition-colors z-40 nodrag nopan nowheel pointer-events-auto"
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             title="Delete Scene"
@@ -1668,6 +1694,10 @@ const ExpandedChapterNode: React.FC<BaseNodeProps & {
             {/* Select button */}
             {onSelect && (
               <motion.button
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   e.preventDefault();

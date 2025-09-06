@@ -1,9 +1,7 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { useParams, Navigate, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Book, BookDetailsTab, Version } from '../../types';
+import { BookDetailsTab } from '../../types';
 import BookHero from './components/BookHero';
 import VersionTab from './components/VersionTab';
 import CollaboratorTab from './components/CollaboratorTab';
@@ -12,6 +10,7 @@ import TabSwitcher from './components/TabSwitcher';
 import EditBookModal from './components/EditBookModal';
 import CreateVersionModal from './components/CreateVersionModal';
 import { useBookContext } from '../../contexts/BookContext';
+import { dalEvents } from '../../data/events';
 
 const BookDetailsPage: React.FC = () => {
     const { bookId } = useParams<{ bookId: string }>();
@@ -22,7 +21,8 @@ const BookDetailsPage: React.FC = () => {
     const [isCreateVersionModalOpen, setCreateVersionModalOpen] = useState(false);
     const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
-    const [versions, setVersions] = useState<Version[]>([]);
+    // Note: Version type differs between UI and DB; keep flexible here and transform as needed
+    const [versions, setVersions] = useState<any[]>([]);
 
     const book = books.find(b => b.id === bookId);
 
@@ -34,8 +34,8 @@ const BookDetailsPage: React.FC = () => {
     const loadVersions = async () => {
     if (!book) return;
     try {
-        const list = await getBookVersions(book.id);
-        setVersions(list  || []); // ensure array
+    const list = await getBookVersions(book.id);
+    setVersions((list as any) || []); // ensure array and relax typing
     } catch (err: any) {
         console.error('Failed to load versions:', err);
         
@@ -50,13 +50,34 @@ const BookDetailsPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [book?.id]);
 
+    // Keep versions in sync with DAL events (version/chapter clean or dirty)
+    useEffect(() => {
+        if (!book?.id) return;
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent<{ bookId: string }>).detail;
+            if (detail?.bookId === book.id) {
+                loadVersions();
+            }
+        };
+        dalEvents.addEventListener('version:clean', handler);
+        dalEvents.addEventListener('version:dirty', handler);
+        dalEvents.addEventListener('chapter:clean', handler);
+        dalEvents.addEventListener('chapter:dirty', handler);
+        return () => {
+            dalEvents.removeEventListener('version:clean', handler);
+            dalEvents.removeEventListener('version:dirty', handler);
+            dalEvents.removeEventListener('chapter:clean', handler);
+            dalEvents.removeEventListener('chapter:dirty', handler);
+        };
+    }, [book?.id]);
+
 
     
 
-    const handleUpdateBook = async (updatedData: Partial<Book>) => {
+    const handleUpdateBook = async (updatedData: any) => {
         if(book) {
             try {
-                await updateBook(book.id, updatedData);
+                await updateBook(book.id, updatedData as any);
                 console.log('Update book:', book.id, updatedData);
             } catch (error) {
                 console.error('Failed to update book:', error);
@@ -70,10 +91,10 @@ const BookDetailsPage: React.FC = () => {
         if (!book) return;
         
         try {
-            const updatedData: Partial<Book> = {
+            const updatedData: any = {
                 coverImageRef: coverId ? { id: coverId } as any : undefined
             };
-            await updateBook(book.id, updatedData);
+            await updateBook(book.id, updatedData as any);
             console.log('Book cover updated:', book.id, coverId);
             
         } catch (error) {
@@ -101,9 +122,10 @@ const BookDetailsPage: React.FC = () => {
         if (!book) return;
 
         try {
-            const sourceVersion = data.sourceVersionId ? book.versions?.find(v => v.id === data.sourceVersionId) : null;
+            // Use loaded versions (objects), not book.versions (which may be string IDs)
+            const sourceVersion = data.sourceVersionId ? versions.find(v => v.id === data.sourceVersionId) : null;
             
-            const versionData: Omit<Version, 'id'> = {
+            const versionData: any = {
                 name: data.name,
                 status: 'DRAFT',
                 wordCount: sourceVersion ? sourceVersion.wordCount : 0,
@@ -115,7 +137,9 @@ const BookDetailsPage: React.FC = () => {
                 chapters: sourceVersion?.chapters || []
             };
 
-            await createVersion(book.id, versionData);
+            await createVersion(book.id, versionData as any);
+            // Proactively reload versions so the newly created version is visible immediately
+            await loadVersions();
             setCreateVersionModalOpen(false);
         } catch (error) {
             console.error('Failed to create version:', error);
@@ -143,9 +167,9 @@ const BookDetailsPage: React.FC = () => {
                             onDeleteVersion={handleDeleteVersion}
                         />;
             case 'Collaborators':
-                return <CollaboratorTab collaborators={book.collaborators || []} />;
+                return <CollaboratorTab collaborators={(book as any).collaborators || []} />;
             case 'Recent Activity':
-                return <RecentActivityTab activities={book.activity || []} />;
+                return <RecentActivityTab activities={(book as any).activity || []} />;
             default:
                 return null;
         }
@@ -163,7 +187,7 @@ const BookDetailsPage: React.FC = () => {
                 transition={{ duration: 0.5 }}
             >
                 <BookHero 
-                    book={book} 
+                    book={book as any} 
                     onEdit={() => setEditModalOpen(true)} 
                     onDelete={() => setDeleteModalOpen(true)}
                     onCoverUpdate={handleCoverUpdate}
@@ -186,7 +210,7 @@ const BookDetailsPage: React.FC = () => {
                         key={`edit-modal-${book.id}`}
                         isOpen={isEditModalOpen}
                         onClose={() => setEditModalOpen(false)}
-                        book={book}
+                        book={book as any}
                         onUpdateBook={handleUpdateBook}
                     />
                 )}
@@ -195,7 +219,7 @@ const BookDetailsPage: React.FC = () => {
                         key={`version-modal-${book.id}`}
                         isOpen={isCreateVersionModalOpen}
                         onClose={() => setCreateVersionModalOpen(false)}
-                        bookVersions={book.versions || []}
+                        bookVersions={versions as any}
                         onCreate={handleCreateVersion}
                     />
                 )}

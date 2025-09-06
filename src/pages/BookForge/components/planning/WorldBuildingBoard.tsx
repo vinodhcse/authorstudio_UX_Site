@@ -42,28 +42,44 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
         selectedWorldId, 
         setSelectedWorldId,
         updateWorld,
-        getLocations,
+        deleteWorld,
+    getLocations: _getLocations,
         createLocation,
         updateLocation,
         deleteLocation,
-        getWorldObjects,
+    getWorldObjects: _getWorldObjects,
         createWorldObject,
         updateWorldObject,
         deleteWorldObject,
-        getLore,
+    getLore: _getLore,
         createLore,
         updateLore,
         deleteLore,
-        getMagicSystems,
+    getMagicSystems: _getMagicSystems,
         createMagicSystem,
         updateMagicSystem,
         deleteMagicSystem
     } = useBookContext();
     
-    const worlds = useMemo(() => {
-        const result = bookId && versionId ? getWorlds(bookId, versionId) : [];
-        return result;
-    }, [bookId, versionId, getWorlds]);
+    const [worlds, setWorlds] = useState<any[]>([]);
+    useEffect(() => {
+        let cancelled = false;
+        const load = async () => {
+            if (!bookId || !versionId) {
+                if (!cancelled) setWorlds([]);
+                return;
+            }
+            try {
+                const result: any = await getWorlds(bookId, versionId);
+                const list = Array.isArray(result) ? result : (result ? Object.values(result as any) : []);
+                if (!cancelled) setWorlds(list);
+            } catch {
+                if (!cancelled) setWorlds([]);
+            }
+        };
+        load();
+        return () => { cancelled = true; };
+    }, [bookId, versionId, getWorlds, selectedWorldId]);
 
     // Auto-select first world if none selected and worlds exist
     React.useEffect(() => {
@@ -110,10 +126,9 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
         );
     };
 
-    const selectedWorld = useMemo(() => 
-        worlds.find(w => w.id === selectedWorldId), 
-        [worlds, selectedWorldId]
-    );
+    const selectedWorld = useMemo(() => {
+        return (worlds as any[]).find((w: any) => w.id === selectedWorldId) || null;
+    }, [worlds, selectedWorldId]);
 
     // Save handlers
     const handleSaveWorld = (updatedWorld: any) => {
@@ -122,10 +137,28 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
         }
     };
 
+    // Delete handlers
+    const handleDeleteWorld = async () => {
+        if (!bookId || !versionId || !selectedWorldId) return;
+        const confirm = window.confirm('Delete this world and all its data?');
+        if (!confirm) return;
+        await deleteWorld(bookId, versionId, selectedWorldId);
+        // Refresh worlds list by clearing selection; effect will reload
+        setSelectedWorldId(null as any);
+    };
+
     const handleSaveLocation = (updatedLocation: Location) => {
         if (bookId && versionId && selectedWorldId) {
             updateLocation(bookId, versionId, selectedWorldId, updatedLocation.id, updatedLocation);
         }
+    };
+
+    const handleDeleteLocation = async (locationId: string) => {
+        if (!bookId || !versionId || !selectedWorldId) return;
+        if (!window.confirm('Delete this location?')) return;
+        await deleteLocation(bookId, versionId, selectedWorldId, locationId);
+        // Optimistically update local UI
+        setWorlds(prev => prev.map(w => w.id === selectedWorldId ? { ...w, locations: (w.locations || []).filter((l: any) => l.id !== locationId) } : w));
     };
 
     const handleSaveObject = (updatedObject: WorldObject) => {
@@ -134,16 +167,37 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
         }
     };
 
+    const handleDeleteObject = async (objectId: string) => {
+        if (!bookId || !versionId || !selectedWorldId) return;
+        if (!window.confirm('Delete this object?')) return;
+        await deleteWorldObject(bookId, versionId, selectedWorldId, objectId);
+        setWorlds(prev => prev.map(w => w.id === selectedWorldId ? { ...w, objects: (w.objects || []).filter((o: any) => o.id !== objectId) } : w));
+    };
+
     const handleSaveLore = (updatedLore: Lore) => {
         if (bookId && versionId && selectedWorldId) {
             updateLore(bookId, versionId, selectedWorldId, updatedLore.id, updatedLore);
         }
     };
 
+    const handleDeleteLore = async (loreId: string) => {
+        if (!bookId || !versionId || !selectedWorldId) return;
+        if (!window.confirm('Delete this lore item?')) return;
+        await deleteLore(bookId, versionId, selectedWorldId, loreId);
+        setWorlds(prev => prev.map(w => w.id === selectedWorldId ? { ...w, lore: (w.lore || []).filter((o: any) => o.id !== loreId) } : w));
+    };
+
     const handleSaveMagicSystem = (updatedMagicSystem: MagicSystem) => {
         if (bookId && versionId && selectedWorldId) {
             updateMagicSystem(bookId, versionId, selectedWorldId, updatedMagicSystem.id, updatedMagicSystem);
         }
+    };
+
+    const handleDeleteMagicSystem = async (magicSystemId: string) => {
+        if (!bookId || !versionId || !selectedWorldId) return;
+        if (!window.confirm('Delete this magic system?')) return;
+        await deleteMagicSystem(bookId, versionId, selectedWorldId, magicSystemId);
+        setWorlds(prev => prev.map(w => w.id === selectedWorldId ? { ...w, magicSystems: (w.magicSystems || []).filter((m: any) => m.id !== magicSystemId) } : w));
     };
 
     // Create handlers
@@ -225,7 +279,7 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
                                             onChange={(e) => setSelectedWorldId(e.target.value)}
                                             className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                                         >
-                                            {worlds.map((world) => (
+                                            {worlds.map((world: any) => (
                                                 <option key={world.id} value={world.id}>
                                                     {world.name}
                                                 </option>
@@ -238,6 +292,14 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
                                             <PlusIcon className="w-4 h-4" />
                                             Create World
                                         </button>
+                                        {selectedWorldId && (
+                                            <button
+                                                onClick={handleDeleteWorld}
+                                                className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm"
+                                            >
+                                                Delete World
+                                            </button>
+                                        )}
                                     </div>
                                     <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">
                                         {selectedWorld.name}
@@ -253,7 +315,7 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
                                 <div className="bg-white/50 dark:bg-black/20 backdrop-blur-sm border border-gray-200/50 dark:border-gray-800/50 rounded-lg p-4">
                                     <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 border-b border-black/10 dark:border-white/10 pb-2">Themes</h4>
                                     <div className="flex flex-wrap gap-2">
-                                        {selectedWorld.themes.map((theme, idx) => (
+                                        {(selectedWorld?.themes || []).map((theme: string, idx: number) => (
                                             <span key={idx} className="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm">
                                                 {theme}
                                             </span>
@@ -384,6 +446,13 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
                                     <span className="px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs">
                                         {location.type}
                                     </span>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleDeleteLocation(location.id); }}
+                                            className="text-red-600 hover:text-red-700 text-xs"
+                                            title="Delete Location"
+                                        >
+                                            Delete
+                                        </button>
                                 </div>
                             </div>
                         </motion.div>
@@ -453,6 +522,13 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
                                     <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs">
                                         {object.type}
                                     </span>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleDeleteObject(object.id); }}
+                                            className="text-red-600 hover:text-red-700 text-xs"
+                                            title="Delete Object"
+                                        >
+                                            Delete
+                                        </button>
                                 </div>
                             </div>
                         </motion.div>
@@ -514,6 +590,13 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
                                 <span className="text-xs text-gray-500 dark:text-gray-400">
                                     {loreItem.timeline.age}
                                 </span>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteLore(loreItem.id); }}
+                                    className="text-red-600 hover:text-red-700 text-xs"
+                                    title="Delete Lore"
+                                >
+                                    Delete
+                                </button>
                             </div>
                         </motion.div>
                     ))}
@@ -574,6 +657,13 @@ const WorldBuildingBoard: React.FC<WorldBuildingBoardProps> = ({ theme, searchQu
                                 <span className="text-xs text-gray-500 dark:text-gray-400">
                                     {magicSystem.practitioners.length} practitioners
                                 </span>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteMagicSystem(magicSystem.id); }}
+                                    className="text-red-600 hover:text-red-700 text-xs"
+                                    title="Delete Magic System"
+                                >
+                                    Delete
+                                </button>
                             </div>
                         </motion.div>
                     ))}

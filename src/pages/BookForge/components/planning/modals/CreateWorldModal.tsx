@@ -9,7 +9,11 @@ interface CreateWorldModalProps {
     theme: Theme;
 }
 
+import { useBookContext, useCurrentBookAndVersion } from '../../../../../contexts/BookContext';
+
 const CreateWorldModal: React.FC<CreateWorldModalProps> = ({ isOpen, onClose }) => {
+    const { bookId, versionId } = useCurrentBookAndVersion();
+    const { createWorld, setSelectedWorldId } = useBookContext();
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -43,11 +47,32 @@ const CreateWorldModal: React.FC<CreateWorldModalProps> = ({ isOpen, onClose }) 
         }));
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        // TODO: Implement world creation logic
-        console.log('Creating world:', formData);
-        onClose();
+        if (!bookId || !versionId) {
+            console.warn('Missing book/version for createWorld');
+            onClose();
+            return;
+        }
+        try {
+            const newWorld = await createWorld(bookId, versionId, {
+                name: formData.name,
+                description: formData.description,
+                maps: formData.mapUrl ? [formData.mapUrl] : [],
+                themes: [],
+                history: [],
+                locations: [],
+                objects: [],
+                lore: [],
+                magicSystems: [],
+                tags: formData.tags,
+            } as any);
+            setSelectedWorldId(newWorld.id);
+        } catch (err) {
+            console.error('Failed to create world', err);
+        } finally {
+            onClose();
+        }
     };
 
     if (!isOpen) return null;

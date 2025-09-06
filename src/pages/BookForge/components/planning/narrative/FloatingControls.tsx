@@ -4,7 +4,8 @@ import {
   ChevronDownIcon, 
   FunnelIcon, 
   PlusIcon,
-  EyeIcon
+  EyeIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import { NarrativeFilters, CreateNodeModalData, NarrativeNode } from '../../../../../types/narrative-layout';
 
@@ -131,7 +132,7 @@ const FloatingControls: React.FC<FloatingControlsProps> = ({
   };
 
   return (
-    <div className="fixed top-20 right-4 z-30 flex gap-2">
+    <div className="fixed top-28 right-4 z-30 flex gap-2">
       {/* View Controls Button */}
       <div className="relative">
         <motion.button
@@ -199,6 +200,19 @@ const FloatingControls: React.FC<FloatingControlsProps> = ({
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Auto Layout Quick Action */}
+      <div className="relative">
+        <motion.button
+          onClick={onAdjustLayout}
+          className="w-12 h-12 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-indigo-600 dark:text-indigo-400 rounded-xl shadow-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          title="Auto Layout"
+        >
+          <ArrowPathIcon className="w-6 h-6" />
+        </motion.button>
       </div>
 
       {/* Quick Create Button */}

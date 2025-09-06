@@ -542,7 +542,8 @@ export const EnhancedCreateNodeModal: React.FC<EnhancedCreateNodeModalProps> = (
     // Location/Object/Lore arc specific
     locationId: '',
     objectId: '',
-    loreId: ''
+    loreId: '',
+    parentId: modalData.parentId || ''
   });
 
   // Initialize form data
@@ -565,7 +566,8 @@ export const EnhancedCreateNodeModal: React.FC<EnhancedCreateNodeModalProps> = (
         emotionalJourney: (data as any).emotionalJourney || [],
         locationId: (data as any).locationId || '',
         objectId: (data as any).objectId || '',
-        loreId: (data as any).loreId || ''
+        loreId: (data as any).loreId || '',
+        parentId: (data as any).parentId || ''
       });
       setSelectedNodeType(existingNode.type);
     } else {
@@ -587,7 +589,8 @@ export const EnhancedCreateNodeModal: React.FC<EnhancedCreateNodeModalProps> = (
         emotionalJourney: [],
         locationId: '',
         objectId: '',
-        loreId: ''
+        loreId: '',
+        parentId: modalData.parentId || ''
       });
     }
   }, [existingNode, selectedNodeType, isVisible]);
@@ -645,6 +648,10 @@ export const EnhancedCreateNodeModal: React.FC<EnhancedCreateNodeModalProps> = (
         goal: formData.goal
       };
 
+      if (formData.parentId) {
+        typeSpecificData.parentId = formData.parentId;
+      }
+
       // Add type-specific data
       if (selectedNodeType === 'scene') {
         typeSpecificData.characters = formData.characters;
@@ -669,7 +676,8 @@ export const EnhancedCreateNodeModal: React.FC<EnhancedCreateNodeModalProps> = (
         type: selectedNodeType,
         status: formData.status,
         data: typeSpecificData,
-        linkedNodeIds: selectedLinkedNodes
+        linkedNodeIds: selectedLinkedNodes,
+        parentId: formData?.parentId || ''
       };
 
       onCreate(nodeData);

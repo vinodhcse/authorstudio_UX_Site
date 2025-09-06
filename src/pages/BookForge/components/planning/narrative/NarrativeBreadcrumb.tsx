@@ -60,10 +60,7 @@ const NarrativeBreadcrumb: React.FC<NarrativeBreadcrumbProps> = ({
 
   const breadcrumbPath = getBreadcrumbPath();
 
-  // Don't show breadcrumb if no selection or only one item
-  if (!selectedNodeId || breadcrumbPath.length <= 1) {
-    return null;
-  }
+  // Always show the bar with Home; hide path chips when no selection
 
   const getTypeDisplayName = (type: string): string => {
     switch (type) {
@@ -97,8 +94,9 @@ const NarrativeBreadcrumb: React.FC<NarrativeBreadcrumbProps> = ({
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex items-center gap-2 p-3 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 text-sm"
+      className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 text-sm"
     >
+      <div className="flex items-center gap-2">
       {/* Back button */}
       <motion.button
         onClick={onGoBack}
@@ -125,8 +123,8 @@ const NarrativeBreadcrumb: React.FC<NarrativeBreadcrumbProps> = ({
         <span className="hidden sm:inline">Plot Arcs</span>
       </motion.button>
 
-      {/* Breadcrumb path */}
-      {breadcrumbPath.map((item) => (
+  {/* Breadcrumb path */}
+  {breadcrumbPath.length > 1 && breadcrumbPath.map((item) => (
         <React.Fragment key={item.id}>
           <ChevronRightIcon className="w-4 h-4 text-gray-400 dark:text-gray-500" />
           <motion.button
@@ -149,6 +147,17 @@ const NarrativeBreadcrumb: React.FC<NarrativeBreadcrumbProps> = ({
           </motion.button>
         </React.Fragment>
       ))}
+      </div>
+      {/* Right-side actions */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('plotAutoArrange'))}
+          className="px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          title="Auto arrange nodes"
+        >
+          Auto Arrange
+        </button>
+      </div>
     </motion.div>
   );
 };

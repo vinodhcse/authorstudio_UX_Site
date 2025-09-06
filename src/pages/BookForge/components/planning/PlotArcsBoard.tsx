@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import ReactFlow, {
@@ -11,7 +11,10 @@ import ReactFlow, {
     useEdgesState,
     Connection,
     ReactFlowProvider,
-    ConnectionLineType
+    ConnectionLineType,
+    ReactFlowInstance,
+    SmoothStepEdge,
+    EdgeLabelRenderer
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Book, Version, Theme } from '../../../../types';
@@ -40,7 +43,6 @@ import { AISuggestions } from './narrative/AISuggestions';
 import FloatingControls from './narrative/FloatingControls';
 import NarrativeBreadcrumb from './narrative/NarrativeBreadcrumb';
 import { 
-    generateSampleNarrativeData,
     generateHierarchicalLayout,
     filterNodes,
     expandNode,
@@ -97,10 +99,22 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const location = useLocation();
-    const { getBook, getPlotCanvas } = useBookContext();
+    const { getPlotCanvas, updatePlotCanvas } = useBookContext();
     const { bookId, versionId } = useCurrentBookAndVersion();
 
-    const plotCanvas = bookId && versionId ? getPlotCanvas(bookId, versionId) : null;
+    const [plotCanvas, setPlotCanvas] = useState<any>(null);
+
+    useEffect(() => {
+        const fetchPlotCanvas = async () => {
+            if (bookId && versionId) {
+                const canvas = await getPlotCanvas(bookId, versionId);
+                setPlotCanvas(canvas);
+            } else {
+                setPlotCanvas(null);
+            }
+        };
+        fetchPlotCanvas();
+    }, [bookId, versionId, getPlotCanvas]);
     
     
     
@@ -119,9 +133,6 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             search: params.toString(),
             hash: location.hash
         }, { replace: true });
-        
-        // Trigger a state update or re-render if needed
-        window.dispatchEvent(new PopStateEvent('popstate'));
     }, [searchParams, navigate, location]);
 
     // Narrative layout state
@@ -178,6 +189,11 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     // ReactFlow hooks
     const [nodes, setNodes, defaultOnNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const reactFlowInstanceRef = useRef<ReactFlowInstance | null>(null);
+    const prevNodeCountRef = useRef<number>(0);
+    const reactFlowPaneRef = useRef<HTMLDivElement | null>(null);
+    const connectStartNodeIdRef = useRef<string | null>(null);
+    const lastConnectParentRef = useRef<string | null>(null);
 
     // Mock data for filters
     const availableCharacters = [
@@ -208,37 +224,171 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         { id: 'timeline-4', name: 'Memory of First Love', tag: 'Flashback' }
     ];
 
-    // Custom onNodesChange that persists position changes
+    // Minimal: keep UI updates; persist position only when dragging stops via changes
     const onNodesChange = useCallback((changes: any[]) => {
-        // Apply the changes to the ReactFlow nodes
+        // update ReactFlow internal state first so the UI stays responsive
         defaultOnNodesChange(changes);
-        
-        // Update position changes in narrativeNodes
-        changes.forEach(change => {
-            if (change.type === 'position' && change.position) {
-                setNarrativeNodes(prev => prev.map(node => 
-                    node.id === change.id 
-                        ? { ...node, data: { ...node.data, position: change.position } }
-                        : node
-                ));
-            }
-        });
-    }, [defaultOnNodesChange]);
 
-    // Initialize with sample data
+        // persist final positions when we receive a non-dragging position change
+        const positionCommits = changes.filter((ch: any) => ch.type === 'position' && ch.dragging === false);
+        if (positionCommits.length === 0) return;
+
+        // build a map of final positions from the changes
+        const posById = new Map<string, { x: number; y: number }>();
+        const inst = reactFlowInstanceRef.current;
+        for (const ch of positionCommits) {
+            if (!ch?.id) continue;
+            let pos = ch.position as { x: number; y: number } | undefined;
+            // Some React Flow versions omit position on commit; read from instance
+            if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number') {
+                const n = (inst && (inst as any).getNode) ? (inst as any).getNode(ch.id) : undefined;
+                if (n && n.position) pos = n.position;
+                // Fallback to local ReactFlow nodes state (updated by defaultOnNodesChange)
+                if ((!pos || typeof pos.x !== 'number') && Array.isArray(nodes)) {
+                    const local = (nodes as any[]).find(nn => nn.id === ch.id);
+                    if (local?.position) pos = local.position;
+                }
+            }
+            if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+                posById.set(ch.id, pos);
+            }
+        }
+        if (posById.size === 0) return;
+
+        // Update local narrativeNodes state (single render) so future mappings use the latest position
+        setNarrativeNodes(prev => prev.map(n => posById.has(n.id)
+            ? { ...n, data: { ...n.data, position: posById.get(n.id)! } }
+            : n
+        ));
+
+    // Also persist immediately without waiting for debounce, using a snapshot to avoid extra renders
+        const snapshotForSave = (narrativeNodesRef.current || []).map(n => posById.has(n.id)
+            ? { ...n, data: { ...n.data, position: posById.get(n.id)! } }
+            : n
+        );
+        // Guarded immediate save
+        (async () => {
+            try {
+        if (!didHydrateRef.current) return;
+                if (!bookId || !versionId || !updatePlotCanvas) return;
+                if (!snapshotForSave.length) return;
+                const nodesToSave = snapshotForSave.map(n => ({
+                    ...n,
+                    data: { ...n.data, position: (n as any).data?.position ?? (n as any).position }
+                })) as NarrativeFlowNode[];
+                const edgesToSave = buildEdgesForPersistence(nodesToSave);
+                const hash = JSON.stringify({
+                    nodes: nodesToSave.map(n => ({ id: n.id, type: n.data.type, position: n.data.position, parentId: n.data.parentId, childIds: n.data.childIds, linkedNodeIds: n.data.linkedNodeIds })),
+                    edges: edgesToSave.map(e => ({ s: e.source, t: e.target, ty: e.type }))
+                });
+                if (hash === lastSavedHashRef.current) return;
+                lastSavedHashRef.current = hash;
+        console.log('Immediate persist on drag end', { nodes: nodesToSave.length, edges: edgesToSave.length });
+                await updatePlotCanvas(bookId, versionId, { nodes: nodesToSave, edges: edgesToSave });
+            } catch {}
+        })();
+    }, [defaultOnNodesChange, setNarrativeNodes, bookId, versionId, updatePlotCanvas]);
+
+    // Keep a ref to latest nodes and expanded set to avoid recreating handlers
+    const narrativeNodesRef = useRef<NarrativeFlowNode[]>([]);
+    useEffect(() => { narrativeNodesRef.current = narrativeNodes; }, [narrativeNodes]);
+
+    // Initialize from persisted plot canvas when it loads
     useEffect(() => {
-        
-        // Apply hierarchical layout with collision avoidance
-        const narrativeNodes = plotCanvas?.nodes || [];
-        const narrativeEdges = plotCanvas?.edges || [];
-        console.log('Initialized narrative nodes and edges', narrativeNodes, narrativeEdges);
-        const layoutNodes = generateHierarchicalLayout(narrativeNodes);        
-        console.log('Generated layout nodes:', layoutNodes);
-        setNarrativeNodes(layoutNodes);
-        setNarrativeEdges(narrativeEdges);
-        // Don't load AI suggestions on initialization
-        setAiSuggestions([]);
+        if (!plotCanvas) return;
+        const persistedNodes = plotCanvas.nodes || [];
+        const persistedEdges = plotCanvas.edges || [];
+        console.log('Initialized narrative nodes and edges', persistedNodes, persistedEdges);
+
+        const hasPositions = persistedNodes.length > 0 && persistedNodes.every((n: any) => {
+            const p = (n as any).data?.position;
+            return p && typeof p.x === 'number' && typeof p.y === 'number';
+        });
+
+        const seededNodes: NarrativeFlowNode[] = hasPositions
+            ? (persistedNodes as any).map((n: any) => ({ ...n, data: { ...n.data, position: n.data.position } }))
+            : generateHierarchicalLayout(persistedNodes).map((n: any) => ({ ...n, data: { ...n.data, position: n.position } }));
+
+    setNarrativeNodes(seededNodes);
+    setNarrativeEdges(persistedEdges);
+    setAiSuggestions([]);
+    // Allow subsequent saves; debounced saver has guards against empty wipes
+    didHydrateRef.current = true;
+    }, [plotCanvas]);
+
+    
+
+    
+
+    // Helper: build edges from node relationships for persistence
+    const buildEdgesForPersistence = useCallback((nodesForEdges: NarrativeFlowNode[]): NarrativeEdge[] => {
+        const seen = new Set<string>();
+        const out: NarrativeEdge[] = [];
+        for (const n of nodesForEdges) {
+            const childIds = (n as any).data?.childIds || [];
+            const linkedIds = (n as any).data?.linkedNodeIds || [];
+            for (const c of childIds) {
+                const id = `child-${n.id}-${c}`;
+                if (seen.has(id)) continue; seen.add(id);
+                out.push({ id, source: n.id, target: c, type: 'child' } as NarrativeEdge);
+            }
+            for (const l of linkedIds) {
+                const id = `link-${n.id}-${l}`;
+                if (seen.has(id)) continue; seen.add(id);
+                out.push({ id, source: n.id, target: l, type: 'link' } as NarrativeEdge);
+            }
+        }
+        return out;
     }, []);
+
+    
+
+    // Debounced persistence of plotCanvas when narrative nodes change (create/delete/edit/position/link)
+    const didHydrateRef = React.useRef(false);
+    const persistTimerRef = React.useRef<number | undefined>(undefined);
+    const lastSavedHashRef = React.useRef<string>('');
+    useEffect(() => {
+        if (!didHydrateRef.current) return; // skip first hydration
+        if (!bookId || !versionId || !updatePlotCanvas) return;
+        if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = window.setTimeout(async () => {
+            try {
+                // Ensure positions live under data.position
+                const nodesToSave = narrativeNodes.map(n => ({
+                    ...n,
+                    data: { ...n.data, position: (n as any).data?.position ?? (n as any).position }
+                })) as NarrativeFlowNode[];
+                const edgesToSave = buildEdgesForPersistence(nodesToSave);
+                // Compute current hash of state
+                const hash = JSON.stringify({
+                    nodes: nodesToSave.map(n => ({ id: n.id, type: n.data.type, position: n.data.position, parentId: n.data.parentId, childIds: n.data.childIds, linkedNodeIds: n.data.linkedNodeIds })),
+                    edges: edgesToSave.map(e => ({ s: e.source, t: e.target, ty: e.type }))
+                });
+                // On first run after hydration, initialize the baseline hash and skip persisting
+                if (lastSavedHashRef.current === '') {
+                    lastSavedHashRef.current = hash;
+                    // If there is nothing to save, also bail early
+                    if (nodesToSave.length === 0) return;
+                    // Don't persist immediately on hydration baseline
+                    return;
+                }
+                // Avoid wiping DB with an empty state
+                if (nodesToSave.length === 0) {
+                    return;
+                }
+                // Skip if nothing changed since last save
+                if (hash === lastSavedHashRef.current) {
+                    return;
+                }
+                lastSavedHashRef.current = hash;
+                await updatePlotCanvas(bookId, versionId, { nodes: nodesToSave, edges: edgesToSave });
+                console.log('PlotCanvas persisted', { nodes: nodesToSave.length, edges: edgesToSave.length });
+            } catch (e) {
+                console.warn('Failed to persist plotCanvas', e);
+            }
+        }, 600);
+        return () => { if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current); };
+    }, [narrativeNodes, bookId, versionId, updatePlotCanvas, buildEdgesForPersistence]);
 
     // Update ReactFlow nodes when narrative data changes
     useEffect(() => {
@@ -286,9 +436,10 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             id: narrativeEdge.id,
             source: narrativeEdge.source,
             target: narrativeEdge.target,
-            type: narrativeEdge.type === 'child' ? 'smoothstep' : 'default',
+            type: 'toggle',
             style: narrativeEdge.style,
-            animated: narrativeEdge.animated
+            animated: narrativeEdge.animated,
+            data: { relationship: (narrativeEdge as any).data?.relationship, onToggle: toggleEdgeType }
         }));
 
         // Include hub nodes with regular nodes for ReactFlow
@@ -315,6 +466,20 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         setEdges(reactFlowEdges);
     }, [narrativeNodes, narrativeEdges, layoutConfig, searchQuery, statusFilter, setNodes, setEdges]);
 
+    // Fit view when nodes are first loaded (after hydration) or when transitioning from 0 -> N
+    useEffect(() => {
+        const inst = reactFlowInstanceRef.current;
+        if (!inst) return;
+        const prev = prevNodeCountRef.current;
+        const curr = nodes.length;
+        if (curr > 0 && prev === 0) {
+            requestAnimationFrame(() => {
+                try { inst.fitView({ padding: 0.2 }); } catch {}
+            });
+        }
+        prevNodeCountRef.current = curr;
+    }, [nodes.length]);
+
     // Event handlers
     const handleExpandNode = useCallback((nodeId: string) => {
         setNarrativeNodes(prev => expandNode(prev, nodeId));
@@ -334,7 +499,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     }, []);
 
     const handleNodeClick = useCallback((nodeId: string) => {
-        const node = narrativeNodes.find(n => n.id === nodeId);
+        const node = narrativeNodesRef.current.find(n => n.id === nodeId);
         if (node) {
             // Update selection states for all nodes based on relationships
             setNarrativeNodes(prev => updateNodeExpansionStates(prev, nodeId));
@@ -345,10 +510,10 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 selectedNode: nodeId
             }));
         }
-    }, [narrativeNodes]);
+    }, []);
 
     const handleNodeEdit = useCallback((nodeId: string) => {
-        const node = narrativeNodes.find(n => n.id === nodeId);
+        const node = narrativeNodesRef.current.find(n => n.id === nodeId);
         if (node) {
             // If it's a scene, open the encrypted scene editor
             if (node.data.type === 'scene') {
@@ -368,7 +533,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 }));
             }
         }
-    }, [narrativeNodes]);
+    }, []);
 
     const handleCharacterClick = useCallback((characterId: string, nodeId: string, event: React.MouseEvent) => {
         // Get click position relative to the viewport
@@ -386,20 +551,15 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     }, []);
 
     const handleNodeSelect = useCallback((nodeId: string) => {
-        // Update URL without page reload
+        // Update URL without touching global mode/tab; only set selectedNodeId
         const params = new URLSearchParams(location.search);
         params.set('selectedNodeId', nodeId);
-        params.set('mode', 'Planning');
-        params.set('tab', 'PlotArcs');
-        
-        // Use navigate instead of history.pushState to avoid full reload
         navigate({
             pathname: location.pathname,
             search: params.toString(),
             hash: location.hash
         }, { replace: true });
-        
-        // Update the layout config to trigger re-render with new selected node
+        // Update local state
         setLayoutConfig(prev => ({
             ...prev,
             selectedNode: nodeId
@@ -414,9 +574,6 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         if (nodeId) {
             // Navigate to specific node - only update node-related params
             params.set('selectedNodeId', nodeId);
-            // Preserve mode and tab if they exist, otherwise set defaults
-            if (!params.has('mode')) params.set('mode', 'Planning');
-            if (!params.has('tab')) params.set('tab', 'PlotArcs');
         } else {
             // Navigate to overview (remove selectedNodeId but preserve other params)
             params.delete('selectedNodeId');
@@ -437,7 +594,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     }, [navigate, location]);
 
     const handleGoBack = useCallback(() => {
-        // For now, go back to overview. Could be enhanced to go to parent node
+        // Back to overview/root
         handleBreadcrumbNavigate(null);
     }, [handleBreadcrumbNavigate]);
 
@@ -496,136 +653,60 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
 
     // Auto-layout adjustment function with collision avoidance
     const adjustLayout = useCallback(() => {
+        console.debug('[PlotArcsBoard] adjustLayout called');
         setNarrativeNodes(prev => {
-            // Apply the hierarchical layout with collision avoidance
             const layoutNodes = generateHierarchicalLayout(prev);
             return layoutNodes;
         });
     }, []);
 
+    // Refresh from persisted plotCanvas (BookContext) and optionally auto-layout afterward
+    const refreshFromStore = useCallback(async (doAdjust: boolean = true) => {
+        try {
+            if (!bookId || !versionId) return;
+            const latest = await getPlotCanvas(bookId, versionId);
+            const latestNodes = (latest?.nodes || []).map((n: any) => ({ ...n, data: { ...n.data, position: (n as any).data?.position ?? (n as any).position } }));
+            const latestEdges = latest?.edges || [];
+            setNarrativeNodes(latestNodes);
+            setNarrativeEdges(latestEdges);
+            if (doAdjust) {
+                // Defer to next frame so RF can mount nodes
+                requestAnimationFrame(() => adjustLayout());
+            }
+        } catch (e) {
+            console.warn('Failed to refresh plotCanvas on event', e);
+        }
+    }, [bookId, versionId, getPlotCanvas, adjustLayout]);
+
+    // On first mount after hydration, auto-layout once so structure changes made elsewhere reflect immediately
+    const didAutoLayoutOnHydrateRef = useRef(false);
+    useEffect(() => {
+        if (!didHydrateRef.current) return;
+        if (didAutoLayoutOnHydrateRef.current) return;
+        if ((narrativeNodes?.length || 0) > 0 && (currentLayout === 'narrative')) {
+            didAutoLayoutOnHydrateRef.current = true;
+            // Defer to next frame so ReactFlow has nodes
+            requestAnimationFrame(() => adjustLayout());
+        }
+    }, [narrativeNodes?.length, currentLayout, adjustLayout]);
+
+    // Listen for external auto-arrange triggers (e.g., after reorders in header) and key data-change events
+    useEffect(() => {
+    const onAutoArrange = () => { console.debug('[PlotArcsBoard] plotAutoArrange'); refreshFromStore(true); };
+    const onActUpdated = () => { console.debug('[PlotArcsBoard] actUpdated'); refreshFromStore(true); };
+    const onChapterUpdated = () => { console.debug('[PlotArcsBoard] chapterUpdated'); refreshFromStore(true); };
+        window.addEventListener('plotAutoArrange', onAutoArrange as any);
+        window.addEventListener('actUpdated', onActUpdated as any);
+        window.addEventListener('chapterUpdated', onChapterUpdated as any);
+        return () => {
+            window.removeEventListener('plotAutoArrange', onAutoArrange as any);
+            window.removeEventListener('actUpdated', onActUpdated as any);
+            window.removeEventListener('chapterUpdated', onChapterUpdated as any);
+        };
+    }, [refreshFromStore]);
+
     // Custom node types mapping
-    const nodeTypes = useMemo(() => ({
-        outline: (props: any) => (
-            <OutlineNodeComponent
-                {...props}
-                onExpand={handleExpandNode}
-                onCollapse={handleCollapseNode}
-                onClick={handleNodeClick}
-                onEdit={handleNodeEdit}
-                onAddChild={handleAddChildNode}
-                onDelete={handleDeleteNode}
-                onSelect={handleNodeSelect}
-                onCharacterClick={handleCharacterClick}
-                expandedNodes={layoutConfig.expandedNodes}
-                allNodes={narrativeNodes}
-            />
-        ),
-        act: (props: any) => (
-            <ActNodeComponent
-                {...props}
-                onExpand={handleExpandNode}
-                onCollapse={handleCollapseNode}
-                onClick={handleNodeClick}
-                onEdit={handleNodeEdit}
-                onAddChild={handleAddChildNode}
-                onDelete={handleDeleteNode}
-                onSelect={handleNodeSelect}
-                onCharacterClick={handleCharacterClick}
-                expandedNodes={layoutConfig.expandedNodes}
-                allNodes={narrativeNodes}
-            />
-        ),
-        chapter: (props: any) => (
-            <ChapterNodeComponent
-                {...props}
-                onExpand={handleExpandNode}
-                onCollapse={handleCollapseNode}
-                onClick={handleNodeClick}
-                onEdit={handleNodeEdit}
-                onAddChild={handleAddChildNode}
-                onDelete={handleDeleteNode}
-                onSelect={handleNodeSelect}
-                onCharacterClick={handleCharacterClick}
-                expandedNodes={layoutConfig.expandedNodes}
-                allNodes={narrativeNodes}
-            />
-        ),
-        scene: (props: any) => (
-            <SceneNodeComponent
-                {...props}
-                onExpand={handleExpandNode}
-                onCollapse={handleCollapseNode}
-                onClick={handleNodeClick}
-                onEdit={handleNodeEdit}
-                onAddChild={handleAddChildNode}
-                onDelete={handleDeleteNode}
-                onSelect={handleNodeSelect}
-                onCharacterClick={handleCharacterClick}
-                expandedNodes={layoutConfig.expandedNodes}
-                allNodes={narrativeNodes}
-            />
-        ),
-        'character-arc': (props: any) => (
-            <CharacterArcNodeComponent
-                {...props}
-                onExpand={handleExpandNode}
-                onCollapse={handleCollapseNode}
-                onClick={handleNodeClick}
-                onEdit={handleNodeEdit}
-                onAddChild={handleAddChildNode}
-                onDelete={handleDeleteNode}
-                onSelect={handleNodeSelect}
-                onCharacterClick={handleCharacterClick}
-                expandedNodes={layoutConfig.expandedNodes}
-                allNodes={narrativeNodes}
-            />
-        ),
-        'location-arc': (props: any) => (
-            <LocationArcNodeComponent
-                {...props}
-                onExpand={handleExpandNode}
-                onCollapse={handleCollapseNode}
-                onClick={handleNodeClick}
-                onEdit={handleNodeEdit}
-                onAddChild={handleAddChildNode}
-                onDelete={handleDeleteNode}
-                onSelect={handleNodeSelect}
-                onCharacterClick={handleCharacterClick}
-                expandedNodes={layoutConfig.expandedNodes}
-                allNodes={narrativeNodes}
-            />
-        ),
-        'object-arc': (props: any) => (
-            <ObjectArcNodeComponent
-                {...props}
-                onExpand={handleExpandNode}
-                onCollapse={handleCollapseNode}
-                onClick={handleNodeClick}
-                onEdit={handleNodeEdit}
-                onAddChild={handleAddChildNode}
-                onDelete={handleDeleteNode}
-                onSelect={handleNodeSelect}
-                onCharacterClick={handleCharacterClick}
-                expandedNodes={layoutConfig.expandedNodes}
-                allNodes={narrativeNodes}
-            />
-        ),
-        'lore-arc': (props: any) => (
-            <LoreArcNodeComponent
-                {...props}
-                onExpand={handleExpandNode}
-                onCollapse={handleCollapseNode}
-                onClick={handleNodeClick}
-                onEdit={handleNodeEdit}
-                onAddChild={handleAddChildNode}
-                onDelete={handleDeleteNode}
-                onSelect={handleNodeSelect}
-                onCharacterClick={handleCharacterClick}
-                expandedNodes={layoutConfig.expandedNodes}
-                allNodes={narrativeNodes}
-            />
-        ),
-    }), [handleExpandNode, handleCollapseNode, handleNodeClick, handleNodeEdit, handleAddChildNode, handleNodeSelect, handleCharacterClick, layoutConfig.expandedNodes, narrativeNodes]);
+    // nodeTypes memo is declared later, after all handlers exist
 
     const handleConnect = useCallback(
         (params: Connection) => {
@@ -702,6 +783,95 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         [narrativeNodes]
     );
 
+    // Inline toggle utility used by custom edge
+    const toggleEdgeType = useCallback((sourceId: string, targetId: string) => {
+        if (!sourceId || !targetId) return;
+        const source = narrativeNodesRef.current.find(n => n.id === sourceId);
+        const target = narrativeNodesRef.current.find(n => n.id === targetId);
+        if (!source || !target) return;
+        const isLinked = source.data.linkedNodeIds.includes(targetId);
+        const isChild = source.data.childIds.includes(targetId);
+        if (!isLinked && !isChild) return;
+        setNarrativeNodes(prev => {
+            const currentTarget = prev.find(nn => nn.id === targetId);
+            const oldParentId = currentTarget?.data.parentId || null;
+            return prev.map(n => {
+                if (n.id === sourceId) {
+                    const linked = n.data.linkedNodeIds.filter(id => id !== targetId);
+                    const child = n.data.childIds.filter(id => id !== targetId);
+                    return isLinked
+                        ? { ...n, data: { ...n.data, linkedNodeIds: linked, childIds: [...child, targetId] } }
+                        : { ...n, data: { ...n.data, childIds: child, linkedNodeIds: [...linked, targetId] } };
+                }
+                if (n.id === targetId) {
+                    if (isLinked) {
+                        return { ...n, data: { ...n.data, parentId: sourceId } };
+                    } else {
+                        return { ...n, data: { ...n.data, parentId: n.data.parentId === sourceId ? null : n.data.parentId } } as any;
+                    }
+                }
+                if (isLinked && oldParentId && n.id === oldParentId && oldParentId !== sourceId) {
+                    return { ...n, data: { ...n.data, childIds: n.data.childIds.filter(id => id !== targetId) } };
+                }
+                return n;
+            });
+        });
+        adjustLayout();
+    }, [adjustLayout]);
+
+    // Custom edge with inline toggle icon; hide icon for hub edges
+    const ToggleEdge = useCallback((edgeProps: any) => {
+        const { id, source, target, sourceX, sourceY, targetX, targetY, data } = edgeProps;
+        const cx = (sourceX + targetX) / 2;
+        const cy = (sourceY + targetY) / 2;
+        const hideToggle = String(source).startsWith('hub-') || String(target).startsWith('hub-');
+        return (
+            <>
+                <SmoothStepEdge id={id} {...edgeProps} />
+                {!hideToggle && (
+                    <EdgeLabelRenderer>
+                        <div
+                            style={{ position: 'absolute', transform: `translate(-50%, -50%) translate(${cx}px, ${cy}px)`, pointerEvents: 'all', zIndex: 5 }}
+                            className="react-flow__edge-label"
+                        >
+                            <button
+                                onClick={(e) => { e.stopPropagation(); (data?.onToggle || toggleEdgeType)(source, target); }}
+                                title="Toggle edge type"
+                                className="text-[10px] leading-none px-1.5 py-0.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 shadow"
+                            >
+                                ⇄
+                            </button>
+                        </div>
+                    </EdgeLabelRenderer>
+                )}
+            </>
+        );
+    }, [toggleEdgeType]);
+
+    const edgeTypes = useMemo(() => ({ toggle: ToggleEdge as any }), [ToggleEdge]);
+
+    // Track when a user starts dragging a connection from a node
+    const onConnectStart = useCallback((_: any, params: any) => {
+        connectStartNodeIdRef.current = (params && 'nodeId' in params) ? (params.nodeId ?? null) : null;
+    }, []);
+
+    // If user ended dragging on empty space, open create modal with parentId = source node
+    const onConnectEnd = useCallback((event: any) => {
+        const target = event.target as Element | null;
+        if (!target?.classList.contains('react-flow__pane')) return;
+        const bounds = reactFlowPaneRef.current?.getBoundingClientRect();
+        const client = bounds ? { x: event.clientX - bounds.left, y: event.clientY - bounds.top } : { x: event.clientX, y: event.clientY };
+        const rf = reactFlowInstanceRef.current;
+        const position = rf ? rf.project(client) : client;
+        const parentId = connectStartNodeIdRef.current;
+        if (!parentId) return;
+        console.log('Creating new node from connection drag:', parentId, position);
+        lastConnectParentRef.current = parentId;
+        setCreateNodeModal({ parentId, nodeType: 'scene', position, isVisible: true });
+        setEditingNode(null);
+        connectStartNodeIdRef.current = null;
+    }, []);
+
     const handleCreateNode = useCallback((nodeData: Partial<NarrativeNode>) => {
         if (editingNode) {
             // Update existing node - simplified update
@@ -718,34 +888,33 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                 return node;
             }));
         } else {
-            // Create new node
+            // Create new node using type and parent from modal or provided nodeData
+            // Prefer explicit parentId from modal submission; treat empty string as missing
+            let parentId = ((nodeData as any)?.parentId || createNodeModal.parentId || '') as string;
+            if (!parentId && lastConnectParentRef.current) parentId = lastConnectParentRef.current;
+            const newType = (nodeData as any)?.type ?? createNodeModal.nodeType;
             const newFlowNode = createNewNode(
-                createNodeModal.nodeType,
-                createNodeModal.parentId,
+                newType,
+                parentId,
                 createNodeModal.position
             );
+
+            console.log('Creating new node:', newFlowNode, 'with data:', nodeData);
             
             if (nodeData.data) {
                 // Update the node data safely
                 (newFlowNode as any).data.data = nodeData.data;
             }
             
-            setNarrativeNodes(prev => [...prev, newFlowNode]);
-
-            // Update parent's childIds if this is a child node
-            if (createNodeModal.parentId) {
-                setNarrativeNodes(prev => prev.map(node => 
-                    node.id === createNodeModal.parentId
-                        ? { 
-                            ...node, 
-                            data: { 
-                                ...node.data, 
-                                childIds: [...node.data.childIds, newFlowNode.id] 
-                            }
-                        }
-                        : node
-                ));
-            }
+            // Apply both: add the new node and update parent's childIds (if any) in a single update
+            setNarrativeNodes(prev => {
+                const updated = [...prev, newFlowNode];
+                if (!parentId) return updated;
+                return updated.map(node => node.id === parentId
+                    ? { ...node, data: { ...node.data, childIds: [...node.data.childIds, newFlowNode.id] } }
+                    : node
+                );
+            });
         }
     }, [editingNode, createNodeModal]);
 
@@ -781,15 +950,74 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         }
     }, []);
 
+    // Stable handlers and nodeTypes to avoid React Flow warning and render loops
+    const handlersRef = useRef({
+        handleExpandNode,
+        handleCollapseNode,
+        handleNodeClick,
+        handleNodeEdit,
+        handleAddChildNode,
+        handleDeleteNode,
+        handleNodeSelect,
+        handleCharacterClick,
+        getExpandedNodes: () => layoutConfig.expandedNodes,
+        getAllNodes: () => narrativeNodesRef.current,
+    });
+    useEffect(() => {
+        handlersRef.current = {
+            handleExpandNode,
+            handleCollapseNode,
+            handleNodeClick,
+            handleNodeEdit,
+            handleAddChildNode,
+            handleDeleteNode,
+            handleNodeSelect,
+            handleCharacterClick,
+            getExpandedNodes: () => layoutConfig.expandedNodes,
+            getAllNodes: () => narrativeNodesRef.current,
+        };
+    }, [handleExpandNode, handleCollapseNode, handleNodeClick, handleNodeEdit, handleAddChildNode, handleDeleteNode, handleNodeSelect, handleCharacterClick, layoutConfig.expandedNodes]);
+
+    const nodeTypes = useMemo(() => {
+        const wrap = (Component: any) => (props: any) => {
+            const h = handlersRef.current;
+            return (
+                <Component
+                    {...props}
+                    onExpand={h.handleExpandNode}
+                    onCollapse={h.handleCollapseNode}
+                    onClick={h.handleNodeClick}
+                    onEdit={h.handleNodeEdit}
+                    onAddChild={h.handleAddChildNode}
+                    onDelete={h.handleDeleteNode}
+                    onSelect={h.handleNodeSelect}
+                    onCharacterClick={h.handleCharacterClick}
+                    expandedNodes={h.getExpandedNodes()}
+                    allNodes={h.getAllNodes()}
+                />
+            );
+        };
+        return {
+            outline: wrap(OutlineNodeComponent),
+            act: wrap(ActNodeComponent),
+            chapter: wrap(ChapterNodeComponent),
+            scene: wrap(SceneNodeComponent),
+            'character-arc': wrap(CharacterArcNodeComponent),
+            'location-arc': wrap(LocationArcNodeComponent),
+            'object-arc': wrap(ObjectArcNodeComponent),
+            'lore-arc': wrap(LoreArcNodeComponent),
+        } as const;
+    }, []);
+
     const handleCloseModal = useCallback(() => {
         setCreateNodeModal(prev => ({ ...prev, isVisible: false }));
         setEditingNode(null);
     }, []);
 
-    // AI suggestions handlers
     const handleDismissSuggestion = useCallback((suggestionId: string) => {
         setAiSuggestions(prev => prev.filter(s => s.id !== suggestionId));
     }, []);
+
 
     const handleApplySuggestion = useCallback((suggestionId: string) => {
         // Implement AI suggestion application logic
@@ -825,17 +1053,13 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
 
     const handleDrop = useCallback((event: any) => {
         event.preventDefault();
-        
         const nodeType = event.dataTransfer.getData('application/reactflow');
         if (!nodeType) return;
-
         const reactFlowBounds = event.currentTarget.getBoundingClientRect();
         const position = {
             x: event.clientX - reactFlowBounds.left,
             y: event.clientY - reactFlowBounds.top,
         };
-
-        // Open create node modal with the dropped node type
         setCreateNodeModal({
             parentId: null,
             nodeType: nodeType as NarrativeNode['type'],
@@ -857,17 +1081,21 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
 
     const renderBoardView = () => {
         return (
-            <div style={{ width: '100%', height: '100%' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }} ref={reactFlowPaneRef}>
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={handleConnect}
+            onConnectStart={onConnectStart}
+            onConnectEnd={onConnectEnd}
+                    onInit={(instance) => { reactFlowInstanceRef.current = instance; }}
                     onPaneClick={handlePaneClick}
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
                     nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
                     fitView
                     fitViewOptions={{ padding: 0.2 }}
                     className={`${theme === 'dark' ? 'dark' : ''}`}
@@ -891,6 +1119,8 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
                         className={theme === 'dark' ? 'dark' : ''}
                     />
                 </ReactFlow>
+
+                {/* Inline edge toggle handled by custom edge component */}
 
                 {/* Floating Controls - replaces the old Panel controls */}
                 <FloatingControls

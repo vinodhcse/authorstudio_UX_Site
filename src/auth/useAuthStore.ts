@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { apiClient } from './apiClient';
 import { apiClient as libApiClient } from '../lib/apiClient';
 import { HTTPTestClient } from './httpTestClient';
-import { sealSession, activateSession } from './sqlite';
+// Removed unused imports from './sqlite' (sealSession, activateSession)
 import { clearAllLocalData } from './clearData';
 import { getOrCreateDeviceId } from './deviceId';
 import { appLog } from './fileLogger';
@@ -304,6 +304,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           _setAppKey(appKey);
           _setAccessToken(authResponse.token, Date.now() + 15 * 60 * 1000);
           
+          // Initialize encryption service after successful login using the password as passphrase
+          try {
+            const { encryptionService } = await import('../services/encryptionService');
+            await encryptionService.initialize(authResponse.userId, password);
+            // Notify listeners (e.g., useChapters) to refresh once encryption is ready
+            try { window.dispatchEvent(new CustomEvent('encryptionInitialized')); } catch {}
+            console.log('🔐 [LOGIN] Encryption service initialized after sealed-session activation');
+          } catch (encInitErr) {
+            console.warn('⚠️ [LOGIN] Failed to initialize encryption service after sealed-session activation:', encInitErr);
+          }
+
           console.log('🎉 [LOGIN] Login complete via sealed session activation with fresh tokens');
           return; // Session unsealed, login complete
         } else {
@@ -386,10 +397,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         updated_at: Date.now(),
       };
       
-      await upsertSessionRow(sessionData);
+  await upsertSessionRow(sessionData);
       // Store session in context for future updates
       set({ currentSession: sessionData as SessionRow });
       
+      // Initialize encryption service right after a successful login
+      try {
+        const { encryptionService } = await import('../services/encryptionService');
+        await encryptionService.initialize(authResponse.userId, password);
+        try { window.dispatchEvent(new CustomEvent('encryptionInitialized')); } catch {}
+        console.log('🔐 [LOGIN] Encryption service initialized after normal login');
+      } catch (encInitErr) {
+        console.warn('⚠️ [LOGIN] Failed to initialize encryption service after normal login:', encInitErr);
+      }
+
       // Optional: Register device with server
       try {
         await apiClient.registerDevice({
@@ -546,7 +567,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       _setAppKey(appKey);
       
-      // If online, refresh token and subscription
+  // If online, refresh token and subscription
       if (isOnline) {
         try {
           // Decrypt refresh token
@@ -582,10 +603,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             console.warn('Failed to refresh subscription:', error);
           }
           
-        } catch (error) {
+        } catch (error: any) {
           console.warn('Failed to refresh token online:', error);
-          // Continue with offline mode - no access token available
-          console.log('🔓 [UNLOCK] Continuing in offline mode without access token');
+          // If forbidden/expired refresh token, try full login using stored email + provided passphrase
+          const isForbidden = (error?.status === 403) || (error?.response?.status === 403);
+          if (isForbidden && session.email) {
+            try {
+              console.log('🔁 [UNLOCK] Refresh token forbidden. Attempting full login with email+passphrase...');
+              // Attempt normal login path to obtain new refresh+access tokens
+              await get().login(session.email, passphrase);
+              console.log('✅ [UNLOCK] Fallback login succeeded during unlock');
+            } catch (loginErr) {
+              console.error('❌ [UNLOCK] Fallback login failed:', loginErr);
+              // Continue without token — offline mode
+            }
+          } else {
+            // Continue with offline mode - no access token available
+            console.log('🔓 [UNLOCK] Continuing in offline mode without access token');
+          }
         }
       } else {
         console.log('🔓 [UNLOCK] Offline mode - no access token available');
@@ -602,6 +637,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         await saveSessionToDatabase();
         console.log('✅ [UNLOCK] Session state updated to active');
+      }
+
+      // Defensive: ensure we have a fresh token in memory and clients after unlock
+      try {
+        if (isOnline) {
+          await get().ensureAccessToken();
+        }
+      } catch (e) {
+        console.warn('⚠️  [UNLOCK] ensureAccessToken after unlock failed (continuing):', e);
       }
       
     } catch (error) {

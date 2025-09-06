@@ -83,7 +83,7 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
       setIsLoading(true);
       setError(null);
 
-      // Load chapters from local database
+    // Load chapters from local database
   const rows = user?.id ? await dalGetChaptersByVersion(bookId, versionId) : [];
 
       // Decrypt content once per load cycle using a single encryptionService import
@@ -103,13 +103,14 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
           return {
             id: row.id,
             title: row.title || 'Untitled Chapter',
-            position: idx + 1,
+            // Use persisted per-act sort ordering when available
+            position: (row as any).sortIndex ? Number((row as any).sortIndex) : (idx + 1),
             createdAt: row.createdAt || new Date().toISOString(),
             updatedAt: row.updatedAt || new Date().toISOString(),
             authorId: (row as any).authorId || (user ? user.id : ''),
             lastModifiedBy: (row as any).lastModifiedBy || (user ? user.id : ''),
             linkedPlotNodeId: '',
-            linkedAct: '',
+            linkedAct: (row as any).linkedAct || '',
             linkedOutline: '',
             linkedScenes: [],
             content,
@@ -127,13 +128,13 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         mapped = rows.map((row: any, idx: number) => ({
           id: row.id,
           title: row.title || 'Untitled Chapter',
-          position: idx + 1,
+          position: (row as any).sortIndex ? Number((row as any).sortIndex) : (idx + 1),
           createdAt: row.createdAt || new Date().toISOString(),
           updatedAt: row.updatedAt || new Date().toISOString(),
           authorId: (row as any).authorId || (user ? user.id : ''),
           lastModifiedBy: (row as any).lastModifiedBy || (user ? user.id : ''),
           linkedPlotNodeId: '',
-          linkedAct: '',
+          linkedAct: (row as any).linkedAct || '',
           linkedOutline: '',
           linkedScenes: [],
           content: defaultDoc,
@@ -162,7 +163,11 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
     } finally {
       setIsLoading(false);
     }
-  }, [bookId, versionId, user?.id, getPlotCanvas]);
+  // Important: do NOT depend on context functions like getPlotCanvas here.
+  // BookContext re-renders (e.g., due to book-dirty events) will change function
+  // identities and inadvertently retrigger this callback, causing full reloads
+  // during regular saves. Only depend on identifiers that actually affect data.
+  }, [bookId, versionId, user?.id]);
 
   const createChapter = useCallback(async (title: string, actId?: string): Promise<Chapter | null> => {
     appLog.info('useChapters', 'createChapter called', { title, actId, bookId, userId: user?.id, versionId });
@@ -198,11 +203,8 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         hasPlotCanvas: !!plotCanvas, 
         nodeCount: (plotCanvas && (plotCanvas as any).nodes ? (plotCanvas as any).nodes.length : 0) 
       });
-      let narrativeNodes: NarrativeFlowNode[] = (plotCanvas?.nodes as NarrativeFlowNode[]) || [];
-      let narrativeEdges: NarrativeEdge[] = (plotCanvas?.edges as NarrativeEdge[]) || [];
-      
-      // Calculate position (add to end)
-      const position = chapters.length + 1;
+  let narrativeNodes: NarrativeFlowNode[] = (plotCanvas?.nodes as NarrativeFlowNode[]) || [];
+  let narrativeEdges: NarrativeEdge[] = (plotCanvas?.edges as NarrativeEdge[]) || [];
       
       // Create narrative flow structure: Outline -> Act -> Chapter -> Scene
       let outlineNode: NarrativeFlowNode | null = null;
@@ -288,7 +290,12 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         }
       }
 
-      // Create chapter narrative node
+  // Calculate per-act sort index (add to end of that act)
+  const targetActId = actNode!.id;
+  const existingInAct = chapters.filter(ch => ch.linkedAct === targetActId).length;
+  const position = existingInAct + 1;
+
+  // Create chapter narrative node
       const chapterNodeId = generateId();
       const chapterNode: NarrativeFlowNode = {
         id: chapterNodeId,
@@ -390,7 +397,7 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         }
       };
 
-  const dbChapter = { id: chapterId, bookId, versionId: finalVersionId, title, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), wordCount: initialContent.metadata.totalWords };
+  const dbChapter = { id: chapterId, bookId, versionId: finalVersionId, title, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), wordCount: initialContent.metadata.totalWords, linkedAct: targetActId, sortIndex: position } as any;
   const newChapterForState: Chapter = {
         id: chapterId,
         authorId: user.id,
@@ -408,7 +415,7 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
         revisions: [],
         currentRevisionId: '',
         linkedPlotNodeId: '',
-        linkedAct: '',
+        linkedAct: targetActId,
         linkedOutline: '',
         linkedScenes: [],
         collaborativeState: {
@@ -509,7 +516,7 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
           });
 
           // Mark chapter as properly synced locally since it was successfully saved and synced
-          const syncedChapter = { ...dbChapter, updatedAt: new Date().toISOString() };
+          const syncedChapter = { ...dbChapter, updatedAt: new Date().toISOString() } as any;
           await dalPutChapter(syncedChapter as any);
           
           appLog.info('useChapters', 'Chapter marked as locally synced', {
@@ -592,7 +599,36 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
         }
       }
       
-      // TODO: Update related narrative flow nodes when title/position changes
+      // Update related narrative flow nodes when title changes
+      if (updates.title) {
+        try {
+          const plotCanvas = await getPlotCanvas(bookId, versionId);
+          if (plotCanvas) {
+            const nodes = [...(plotCanvas.nodes as NarrativeFlowNode[])];
+            // Find the scene node that links to this chapter, then update its parent chapter node title
+            const scene = nodes.find((n: any) => n.type === 'scene' && (n as any).data?.data?.chapter === chapterId) as any;
+            if (scene && scene.data?.parentId) {
+              const chapterNodeId = scene.data.parentId;
+              const idx = nodes.findIndex((n: any) => n.id === chapterNodeId && (n as any).type === 'chapter');
+              if (idx !== -1) {
+                const chNode: any = { ...(nodes[idx] as any) };
+                chNode.data = { ...(chNode.data || {}) };
+                // Support both direct and nested data shapes
+                chNode.data.title = updates.title;
+                if (chNode.data.data) {
+                  chNode.data.data = { ...(chNode.data.data || {}), title: updates.title };
+                }
+                nodes[idx] = chNode as any;
+                await updatePlotCanvas(bookId, versionId, { nodes: nodes as any, edges: plotCanvas.edges as any });
+                // Notify narrative views
+                window.dispatchEvent(new CustomEvent('actUpdated'));
+              }
+            }
+          }
+        } catch (e) {
+          appLog.warn('useChapters', 'Failed to sync chapter title to plot canvas', { chapterId, error: e as any });
+        }
+      }
       
       // Update local state
       setChapters(prev => prev.map(chapter => 
@@ -712,8 +748,17 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
         throw new Error('Encryption service not initialized. Please unlock your account.');
       }
       
-      // Save content to encrypted local storage
-      await encryptionService.saveChapterContent(chapterId, bookId, versionId, user.id, content);
+      // Determine revisionId based on session policy
+      const { RevisionSession } = await import('../services/revisionSession');
+      const revisionId = isMinor
+        ? RevisionSession.getOrCreateMinor(bookId, versionId, chapterId)
+        : `rev_${Math.random().toString(36).slice(2)}`;
+
+      // Save content to encrypted local storage with unified revision id
+      const result = await encryptionService.saveChapterContent(
+        chapterId, bookId, versionId, user.id, content, false,
+        { revisionId, isMinor, setHead: !isMinor }
+      );
 
       // Update database row to mark as dirty (needs sync)
       const existingChapterRow = await dalGetChapter(chapterId);
@@ -734,8 +779,18 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
           : chapter
       ));
       
+      // Also write/update snapshot file for revision history (local-only) using the same id
+      try {
+        const { createChapterRevision } = await import('../services/revisionStorage');
+        await createChapterRevision(bookId, chapterId, content, { authorId: user.id, contentProtected: true, revisionId: result.revisionId });
+      } catch (e) {
+        appLog.warn('useChapters', 'Failed to write snapshot file for revision', { chapterId, error: e as any });
+      }
+
       if (!isMinor) {
         appLog.info('useChapters', `Saved major revision for chapter: ${chapterId}`);
+        // Rotate session so subsequent autosaves use a fresh minor revision
+        try { const { RevisionSession } = await import('../services/revisionSession'); RevisionSession.rotateAfterManualSave(bookId, versionId, chapterId); } catch {}
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to save chapter content';
@@ -844,30 +899,14 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
     }
   }, [bookId, versionId, chapters, getPlotCanvas, updatePlotCanvas]);
 
-  const reorderChapter = useCallback(async (chapterId: string, newPosition: number, newActId?: string) => {
+  const reorderChapter = useCallback(async (chapterId: string, newPosition: number, _newActId?: string) => {
     if (!bookId || !versionId) return;
-
     try {
       setError(null);
-      
-      setChapters(prev => {
-        const updatedChapters = prev.map(chapter => {
-          if (chapter.id === chapterId) {
-            return {
-              ...chapter,
-              position: newPosition,
-              linkedAct: newActId || chapter.linkedAct,
-              updatedAt: new Date().toISOString()
-            };
-          }
-          return chapter;
-        });
-        
-        // Reorder positions
-        return updatedChapters.sort((a, b) => a.position - b.position);
-      });
-      
-      appLog.info('useChapters', `Reordered chapter: ${chapterId} to position ${newPosition}`, { newActId });
+      // Minimal local update: bump updatedAt for the chapter to reflect activity
+      setChapters(prev => prev.map(ch => ch.id === chapterId ? { ...ch, updatedAt: new Date().toISOString() } : ch));
+      // Narrative graph (plotCanvas) is the source of truth for ordering/act membership.
+      appLog.info('useChapters', `Reorder acknowledged for chapter ${chapterId} -> position ${newPosition}`);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to reorder chapter';
       setError(errorMessage);

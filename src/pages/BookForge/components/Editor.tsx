@@ -30,7 +30,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Theme, Book, Version } from '../../../types';
 import PlanningPage from './PlanningPage';
 import CreateChapterPage from './CreateChapterPage';
-import { useChapters } from '../../../hooks/useChapters';
 
 // Tool Window System Imports
 import DockSidebar from '../../../components/DockSidebar';
@@ -58,6 +57,7 @@ import { useClipboard } from '../../../hooks/useClipboard';
 import { toast } from '../../../hooks/use-toast';
 import { Toaster } from '../../../components/ui/toaster';
 import { ChapterRevisionManager } from '../../../services/ChapterRevisionManager';
+import { useBookContext } from '../../../contexts/BookContext';
 
 const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }> = ({ trigger, children }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -311,13 +311,13 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
         const updateMenu = () => {
             const { from, to } = editor.state.selection;
             const hasSelection = from !== to;
-            console.log('Selection update:', { from, to, hasSelection });
+           // console.log('Selection update:', { from, to, hasSelection });
             const selectedText = editor.state.doc.textBetween(from, to).trim();
-            console.log('Selected text:', selectedText);
+           // console.log('Selected text:', selectedText);
             if (hasSelection && selectedText.length > 0) {
                 // Check if selection is within a custom node (prevent bubble menu in custom nodes)
                 const $from = editor.state.doc.resolve(from);
-                console.log('Selection resolved:', $from);
+                // console.log('Selection resolved:', $from);
                 // Look up the node tree to see if we're inside a custom node
                 let isInCustomNode = false;
                 for (let i = $from.depth; i >= 0; i--) {
@@ -384,6 +384,20 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
             editor.off('transaction', updateMenu);
         };
     }, [editor]);
+
+    // React to BookContext restore signal
+    const { lastRestored } = useBookContext();
+    useEffect(() => {
+        if (!editor || !lastRestored) return;
+        try {
+            editor.commands.setContent(lastRestored.content as any, { emitUpdate: false });
+            (window as any).__currentChapterJSON = lastRestored.content;
+        } catch (err) {
+            console.error('Failed to apply restored content to editor via context signal', err);
+        }
+    }, [lastRestored, editor]);
+
+                
 
     if (!isVisible) {
         return null;
@@ -1817,6 +1831,9 @@ const Editor: React.FC<{
     book?: Book;
     version?: Version;
     currentChapterId?: string; // Add this prop to specify which chapter to load
+    chapters: any[];
+    createChapter: (title: string) => Promise<any>;
+    saveChapterContent: (chapterId: string, content: any, isMinor?: boolean) => Promise<void>;
     showTypographySettings?: boolean;
     onCloseTypographySettings?: () => void;
     onOpenTypographySettings?: () => void;
@@ -1832,6 +1849,9 @@ const Editor: React.FC<{
     book,
     version,
     currentChapterId, // Use the prop name directly
+    chapters,
+    createChapter,
+    saveChapterContent,
     showTypographySettings = false, 
     onCloseTypographySettings, 
     onOpenTypographySettings, 
@@ -1846,13 +1866,7 @@ const Editor: React.FC<{
     const { copyToClipboard, canCopy } = useClipboard();
     const { setCurrentContext } = useToolWindowStore();
     
-    // Chapter management
-    const { 
-        chapters, 
-        createChapter,
-        saveChapterContent
-    } = useChapters(bookId, versionId);
-    
+    // Chapter management is provided by parent to avoid duplicate hook usage
     const [isCreatingChapter, setIsCreatingChapter] = useState(false);
     
     // Use the chapter ID from parent prop directly - no fallback needed
@@ -2055,6 +2069,11 @@ const Editor: React.FC<{
             if (currentChapterId) {
                 const content = editor.getJSON();
                 revisionManager.current.onContentChange(currentChapterId, content);
+                // Expose current content for diff modal consumers
+                // Expose current content JSON for diff modal and snapshot writers
+                (window as any).__currentChapterJSON = content;
+                // Broadcast update for optional listeners (e.g., autosave snapshot services)
+                try { window.dispatchEvent(new CustomEvent('chapterContentUpdated', { detail: { chapterId: currentChapter.id, content } })); } catch {}
             }
         },
         editorProps: {
@@ -2068,6 +2087,7 @@ const Editor: React.FC<{
                 if (currentChapter) {
                     const content = editor?.getJSON();
                     if (content) {
+                        // Major save; downstream hooks can create snapshot files
                         saveChapterContent(currentChapter.id, content, false) // false = major revision
                             .then(() => {
                                 toast({
@@ -2143,15 +2163,15 @@ const Editor: React.FC<{
     }
 
     // Debug logging - remove in production
-    console.log('Editor extensions loaded:', editor.extensionManager.extensions.map(ext => ext.name));
-    console.log('Available commands:', Object.keys(editor.commands));
-    console.log('Custom commands available:', {
+    //console.log('Editor extensions loaded:', editor.extensionManager.extensions.map(ext => ext.name));
+    //console.log('Available commands:', Object.keys(editor.commands));
+    /*console.log('Custom commands available:', {
         setSceneBeat: !!editor.commands.setSceneBeat,
         setNoteSection: !!editor.commands.setNoteSection,
         setCharacterImpersonation: !!editor.commands.setCharacterImpersonation,
         setTestNode: !!editor.commands.setTestNode,
         setSimpleNode: !!editor.commands.setSimpleNode,
-    });
+    });*/
 
     // Check if extensions are properly loaded
     const customExtensions = editor.extensionManager.extensions.filter(ext => 
@@ -2182,6 +2202,7 @@ const Editor: React.FC<{
             const content = editor.getJSON();
             try {
                 console.log('Chapter started saving changes:', currentChapter.id);
+                // Minor autosave; downstream hooks can create minor snapshot files
                 await saveChapterContent(currentChapter.id, content, true); // true = minor revision (auto-save)
                 console.log('Chapter auto-saved:', currentChapter.id);
             } catch (error) {
@@ -2214,8 +2235,48 @@ const Editor: React.FC<{
             if (JSON.stringify(editor.getJSON()) !== JSON.stringify(content)) {
                 editor.commands.setContent(content, { emitUpdate: false });
             }
+              try { (window as any).__currentChapterJSON = content; } catch {}
         }
     }, [editor, currentChapter]);
+
+    // Listen for external chapter JSON updates (e.g., from RevisionDiffModal Apply/Create)
+    useEffect(() => {
+        if (!editor) return;
+        const NBSP = '\u00A0';
+        const sanitizeNode = (node: any): any | null => {
+            if (!node || typeof node !== 'object') return null;
+            if (node.type === 'text') {
+                const t = typeof node.text === 'string' ? node.text : '';
+                if (t.length === 0) return null;
+                return { ...node, text: t };
+            }
+            const content = Array.isArray(node.content) ? node.content.map(sanitizeNode).filter(Boolean) as any[] : undefined;
+            if (node.type === 'paragraph') {
+                const safeContent = content && content.length > 0 ? content : [{ type: 'text', text: NBSP }];
+                return { ...node, content: safeContent };
+            }
+            if (content) return { ...node, content };
+            return { ...node };
+        };
+        const sanitizeDoc = (doc: any) => {
+            if (!doc || typeof doc !== 'object') return { type: 'doc', content: [] };
+            const content = Array.isArray(doc.content) ? doc.content.map(sanitizeNode).filter(Boolean) : [];
+            return { type: 'doc', content };
+        };
+        const handler = (ev: Event) => {
+            const detail = (ev as CustomEvent).detail;
+            if (!detail) return;
+            const incoming = sanitizeDoc(detail);
+            try {
+                const currentJson = editor.getJSON();
+                if (JSON.stringify(currentJson) === JSON.stringify(incoming)) return;
+            } catch {}
+            editor.commands.setContent(incoming, { emitUpdate: false });
+            try { (window as any).__currentChapterJSON = incoming; } catch {}
+        };
+        window.addEventListener('chapter-json-updated', handler as EventListener);
+        return () => window.removeEventListener('chapter-json-updated', handler as EventListener);
+    }, [editor]);
 
     return (
         <>

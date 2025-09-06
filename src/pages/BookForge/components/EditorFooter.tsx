@@ -2,6 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Book } from '../../../types';
+import ChapterRevisionPanel from '../../../components/ChapterRevisionPanel';
+import RevisionDiffModal from '../../../components/RevisionDiffModal';
+import { readRevisionSnapshot, createChapterRevision } from '../../../services/revisionStorage';
+import { encryptionService } from '../../../services/encryptionService';
 import { CloudIcon, HardDriveIcon } from '../../../constants';
 
 type SaveStatus = 'saved' | 'saving' | 'unsaved';
@@ -13,6 +17,7 @@ interface EditorFooterProps {
     onPlanningNavigation?: (tab: 'Plot Arcs' | 'World Building' | 'Characters') => void;
     // Chapter management props
     currentChapterId?: string;
+    currentVersionId?: string;
     chapterSyncState?: 'idle' | 'dirty' | 'pushing' | 'conflict';
     chapterWordCount?: number;
     chapterCharCount?: number;
@@ -27,6 +32,7 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
     activePlanningTab, 
     onPlanningNavigation,
     currentChapterId,
+    currentVersionId,
     chapterSyncState = 'idle',
     chapterWordCount = 0,
     chapterCharCount = 0,
@@ -38,6 +44,10 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
     const [jobProgress, setJobProgress] = useState<number | null>(null);
     const [isSaveMenuOpen, setSaveMenuOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [isRevisionOpen, setRevisionOpen] = useState(false);
+    const [diffOpen, setDiffOpen] = useState(false);
+    const [diffRight, setDiffRight] = useState<any>(null);
+    const [diffLeft, setDiffLeft] = useState<any>(null);
 
     // Update save status based on chapter sync state
     useEffect(() => {
@@ -108,6 +118,33 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
     // Remove mock save status changes - use real sync state only
     // --- END MOCK LOGIC ---
 
+    // Compare handler invoked by panel directly
+    const openCompare = async (revisionId: string) => {
+        if (!book?.id || !currentChapterId || !revisionId) return;
+        try {
+            const { content } = await readRevisionSnapshot(book.id, currentChapterId, revisionId);
+            setDiffRight(content);
+            const current = (window as any).__currentChapterJSON || {};
+            setDiffLeft(current);
+            setDiffOpen(true);
+        } catch (err) {
+            console.error('Failed to open compare:', err);
+        }
+    };
+
+    // Close menus/modals on ESC
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setSaveMenuOpen(false);
+                setRevisionOpen(false);
+                setDiffOpen(false);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
 
     const statusConfig = {
         saved: { color: 'bg-green-500', pulseColor: 'bg-green-400', text: 'Auto-saved' },
@@ -157,6 +194,13 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
         if (mode === 'Planning') {
             return (
                 <div className="relative w-1/4 flex justify-end items-center gap-4">
+                    <button
+                        onClick={() => setRevisionOpen(!isRevisionOpen)}
+                        disabled={!currentChapterId}
+                        className="px-3 py-1 text-xs font-medium rounded-lg transition-colors text-white/70 dark:text-black/70 hover:bg-white/10 dark:hover:bg-black/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Revisions
+                    </button>
                     <button 
                         onClick={() => onPlanningNavigation?.('Characters')}
                         className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
@@ -205,6 +249,16 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
                                 </button>
                             </motion.div>
                         )}
+                        {isRevisionOpen && currentChapterId && (
+                            <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 10 }}
+                                className="absolute bottom-full right-14 mb-2 w-80 bg-gradient-to-br from-gray-700 to-gray-900 dark:from-slate-50 dark:to-slate-100 rounded-lg shadow-lg p-3 z-50 border border-gray-600/50 dark:border-gray-300/50"
+                            >
+                                <ChapterRevisionPanel bookId={book.id} versionId={currentVersionId || ''} chapterId={currentChapterId} />
+                            </motion.div>
+                        )}
                     </AnimatePresence>
                 </div>
             );
@@ -213,6 +267,13 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
         // Default Writing mode
         return (
             <div className="relative w-1/4 flex justify-end">
+                <button
+                    onClick={() => setRevisionOpen(!isRevisionOpen)}
+                    disabled={!currentChapterId}
+                    className="mr-3 text-xs text-white/70 dark:text-black/70 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    Revisions
+                </button>
                 <button 
                     onClick={() => setSaveMenuOpen(!isSaveMenuOpen)}
                     className="flex items-center gap-2 text-xs text-white/70 dark:text-black/70 font-medium"
@@ -250,7 +311,61 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
                             </button>
                         </motion.div>
                     )}
+                    {isRevisionOpen && currentChapterId && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className="absolute bottom-full right-14 mb-2 w-80 bg-gradient-to-br from-gray-700 to-gray-900 dark:from-slate-50 dark:to-slate-100 rounded-lg shadow-lg p-3 z-50 border border-gray-600/50 dark:border-gray-300/50"
+                        >
+                            <ChapterRevisionPanel bookId={book.id} versionId={currentVersionId || ''} chapterId={currentChapterId} onCompare={openCompare} />
+                        </motion.div>
+                    )}
                 </AnimatePresence>
+                <RevisionDiffModal
+                    open={diffOpen}
+                    onClose={() => setDiffOpen(false)}
+                    leftDoc={diffLeft}
+                    rightDoc={diffRight}
+                    onApplyAll={async (merged) => {
+                        try {
+                            if (!currentChapterId || !currentVersionId) return;
+                            const userId = (window as any)?.__authUser?.id || 'default_user';
+                            const newHead = `rev_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+                            await encryptionService.saveChapterContent(currentChapterId, book.id, currentVersionId, userId, merged, false, { revisionId: newHead, isMinor: false, setHead: true });
+                            await createChapterRevision(book.id, currentChapterId, merged, { authorId: userId, contentProtected: true, revisionId: newHead });
+                            (window as any).__currentChapterJSON = merged;
+                            setDiffOpen(false);
+                        } catch (e) {
+                            console.error('Failed to apply all and save merged revision', e);
+                        }
+                    }}
+                    onCreateRevision={async (merged) => {
+                        try {
+                            if (!currentChapterId || !currentVersionId) return;
+                            const userId = (window as any)?.__authUser?.id || 'default_user';
+                            const newHead = `rev_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+                            await encryptionService.saveChapterContent(currentChapterId, book.id, currentVersionId, userId, merged, false, { revisionId: newHead, isMinor: false, setHead: true });
+                            await createChapterRevision(book.id, currentChapterId, merged, { authorId: userId, contentProtected: true, revisionId: newHead });
+                            (window as any).__currentChapterJSON = merged;
+                            setDiffOpen(false);
+                        } catch (e) {
+                            console.error('Failed to create new revision from merged content', e);
+                        }
+                    }}
+                    onApplyBlock={async (merged) => {
+                        try {
+                            if (!currentChapterId || !currentVersionId) return;
+                            const userId = (window as any)?.__authUser?.id || 'default_user';
+                            const newHead = `rev_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+                            await encryptionService.saveChapterContent(currentChapterId, book.id, currentVersionId, userId, merged, false, { revisionId: newHead, isMinor: false, setHead: true });
+                            await createChapterRevision(book.id, currentChapterId, merged, { authorId: userId, contentProtected: true, revisionId: newHead });
+                            (window as any).__currentChapterJSON = merged;
+                        } catch (e) {
+                            console.error('Failed to apply block change', e);
+                        }
+                    }}
+                />
             </div>
         );
     };

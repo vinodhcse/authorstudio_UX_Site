@@ -34,6 +34,8 @@ export async function getUserBooks(userId: string): Promise<Book[]> {
 export async function createChapter(chapter: DbChapter): Promise<void> {
   const created: any = {
     ...chapter,
+  linkedAct: (chapter as any).linkedAct,
+  sortIndex: (chapter as any).sortIndex,
     syncState: (chapter as any).syncState ?? 'dirty',
     updatedAt: (chapter as any).updatedAt ?? now(),
   };
@@ -56,6 +58,8 @@ export async function createChapter(chapter: DbChapter): Promise<void> {
 export async function putChapter(chapter: DbChapter): Promise<void> {
   const updated: any = {
     ...chapter,
+  linkedAct: (chapter as any).linkedAct,
+  sortIndex: (chapter as any).sortIndex,
     syncState: (chapter as any).syncState ?? 'dirty',
     updatedAt: (chapter as any).updatedAt ?? now(),
   };
@@ -121,9 +125,8 @@ export async function deleteVersion(versionId: string): Promise<void> {
   }
 }
 export async function getVersionsByBook(bookId: string): Promise<Version[]> {
-  const book = await simpleDb.books.get(bookId);
-  if (!book || !book.versions?.length) return [];
-  return await simpleDb.versions.where('id').anyOf(book.versions).toArray();
+  // Use bookId index directly; safer and avoids invalid key errors if book.versions is inconsistent
+  return await simpleDb.versions.where('bookId').equals(bookId).toArray();
 }
 
 // Scene CRUD

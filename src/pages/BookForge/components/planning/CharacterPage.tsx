@@ -349,19 +349,45 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
     const [editingCharacter, setEditingCharacter] = useState<any | null>(null);
     
     // Use BookContext to get current data
-    const { getCharacters, getCharacter, createCharacter, updateCharacter } = useBookContext();
+    const { getCharacters, getCharacter, createCharacter, updateCharacter, deleteCharacter } = useBookContext();
     const { bookId, versionId } = useCurrentBookAndVersion();
 
-    // Get characters from current version
-    const characters = bookId && versionId ? getCharacters(bookId, versionId) : [];
+    // Local characters state loaded asynchronously from context
+    const [characters, setCharacters] = useState<any[]>([]);
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                if (!bookId || !versionId) { if (mounted) setCharacters([]); return; }
+                const list = await getCharacters(bookId, versionId);
+                if (!mounted) return;
+                const arr = Array.isArray(list) ? list : (list ? Object.values(list as any) : []);
+                setCharacters(arr as any[]);
+            } catch {
+                if (mounted) setCharacters([]);
+            }
+        })();
+        return () => { mounted = false; };
+    }, [bookId, versionId, getCharacters]);
     
     // Find the selected character
-    const selectedCharacter = selectedCharacterId && bookId && versionId
-        ? getCharacter(bookId, versionId, selectedCharacterId)
-        : null;
+    const [selectedCharacter, setSelectedCharacter] = useState<any | null>(null);
+    useEffect(() => {
+        let active = true;
+        if (!selectedCharacterId || !bookId || !versionId) { setSelectedCharacter(null); return; }
+        (async () => {
+            try {
+                const c = await getCharacter(bookId, versionId, selectedCharacterId);
+                if (active) setSelectedCharacter(c);
+            } catch {
+                if (active) setSelectedCharacter(null);
+            }
+        })();
+        return () => { active = false; };
+    }, [selectedCharacterId, bookId, versionId, getCharacter]);
     
     // Filter characters based on search query
-    const filteredCharacters = characters.filter(char => 
+    const filteredCharacters = characters.filter((char: any) => 
         char.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (char.fullName && char.fullName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (char.role && char.role.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -398,6 +424,14 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
         
         setShowCharacterBuilder(false);
         setEditingCharacter(null);
+    };
+
+    const handleDeleteCharacter = async (characterId: string) => {
+        if (!bookId || !versionId) return;
+        if (!window.confirm('Delete this character?')) return;
+        await deleteCharacter(bookId, versionId, characterId);
+        setCharacters(prev => prev.filter(c => c.id !== characterId));
+        if (selectedCharacterId === characterId) setSelectedCharacterId(null);
     };
     
     // Handle cancel from Profile Builder
@@ -441,6 +475,20 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
     if (selectedCharacter) {
         return (
             <div className="w-full bg-gray-50 dark:bg-gray-900">
+                <div className="p-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                    <button
+                        onClick={() => setSelectedCharacterId(null)}
+                        className="px-3 py-1.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm"
+                    >
+                        Back
+                    </button>
+                    <button
+                        onClick={() => handleDeleteCharacter(selectedCharacter.id)}
+                        className="px-3 py-1.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm"
+                    >
+                        Delete Character
+                    </button>
+                </div>
                 <CharacterDetailsView 
                     character={selectedCharacter}
                     theme={theme}
