@@ -66,7 +66,8 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
         saveChapterContent, 
         createAct,
         deleteAct,
-        reorderChapter
+    reorderChapter,
+    importDocx
     } = useChapters(
         shouldLoadChapters ? bookId! : '', 
         shouldLoadChapters ? versionId! : ''
@@ -246,6 +247,35 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
     appLog.info('book-forge', 'URL mode and tab', { mode: modeFromUrl, tab: tabFromUrl });
     appLog.info('book-forge', 'State values', { activeMode, activePlanningTab });
     
+    // Wire Act menu Import Chapter → file picker → importDocx
+    // Note: This hook must be declared before any early returns to keep hook order stable
+    useEffect(() => {
+        const handler = (e: any) => {
+            const actId = e?.detail?.actId as string;
+            if (!actId || !bookId || !versionId) return;
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.docx';
+            input.onchange = async () => {
+                const file = input.files?.[0];
+                if (!file) return;
+                try {
+                    console.log('Importing DOCX file for act:', actId, file);
+                    // Call importDocx from useChapters
+                    const res = await importDocx(file, { actId });
+                    toast({ title: 'Import complete', description: `Imported ${res.count} chapter(s)` });
+                    if (res.chapterIds.length) await handleNavigateToChapter(res.chapterIds[0]);
+                } catch (err: any) {
+                    console.log('Error while importing DOCX file:', err);
+                    toast({ title: 'Import failed', description: err?.message || 'Unable to import', variant: 'destructive' });
+                }
+            };
+            input.click();
+        };
+        window.addEventListener('requestActImport', handler as any);
+        return () => window.removeEventListener('requestActImport', handler as any);
+    }, [bookId, versionId, importDocx, handleNavigateToChapter]);
+
     // Update URL only when mode or tab changes (not for chapter changes)
     useEffect(() => {
         console.log('🔄 MODE/TAB SYNC useEffect triggered');
@@ -389,6 +419,8 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
         setShowTypographySettings(true);
     };
 
+    
+
     return (
         <motion.div
             className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900"
@@ -457,6 +489,16 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                 onReorderChapter={reorderChapter}
                 onNavigateToChapter={handleNavigateToChapter}
                 isChapterLoading={isChapterLoading}
+                onImportChapters={async (actId: string, file: File) => {
+                    try {
+                        const res = await importDocx(file, { actId });
+                        toast({ title: 'Import complete', description: `Imported ${res.count} chapter(s)` });
+                        // Navigate to first imported chapter
+                        if (res.chapterIds.length) await handleNavigateToChapter(res.chapterIds[0]);
+                    } catch (e: any) {
+                        toast({ title: 'Import failed', description: e?.message || 'Unable to import', variant: 'destructive' });
+                    }
+                }}
             />
             <div className="flex-grow flex relative overflow-hidden">
                 <Editor 

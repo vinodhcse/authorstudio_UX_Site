@@ -852,10 +852,10 @@ const ChapterProgressBar: React.FC<{
         const actGroup = groupedChapters[actId];
         const actChapters = actGroup?.chapters || [];
         if (actChapters.length > 0) {
-            const confirmed = confirm(`This act contains ${actChapters.length} chapter(s). They will be moved to the next act. Continue?`);
+            const confirmed = confirm(`This act contains ${actChapters.length} chapter(s). Deleting this act will also delete these chapters and their plot nodes. This cannot be undone. Continue?`);
             if (!confirmed) return;
         } else {
-            const confirmed = confirm('Are you sure you want to delete this act?');
+            const confirmed = confirm('Are you sure you want to delete this act and its related plot nodes? This cannot be undone.');
             if (!confirmed) return;
         }
         
@@ -1196,7 +1196,7 @@ const ChapterProgressBar: React.FC<{
                                                 <PlusIcon className="w-4 h-4" />
                                                 Add New Chapter
                                             </button>
-                                            <button className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">
+                                            <button onClick={() => window.dispatchEvent(new CustomEvent('requestActImport', { detail: { actId } }))} className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">
                                                 <DocumentIcon className="w-4 h-4" />
                                                 Import Chapter
                                             </button>
@@ -1835,6 +1835,7 @@ interface EditorHeaderProps {
     onReorderChapter?: (chapterId: string, newPosition: number, newActId?: string) => Promise<void>;
     onNavigateToChapter?: (chapterId: string) => void;
     isChapterLoading?: boolean;
+    onImportChapters?: (actId: string, file: File) => Promise<void>;
 }
 
 const EditorHeader: React.FC<EditorHeaderProps> = ({ 
@@ -1880,6 +1881,8 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
         setTheme(newTheme);
         await broadcastThemeChange(newTheme);
     };
+
+    //
 
     const handleLogout = async () => {
         try {

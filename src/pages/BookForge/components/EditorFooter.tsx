@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Book } from '../../../types';
 import ChapterRevisionPanel from '../../../components/ChapterRevisionPanel';
@@ -7,6 +7,8 @@ import RevisionDiffModal from '../../../components/RevisionDiffModal';
 import { readRevisionSnapshot, createChapterRevision } from '../../../services/revisionStorage';
 import { encryptionService } from '../../../services/encryptionService';
 import { CloudIcon, HardDriveIcon } from '../../../constants';
+import { useJobsStore } from '../../../stores/jobs';
+import JobsPopup from '../../../components/JobsPopup';
 
 type SaveStatus = 'saved' | 'saving' | 'unsaved';
 
@@ -41,7 +43,7 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
     onSquashRevisions
 }) => {
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
-    const [jobProgress, setJobProgress] = useState<number | null>(null);
+    const [jobsOpen, setJobsOpen] = useState(false);
     const [isSaveMenuOpen, setSaveMenuOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const [isRevisionOpen, setRevisionOpen] = useState(false);
@@ -95,28 +97,22 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
         }
     };
 
-    // --- MOCK LOGIC ---
-    // Mock job progress for demonstration
+    // Jobs aggregation: compute overall progress when any jobs are running
+    // Select raw jobs array to keep snapshot stable; derive running jobs locally
+    const jobs = useJobsStore((s) => s.jobs);
+    const runningJobs = useMemo(() => jobs.filter(j => j.status === 'running' || j.status === 'queued'), [jobs]);
+    const aggregateProgress = useMemo(() => {
+        if (!runningJobs.length) return null;
+        const avg = runningJobs.reduce((a, j) => a + (j.progress || 0), 0) / runningJobs.length;
+        return avg;
+    }, [runningJobs]);
+
+    // Open popup on external event (e.g., when a job starts)
     useEffect(() => {
-        const hasJob = Math.random() > 0.7;
-        if (!hasJob) return;
-
-        setJobProgress(0);
-        const interval = setInterval(() => {
-            setJobProgress(prev => {
-                if (prev === null || prev >= 100) {
-                    clearInterval(interval);
-                    setTimeout(() => setJobProgress(null), 2000);
-                    return null;
-                }
-                return prev + Math.random() * 15;
-            });
-        }, 800);
-        return () => clearInterval(interval);
+        const open = () => setJobsOpen(true);
+        window.addEventListener('jobs:openPopup', open as any);
+        return () => window.removeEventListener('jobs:openPopup', open as any);
     }, []);
-
-    // Remove mock save status changes - use real sync state only
-    // --- END MOCK LOGIC ---
 
     // Compare handler invoked by panel directly
     const openCompare = async (revisionId: string) => {
@@ -385,23 +381,24 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
                 <div className="flex-grow flex justify-center items-center h-full">
                     <div className="relative w-full max-w-sm h-6 rounded-full bg-white/5 dark:bg-black/5 shadow-inner overflow-hidden">
                         <AnimatePresence mode="wait">
-                            {jobProgress !== null ? (
+                            {aggregateProgress !== null ? (
                                 <motion.div
                                     key="progress"
                                     className="absolute inset-0 flex items-center justify-center"
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     exit={{ opacity: 0 }}
+                                    onClick={() => setJobsOpen(true)}
                                 >
                                      <div className="w-full h-full bg-transparent overflow-hidden">
                                         <motion.div 
                                             className="h-full bg-gradient-to-r from-sky-400 to-green-500 animate-shimmer-effect" 
-                                            style={{width: `${Math.min(jobProgress, 100)}%`}}
+                                            style={{width: `${Math.min(aggregateProgress as number, 100)}%`}}
                                             transition={{ duration: 0.5, ease: 'easeInOut' }}
                                         />
                                     </div>
                                     <span className="absolute inset-0 flex items-center justify-center text-white dark:text-black text-xs font-bold text-shadow-sm">
-                                        Exporting... ({Math.round(Math.min(jobProgress, 100))}%)
+                                        {runningJobs.length > 1 ? `${runningJobs.length} jobs running` : 'Job running'} ({Math.round(Math.min(aggregateProgress as number, 100))}%)
                                     </span>
                                 </motion.div>
                             ) : (
@@ -411,6 +408,7 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     exit={{ opacity: 0 }}
+                                    onClick={() => setJobsOpen(true)}
                                 >
                                     <p className="font-bold text-white dark:text-black truncate text-sm leading-tight text-shadow-sm">{book.title}</p>
                                 </motion.div>
@@ -422,6 +420,7 @@ const EditorFooter: React.FC<EditorFooterProps> = ({
                 {/* Right: planning navigation or save status */}
                 {renderRightContent()}
             </div>
+            <JobsPopup open={jobsOpen} onClose={() => setJobsOpen(false)} />
         </motion.footer>
     );
 };

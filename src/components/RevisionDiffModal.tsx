@@ -58,7 +58,9 @@ const RevisionDiffModal: React.FC<Props> = ({ open, onClose, leftDoc, rightDoc, 
   const rowsRef = useRef<any[]>([]);
 
   // Left editor (read-only)
-  const sharedExtensions = [
+  // Build shared extensions once and de-duplicate by name to avoid TipTap warnings
+  const sharedExtensions = useMemo(() => {
+    const list = [
     StarterKit.configure({
       bulletList: false,
       orderedList: false,
@@ -99,7 +101,16 @@ const RevisionDiffModal: React.FC<Props> = ({ open, onClose, leftDoc, rightDoc, 
     TestExtension,
     SimpleExtension,
     DictationSectionNode,
-  ];
+    ];
+    const seen = new Set<string>();
+    return list.filter((ext: any) => {
+      const n: string | undefined = ext?.name;
+      if (!n) return true;
+      if (seen.has(n)) return false;
+      seen.add(n);
+      return true;
+    });
+  }, []);
 
   const leftEditor = useEditor({
     extensions: sharedExtensions,

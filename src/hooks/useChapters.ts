@@ -33,6 +33,7 @@ export interface UseChaptersReturn {
   createAct: (title: string) => Promise<void>;
   deleteAct: (actId: string) => Promise<void>;
   reorderChapter: (chapterId: string, newPosition: number, newActId?: string) => Promise<void>;
+  importDocx: (file: File, opts?: { sceneDivider?: string; actId?: string }) => Promise<{ count: number; chapterIds: string[] }>;
   // Navigation helpers
   getChaptersByAct: (actId: string) => Chapter[];
   getCurrentActs: () => NarrativeFlowNode[];
@@ -376,13 +377,20 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
             content: [{ type: 'text', text: title }]
           },
           {
-            type: 'sceneBeatExtension',
+            type: 'sceneBeat',
             attrs: {
+              id: `sbeat_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
+              chapterId: chapterId,
               sceneId: sceneNodeId,
+              chapterName: title,
+              sceneBeatIndex: 1,
               summary: '',
-              goals: '',
+              goal: '',
               characters: [],
-              collapsed: false
+              worldEntities: [],
+              timelineEvent: '',
+              status: 'Draft',
+              isExpanded: false,
             }
           },
           {
@@ -803,6 +811,23 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
     await loadChapters();
   }, [loadChapters]);
 
+  // Import DOCX → TipTap JSON → local chapters, mark for sync
+  const importDocx = useCallback(async (file: File, opts?: { sceneDivider?: string; actId?: string }) => {
+    if (!bookId || !versionId || !user?.id) throw new Error('Missing book/version/user');
+    const { startImportDocxJob } = await import('../services/import/persist');
+    const result = await startImportDocxJob({
+      file,
+      sceneDivider: opts?.sceneDivider,
+      bookId,
+      versionId,
+      userId: user.id,
+      linkedAct: opts?.actId,
+    });
+    // Refresh local chapters after import
+    await loadChapters();
+    return result;
+  }, [bookId, versionId, user?.id, loadChapters]);
+
   const createAct = useCallback(async (title: string) => {
     if (!bookId || !versionId) return;
 
@@ -861,37 +886,56 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
       setError(null);
       
       // Get current plot canvas
-  const plotCanvas = await getPlotCanvas(bookId, versionId);
-  let narrativeNodes: NarrativeFlowNode[] = (plotCanvas?.nodes as NarrativeFlowNode[]) || [];
-  let narrativeEdges: NarrativeEdge[] = (plotCanvas?.edges as NarrativeEdge[]) || [];
-      
-      // Find chapters linked to this act
+      const plotCanvas = await getPlotCanvas(bookId, versionId);
+      let narrativeNodes: NarrativeFlowNode[] = (plotCanvas?.nodes as NarrativeFlowNode[]) || [];
+      let narrativeEdges: NarrativeEdge[] = (plotCanvas?.edges as NarrativeEdge[]) || [];
+
+      // Identify act node and all descendant chapter/scene nodes
+      const chapterNodes = narrativeNodes.filter(n => (n as any).data?.type === 'chapter' && (n as any).data?.parentId === actId);
+      const chapterNodeIds = new Set(chapterNodes.map(n => n.id));
+      const sceneNodes = narrativeNodes.filter(n => (n as any).data?.type === 'scene' && chapterNodeIds.has((n as any).data?.parentId));
+      const nodesToDeleteIds = new Set<string>([actId, ...Array.from(chapterNodeIds), ...sceneNodes.map(n => n.id)]);
+
+      // Cascade delete chapters from DB and local state
       const actChapters = chapters.filter(chapter => chapter.linkedAct === actId);
-      
-      if (actChapters.length > 0) {
-        // Find next available act
-  const availableActs = narrativeNodes.filter((node: NarrativeFlowNode) => (node as any).data.type === 'act' && node.id !== actId);
-        const nextAct = availableActs[0];
-        
-        if (nextAct) {
-          // Move chapters to next act
-          setChapters(prev => prev.map(chapter => 
-            chapter.linkedAct === actId 
-              ? { ...chapter, linkedAct: nextAct.id }
-              : chapter
-          ));
-          
-          appLog.info('useChapters', `Moved ${actChapters.length} chapters from deleted act ${actId} to act ${nextAct.id}`);
+      for (const ch of actChapters) {
+        try {
+          await dalDeleteChapter(ch.id);
+        } catch (e) {
+          appLog.warn('useChapters', 'Failed to delete chapter during act cascade, continuing', { chapterId: ch.id, error: e });
         }
       }
-      
-      // Remove act from narrative nodes
-      narrativeNodes = narrativeNodes.filter(node => node.id !== actId);
-      
-      // Save updated plot canvas
-      updatePlotCanvas(bookId, versionId, { nodes: narrativeNodes, edges: narrativeEdges });
-      
-      appLog.info('useChapters', `Deleted act: ${actId}`);
+      setChapters(prev => prev.filter(ch => ch.linkedAct !== actId));
+
+      // Remove nodes and clean childIds of remaining parents
+      const remaining = narrativeNodes.filter(n => !nodesToDeleteIds.has(n.id));
+      const cleaned = remaining.map(n => {
+        const data: any = { ...(n as any).data };
+        if (Array.isArray(data.childIds)) {
+          data.childIds = data.childIds.filter((cid: string) => !nodesToDeleteIds.has(cid));
+        }
+        return { ...n, data } as any;
+      });
+      // Remove edges attached to deleted nodes
+      const remainingEdges = narrativeEdges.filter(e => !nodesToDeleteIds.has((e as any).source) && !nodesToDeleteIds.has((e as any).target));
+
+      // Persist updated canvas
+      updatePlotCanvas(bookId, versionId, { nodes: cleaned, edges: remainingEdges });
+
+      // Also update the version's chapters list to drop deleted chapters
+      try {
+        const { getVersion: dalGetVersion, putVersion: dalPutVersion } = await import('../data/dal');
+        const v = await dalGetVersion(versionId);
+        if (v) {
+          const remainingChIds = (v as any).chapters?.filter((cid: string) => !nodesToDeleteIds.has(cid)) || [];
+          const updatedV = { ...(v as any), chapters: remainingChIds, updatedAt: new Date().toISOString() };
+          await dalPutVersion(updatedV as any);
+        }
+      } catch (e) {
+        appLog.warn('useChapters', 'Failed to prune deleted chapters from version after act delete', { error: e });
+      }
+
+      appLog.info('useChapters', `Deleted act and cascaded ${actChapters.length} chapters`, { actId, deletedChapterIds: actChapters.map(c => c.id) });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete act';
       setError(errorMessage);
@@ -1019,6 +1063,7 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
     updateChapter,
     deleteChapter,
     saveChapterContent,
+  importDocx,
     refreshChapters,
     createAct,
     deleteAct,

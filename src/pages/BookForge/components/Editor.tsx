@@ -2160,6 +2160,8 @@ const Editor: React.FC<{
 
     if (!editor) {
         return null;
+    } else {
+        console.log('Editor content:', editor.getJSON());
     }
 
     // Debug logging - remove in production
