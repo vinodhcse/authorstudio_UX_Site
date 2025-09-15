@@ -4,7 +4,7 @@ import { NarrativeFlowNode, NarrativeEdge } from './types/narrative-layout';
 
 // Asset System Types
 export type EntityType =
-  | 'book' | 'character' | 'world' | 'location' | 'object' | 'chapter' | 'divider';
+  | 'book' | 'character' | 'world' | 'location' | 'object' | 'chapter' | 'divider' | 'user';
 
 export type AssetRole =
   | 'cover' | 'avatar' | 'gallery' | 'divider' | 'attachment' | 'map' | 'lore';

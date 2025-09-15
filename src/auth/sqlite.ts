@@ -21,6 +21,25 @@ export interface SessionRow {
   session_state?: 'active' | 'sealed';
   sealed_at?: number;
   updated_at?: number;
+  // Optional snapshot of local settings for quick access
+  theme?: {
+    color?: string;
+    customColorHex?: string;
+  };
+  collaboration?: {
+    copyAllowed: boolean;
+    allowComments: boolean;
+    allowSuggestions: boolean;
+    allowTrackChanges: boolean;
+  };
+  advanced?: {
+    temperature: number;
+    maxTokens: number;
+    validationLevel: 'balanced' | 'strict' | 'lenient';
+    tonePreset: 'conversational' | 'formal' | 'casual' | 'authoritative' | string;
+    maxSentenceLength: 'short' | 'medium' | 'long';
+    vocabularyComplexity: 'simple' | 'medium' | 'advanced';
+  };
 }
 
 export interface DeviceRow {

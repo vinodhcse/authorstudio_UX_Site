@@ -17,6 +17,7 @@ import CustomNodeTest from './components/CustomNodeTest';
 import NameGeneratorPage from './pages/Tools/NameGeneratorPage';
 import CharacterProfileBuilder from './pages/Tools/CharacterProfileBuilder';
 import RevisionHistoryTool from './pages/Tools/RevisionHistoryTool';
+import AccountModalHost from './pages/Account/AccountModalHost';
 import WhisperTestPage from './pages/WhisperTestPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
@@ -28,8 +29,9 @@ import { useGlobalKeyboard } from './hooks/useGlobalKeyboard';
 
 // Component that uses BookContext to provide authored books to MyBooksView
 const MyBooksWithContext: React.FC = () => {
-    const { authoredBooks } = useBookContext();
-    return <MyBooksView books={authoredBooks} />;
+  const { authoredBooks } = useBookContext();
+  // Cast to align differing Book type sources (types vs bookTypes)
+  return <MyBooksView books={authoredBooks as any} />;
 };
 
 const MainLayout: React.FC<{
@@ -43,11 +45,11 @@ const MainLayout: React.FC<{
     
     return (
         <>
-            <Header
+      <Header
                 theme={theme}
                 setTheme={setTheme}
                 onOpenCreateModal={onOpenCreateModal}
-                books={books}
+        books={books as any}
             />
             <main className="px-8 sm:px-16 lg:px-24 py-8">
                 <Outlet />
@@ -70,6 +72,9 @@ const App: React.FC = () => {
 
   // Enable global keyboard shortcuts
   useGlobalKeyboard();
+
+  // Detect if this is a Tauri child tool window (backend injects __BOOK_CONTEXT__)
+  const isToolWindow = typeof window !== 'undefined' && (window as any).__BOOK_CONTEXT__?.toolName;
 
   useEffect(() => {
     const applyTheme = (t: Theme) => {
@@ -121,6 +126,27 @@ const App: React.FC = () => {
     }
   };
 
+  // In tool windows, bypass AuthGate to avoid login prompts and render tool routes directly
+  if (isToolWindow) {
+    return (
+      <div className="relative min-h-screen bg-white dark:bg-black text-gray-800 dark:text-gray-200 transition-colors duration-300 font-sans overflow-x-hidden">
+        <div className="relative z-10 h-full">
+          <ErrorBoundary>
+            <BookContextProvider>
+              <Routes>
+                <Route path="/tool/name-generator" element={<NameGeneratorPage theme={theme} setTheme={handleThemeChange}/>} />
+                <Route path="/tool/character-tracker" element={<CharacterProfileBuilder theme={theme} setTheme={handleThemeChange} />} />
+                <Route path="/tool/revision-history" element={<RevisionHistoryTool />} />
+                {/* Fallback to name-generator if direct route missing */}
+                <Route path="*" element={<NameGeneratorPage theme={theme} setTheme={handleThemeChange} />} />
+              </Routes>
+            </BookContextProvider>
+          </ErrorBoundary>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AuthGate
       fallback={
@@ -145,6 +171,7 @@ const App: React.FC = () => {
           <div className="relative z-10 h-full">
             <ErrorBoundary>
               <BookContextProvider>
+              <AccountModalHost />
               <Routes>
                 {/* Main protected routes */}
                 <Route

@@ -301,7 +301,12 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
                   <div className="font-medium">{user?.name || 'User'}</div>
                   <div className="text-xs text-gray-400 dark:text-gray-500">{user?.email}</div>
                 </div>
-                <a href="#" className="block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">My Account</a>
+                <button 
+                  onClick={() => { try { window.dispatchEvent(new CustomEvent('account:open')); } catch {} }}
+                  className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                >
+                  My Account
+                </button>
                 <button 
                   onClick={handleLock}
                   className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"

@@ -1,0 +1,1601 @@
+import React, { useState, useEffect, act, useRef } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Command, CommandInput, CommandItem, CommandList, CommandEmpty, CommandGroup } from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Loader2, RefreshCw, Check, X, ChevronLeft, ChevronRight, Sparkles, Plus, Search, Palette, Wand2, ArrowRight, Edit3 } from 'lucide-react';
+import { apiClient } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { useBookContext } from '@/lib/BookContextProvider';
+import RephraseComparisonModal from '../pages/RephraseComparisonModal';
+import { set } from 'date-fns';
+import { processAIRequest } from '@/ai/aiTool';
+import { useUserContext } from '@/lib/UserContextProvider';
+
+interface RephrasedParagraph {
+  rephrasedParagraph: string;
+  originalParagraph: string[];
+  selected: boolean;
+  edited?: boolean;
+  customText?: string;
+}
+
+interface ContextItem {
+  id: string;
+  name: string;
+  type: string;
+  prompt?: string;
+}
+
+interface AIRephraserModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  selectedText: string;
+  textBlocks: string[];
+  bookId: string;
+  versionId: string;
+  chapterId: string;
+  onApplyChanges: (fromPos: any, toPos: any) => void;
+  editor?: any;
+  action: string;
+}
+
+const escapeQuote = (text: string): string => {
+  return text.replace(/"/g, '\\"').replace(/'/g, "\\'");
+};
+
+
+
+const retrieveActionTitle = (action: string): string => {
+  switch (action) {
+    case 'rephrase':
+      return 'AI Text Rephraser';
+    case 'summarize':
+      return 'AI Text Summarizer';
+    case 'expand':
+      return 'AI Text Expander';
+    default:
+      return 'AI Text Tool';
+  }
+} 
+
+const extractContextLines = (editor: any, currentSelection: any, lineCount: number, direction: 'before' | 'after'): string => {
+  if (!editor) return '';
+  
+  const { state } = editor;
+  const { doc } = state;
+  const lines: string[] = [];
+  const seenLines = new Set<string>();
+  
+  if (direction === 'before') {
+    // Extract text before the selection
+    if (currentSelection.from > 0) {
+      const beforeText = doc.textBetween(0, currentSelection.from, '\n');
+      const beforeLines = beforeText.split('\n')
+        .map(line => line.trim())
+        .filter(line => {
+          // Filter out empty lines, headings, and very short lines
+          return line && 
+                 line.length > 10 && 
+                 !line.startsWith('#') && 
+                 !line.startsWith('"') && 
+                 !line.startsWith("'") &&
+                 !seenLines.has(line);
+        })
+        .slice(-lineCount); // Get the last N lines
+      
+      beforeLines.forEach(line => {
+        seenLines.add(line);
+        lines.push(line);
+      });
+    }
+  } else {
+    // Extract text after the selection
+    if (currentSelection.to < doc.content.size) {
+      const afterText = doc.textBetween(currentSelection.to, doc.content.size, '\n');
+      const afterLines = afterText.split('\n')
+        .map(line => line.trim())
+        .filter(line => {
+          // Filter out empty lines, headings, and very short lines
+          return line && 
+                 line.length > 10 && 
+                 !line.startsWith('#') && 
+                 !line.startsWith('"') && 
+                 !line.startsWith("'") &&
+                 !seenLines.has(line);
+        })
+        .slice(0, lineCount); // Get the first N lines
+      
+      afterLines.forEach(line => {
+        seenLines.add(line);
+        lines.push(line);
+      });
+    }
+  }
+  
+  return lines.join('\n');
+};
+
+export const AIRephraserModal: React.FC<AIRephraserModalProps> = ({
+  isOpen,
+  onClose,
+  selectedText,
+  textBlocks,
+  bookId,
+  versionId,
+  chapterId,
+  onApplyChanges,
+  editor,
+  action
+}) => {
+  const { state, updateChapterContent, dispatch } = useBookContext();
+  const { getUser } = useUserContext();
+  const user = getUser();
+  const [step, setStep] = useState<'setup' | 'results' | 'comparison' | 'localComparison'>('setup');
+  const [isLoading, setIsLoading] = useState(false);
+  const [customInstructions, setCustomInstructions] = useState('Make the tone more engaging and vivid.');
+  const [llmModel, setLlmModel] = useState('default');
+  const [showDifference, setShowDifference] = useState(true);
+  const [noChangeWords, setNoChangeWords] = useState('');
+  const [textToRephrase, setTextToRephrase] = useState([] as string[]);
+  const [rephrasedResults, setRephrasedResults] = useState<RephrasedParagraph>({
+    rephrasedParagraph: '',
+    originalParagraph: [],
+    selected: false,
+  });
+  const [diffResults, setDiffResults] = useState<RephrasedParagraph[]>([]);
+  const [aiResults, setAiResults] = useState<RephrasedParagraph[]>([]);
+  const [diffStreamingComplete, setDiffStreamingComplete] = useState(false);
+  const [isLocalRephraseModalOpen, setIsLocalRephraseModalOpen] = useState<boolean>(false);
+  
+  // Context selection state
+  const [selectedPlotNodes, setSelectedPlotNodes] = useState<ContextItem[]>([]);
+  const [selectedCharacters, setSelectedCharacters] = useState<ContextItem[]>([]);
+  const [selectedWorldObjects, setSelectedWorldObjects] = useState<ContextItem[]>([]);
+  const [plotNodeSearch, setPlotNodeSearch] = useState('');
+  const [characterSearch, setCharacterSearch] = useState('');
+  const [worldObjectSearch, setWorldObjectSearch] = useState('');
+  const [showPlotSearch, setShowPlotSearch] = useState(false);
+  const [showCharacterSearch, setShowCharacterSearch] = useState(false);
+  const [showWorldSearch, setShowWorldSearch] = useState(false);
+  const [aiFeatureLoading, setAiFeatureLoading] = useState(false);
+  const [aiStreaming, setAiStreaming] = useState(false);
+  const aiRunningRef = useRef(false);
+
+  // Mock data - in real implementation, these would come from the book context
+  const plotNodes: ContextItem[] = state.plotCanvas?.nodes?.map(node => ({
+    id: node.id,
+    name: node.name,
+    type: node.type,
+    prompt: `${node.type}: ${node.name} - ${node.detail || ''}\n Goal: ${node.goal || 'N/A'}`
+  })) || [];
+
+  const characters: ContextItem[] = state.characters?.map(char => ({
+    id: char.id,
+    name: char.name,
+    type: 'Character',
+    prompt: `Name: ${char.name}\n` +
+            `Summary: ${char.summary || ''}\n` + 
+            `Goals: ${char.goals?.join(', ') || 'N/A'}\n` +
+            `Traits: ${char.traits?.join(', ') || 'N/A'}\n` +
+            `Age: ${char.age || 'Unknown'}\n` +
+            `Gender: ${char.gender || 'Unknown'}\n` +
+            `Description: ${char.description || 'No description available'}\n` +
+            `Backstory: ${char.backstory || 'No backstory available'}\n` +
+            `Beliefs: ${char.beliefs?.join(', ') || 'N/A'}\n` +
+            `Motivations: ${char.motivations?.join(', ') || 'N/A'}\n` +
+            `Internal Conflicts: ${char.internalConflicts?.join(', ') || 'N/A'}\n` +
+            `External Conflicts: ${char.externalConflicts?.join(', ') || 'N/A'}`
+  })) || [];
+
+ const worldObjects: ContextItem[] = state.worlds?.flatMap(world => [
+  // Map objects
+  ...(world.world.objects?.map(obj => ({
+    id: obj.id,
+    name: `${world.name}-${obj.name}`,
+    type: 'Object',
+    prompt: `Object: ${obj.name} - ${obj.description || ''}\nHistory: ${
+      obj.history?.map(history => history.event || history.eventNote).join(', ') || 'No history available'
+    }`
+  })) || []),
+
+  // Map locations
+  ...(world.world.locations?.map(location => ({
+    id: location.id,
+    name: `${world.name}-${location.name}`,
+    type: 'Location',
+    prompt: `Location: ${location.name} - ${location.description || ''}\nHistory: ${
+      location.history?.map(history => history.event || history.eventNote).join(', ') || 'No history available'
+    }`
+  })) || [])
+]) || [];
+
+  // Available LLM models
+  const availableModels = [
+    { value: 'default', label: 'Default Model' },
+    { value: 'gpt-4', label: 'GPT-4' },
+    { value: 'claude-3', label: 'Claude 3' },
+    { value: 'gemini-pro', label: 'Gemini Pro' },
+  ];
+
+  // Pre-configured no-change words
+  const preConfiguredWords = [
+    'character names', 'place names', 'brand names', 'technical terms',
+    'dates', 'numbers', 'proper nouns', 'dialogue tags'
+  ];
+
+  console.log("PlotNodes", plotNodes);
+  console.log("Characters", characters);
+  console.log("WorldObjects", worldObjects);
+
+
+  const handleInlineUpdate = (newText: string) => {
+    if (!editor) return;
+
+    const highlightMarkAttrs = {
+      color: '#FFFACD',
+      backgroundColor: '#FFFACD',
+    };
+
+    editor.chain().focus().command(({ tr, state }) => {
+      const { from, to } = tr.selection;
+
+      // Start a single transaction for deletion and insertion
+      tr.deleteRange(from, to);
+
+      const nodeType = state.schema.nodes.paragraph;
+      const content = [
+        state.schema.text(newText.trim(), [
+          state.schema.marks.highlight.create(highlightMarkAttrs),
+        ]),
+      ];
+
+      const paragraphNode = nodeType.create({}, content);
+      tr.insert(from, paragraphNode);
+
+      return true;
+    }).run();
+
+    // Show context menu above the updated text
+    const popupPosition = editor.view.coordsAtPos(editor.state.selection.from);
+    dispatch({
+      type: 'SHOW_CONTEXT_MENU',
+      payload: {
+        position: popupPosition,
+        message: 'Accept, reject, or retry the change?',
+        actions: [
+          { label: 'Accept', onClick: () => console.log('Accepted') },
+          { label: 'Reject', onClick: () => console.log('Rejected') },
+          { label: 'Retry', onClick: () => console.log('Retrying') },
+        ],
+      },
+    });
+  };
+
+  const handleAIFeature = async (feature: string) => {
+    console.log("Feature selected for AI feature:", feature);
+    if (aiRunningRef.current) {
+      console.info("AI is already processing...");
+      return;
+    }
+    aiRunningRef.current = true;
+    setAiFeatureLoading(true);
+    try {
+      const seenTexts = new Set<string>();
+      const textToRephrase = textBlocks
+        .map(block => escapeQuote(block.trim()))
+        .filter(text => {
+          if (text.length > 0 && !seenTexts.has(text)) {
+            seenTexts.add(text);
+            return true;
+          }
+          return false;
+        });
+
+      const currentSelection = editor?.state?.selection;
+      const textBefore = extractContextLines(editor, currentSelection, 10, 'before');
+      const textAfter = extractContextLines(editor, currentSelection, 10, 'after');
+
+      const promptContexts = [
+        ...selectedPlotNodes.map(node => ({
+          contextType: 'PlotCanvas',
+          id: node.id,
+          prompt: node.prompt || ''
+        })),
+        ...selectedCharacters.map(char => ({
+          contextType: 'Character',
+          id: char.id,
+          prompt: char.prompt || ''
+        })),
+        ...selectedWorldObjects.map(obj => ({
+          contextType: 'WorldObject',
+          id: obj.id,
+          prompt: obj.prompt || ''
+        }))
+      ];
+
+      const payload = {
+        feature,
+        text: textToRephrase,
+        textBefore: [textBefore],
+        textAfter: [textAfter],
+        promptContexts,
+        customInstructions,
+        userId: user.userId // Pass userId from UserContext
+      };
+
+      //editor changes
+
+      const { from, to } = editor.state.selection;
+      const originalContent = editor.state.doc.textBetween(from, to, '\n\n');
+
+      let insertedPos = from;
+      let accumulatedText = '';
+      let tr = editor.state.tr;
+      let transactionStarted = false;
+      
+
+      // Step 1: Start transaction & delete selection
+      tr = tr.delete(from, to);
+      transactionStarted = true;
+      editor.view.dispatch(tr);
+
+      try {
+       
+
+        const finalOutputResponse = await processAIRequest(payload, async (data) => {
+        console.log("Streaming data:", data);
+        //setAiResults(prev => [...prev, data]);
+        //handleInlineUpdate(data.rephrasedParagraphContent || data.text || '');
+
+        if (data?.done === true) {
+          return;
+        }
+        accumulatedText += data.rephrasedParagraphContent || data.text || '';
+        const value = data.rephrasedParagraphContent || data.text || '';
+          // Step 3: Append as it streams
+          editor.view.dispatch(
+            editor.state.tr.insertText(value, insertedPos)
+          );
+
+          insertedPos += value.length;
+      }, (error) => {
+        console.error("AI processing error:", error);
+         // Revert if any error occurs
+        if (transactionStarted) {
+          editor.view.dispatch(
+            editor.state.tr
+              .delete(from, from + accumulatedText.length)
+              .insertText(originalContent, from)
+          );
+        }
+
+      });
+
+     // Show context menu above the updated text
+      const popupPosition = editor.view.coordsAtPos(from);
+      dispatch({
+        type: 'SHOW_CONTEXT_MENU',
+        payload: {
+          position: popupPosition,
+          message: 'Accept, reject, or retry the change?',
+          actions: [
+            { label: 'Accept', onClick: () => console.log('Accepted') },
+            { label: 'Reject', onClick: () => console.log('Rejected') },
+            { label: 'Retry', onClick: () => console.log('Retrying') },
+          ],
+        },
+      });
+      
+
+      
+
+      setStep('comparison');
+    } catch (error) {
+      console.error('Failed to process AI feature:', error);
+    } finally {
+      setAiFeatureLoading(false);
+    }
+  } catch (error) {
+      console.error('Failed to process AI feature:', error);
+    } finally {
+      setAiFeatureLoading(false);
+    } 
+
+  }  
+  const handleRephrase = async () => {
+    setIsLoading(true);
+    try {
+      // Process textBlocks to create textToRephrase array - remove duplicates and escape quotes
+      const seenTexts = new Set<string>();
+      const textToRephrase = textBlocks
+        .map(block => escapeQuote(block.trim()))
+        .filter(text => {
+          if (text.length > 0 && !seenTexts.has(text)) {
+            seenTexts.add(text);
+            return true;
+          }
+          return false;
+        });
+      
+      // Get context from editor - extract unique lines
+      const currentSelection = editor?.state?.selection;
+      const textBefore = extractContextLines(editor, currentSelection, 10, 'before');
+      const textAfter = extractContextLines(editor, currentSelection, 10, 'after');
+      
+      // Build prompt contexts
+      const promptContexts = [
+        ...selectedPlotNodes.map(node => ({
+          contextType: 'PlotCanvas',
+          id: node.id,
+          prompt: node.prompt || ''
+        })),
+        ...selectedCharacters.map(char => ({
+          contextType: 'Character',
+          id: char.id,
+          prompt: char.prompt || ''
+        })),
+        ...selectedWorldObjects.map(obj => ({
+          contextType: 'WorldObject',
+          id: obj.id,
+          prompt: obj.prompt || ''
+        }))
+      ];
+
+      const payload = {
+        bookId,
+        versionId,
+        chapterId,
+        text: textToRephrase,
+        textBefore,
+        textAfter,
+        llmModel,
+        customInstructions,
+        promptContexts,
+        feature : 'rephrase',
+      };
+
+      if(false) { //Calling local llm
+          console.log('Rephrase payload:', payload);
+          const response = await apiClient.post('/ai/rephrase', payload);
+
+          console.log('Rephrase response:', response.data);
+          if (!response.data || !response.data.rephrasedText) {
+            console.error('Invalid response from rephrase API:', response.data);
+            return;
+          }
+          const results: RephrasedParagraph = {
+            originalParagraph: textToRephrase,
+            rephrasedParagraph: response.data.rephrasedText,
+            selected: true,
+            edited: false,
+          };
+
+          setRephrasedResults(results);
+          setStep('comparison');
+      }
+      else {
+        /* setTextToRephrase(textToRephrase);
+         setIsLocalRephraseModalOpen(true);
+         setStep('localComparison');*/
+
+         handleRephraseDiffChecker(payload);
+
+        // onClose();
+      }  
+     
+    } catch (error) {
+      console.error('Failed to rephrase text:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDiffChecker = async () => {
+    setIsLoading(true);
+    setDiffStreamingComplete(false);
+    setDiffResults([]); // Clear previous results
+    setStep('results');
+    try {
+      const payload = {
+        originalText: rephrasedResults.originalParagraph.join('\n'),
+        newText: rephrasedResults.rephrasedParagraph,
+      };
+      console.log('Diff checker payload:', payload);
+       const token = localStorage.getItem('token');
+      
+
+      const response = await fetch('http://localhost:4000/api/ai/diffChecker', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'Connection': 'keep-alive',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const parsedChunk = JSON.parse(chunk);
+        console.log('Parsed diff chunk:', parsedChunk);
+        
+        if (parsedChunk.done) {
+          setDiffStreamingComplete(true);
+          break;
+        }
+
+        setDiffResults((prev) => [
+          ...prev,
+          {
+            rephrasedParagraph: parsedChunk.rephrasedParagraphContent,
+            originalParagraph: parsedChunk.originalParagraphContents,
+            selected: true,
+            diff: parsedChunk.diff,
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch diff:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAiFeatureResponse = async (payload) => {
+    setAiFeatureLoading(true);
+    setAiStreaming(true)
+    setStep('comparison');
+    try {
+     
+      console.log('RephraseDiffChecker payload:', payload);
+       const token = localStorage.getItem('token');
+      
+
+      const response = await fetch('http://localhost:4000/api/ai/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'Connection': 'keep-alive',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let accumulatedTextBlocks = [];
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const parsedChunk = JSON.parse(chunk);
+        console.log('Parsed diff chunk:', parsedChunk);
+        
+        if (parsedChunk.done) {
+          setAiStreaming(true);
+          break;
+        }
+
+         const results: RephrasedParagraph = {
+            originalParagraph: textToRephrase,
+            rephrasedParagraph: response.data.rephrasedText,
+            selected: true,
+            edited: false,
+          };
+
+          setRephrasedResults(results);
+          setStep('comparison');
+
+        setDiffResults((prev) => [
+          ...prev,
+          {
+            rephrasedParagraph: parsedChunk.rephrasedParagraphContent,
+            originalParagraph: parsedChunk.originalParagraphContents,
+            selected: true,
+            diff: '',
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch diff:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRephraseDiffChecker = async (payload) => {
+    setIsLoading(true);
+    setDiffStreamingComplete(false);
+    setDiffResults([]); // Clear previous results
+    setStep('results');
+    try {
+     
+      console.log('RephraseDiffChecker payload:', payload);
+       const token = localStorage.getItem('token');
+      
+
+      const response = await fetch('http://localhost:4000/api/ai/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'Connection': 'keep-alive',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const parsedChunk = JSON.parse(chunk);
+        console.log('Parsed diff chunk:', parsedChunk);
+        
+        if (parsedChunk.done) {
+          setDiffStreamingComplete(true);
+          break;
+        }
+
+        setDiffResults((prev) => [
+          ...prev,
+          {
+            rephrasedParagraph: parsedChunk.rephrasedParagraphContent,
+            originalParagraph: parsedChunk.originalParagraphContents,
+            selected: true,
+            diff: '',
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch diff:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  const handleToggleSelection = () => {
+    setRephrasedResults(prev => ({
+      ...prev,
+      selected: !prev.selected,
+    }));
+  };
+
+  const handleEditParagraph = (newText: string) => {
+    setRephrasedResults(prev => ({
+      ...prev,
+      customText: newText,
+      edited: true,
+    }));
+  };
+
+  const debounceSave = React.useMemo(() => {
+    let timeoutId: NodeJS.Timeout;
+    return (content: any) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(async () => {
+        if (editor) {
+          const plainText = editor.getText();
+          const totalCharacters = plainText.length;
+          const totalWords = plainText.trim().split(/\s+/).filter(word => word.length > 0).length;
+          
+          // Call the backend save API
+          //await onchange(content, totalCharacters, totalWords);
+        }
+      }, 500);
+    };
+  }, [bookId, versionId, chapterId, editor, updateChapterContent]);
+
+  const handleCloseModal = () => {
+    setIsLocalRephraseModalOpen(false);
+    onClose();
+    setStep('setup');
+    setRephrasedResults({
+      rephrasedParagraph: '',
+      originalParagraph: [],
+      selected: false,
+    });
+    setDiffResults([]);
+    setDiffStreamingComplete(false);
+    
+  };
+
+   // Fixed apply changes function for results step
+  const handleCompleteRephrasing = (rephrasedContent: string[]) => {
+    console.log("Rephrasing complete! Final Text:", rephrasedContent);
+    // You would typically update your chat input or main text area here with the rephrasedContent
+    // For demonstration, update the text area with the rephrased text
+    
+    let finalText = rephrasedContent;
+    let fromPos, toPos;
+     const highlightMarkAttrs = {
+            color: '#FFFACD', // A light yellow/lemonchiffon for a subtle highlight
+            backgroundColor: '#FFFACD', // A light yellow/lemonchiffon for a subtle highlight};
+     }
+    if (editor && rephrasedContent) {
+      const { from, to } = editor.state.selection;
+      
+      const nodes = rephrasedContent.map(str => ({
+        type: 'paragraph',
+        content: [
+          {
+            type: 'text',
+            text: str,
+            marks: [
+              {
+                  type: 'highlight', // <-- CHANGE THIS TO 'highlight'
+                  attrs: highlightMarkAttrs,
+              },
+            ],
+          },
+        ],
+      }));
+
+      
+
+      editor
+        .chain()
+        .focus()
+        .deleteSelection()
+        .command(({ tr, state }) => {
+          // Start inserting at the current selection position
+          let pos = tr.selection.from;
+          fromPos = pos;
+
+          nodes.forEach(node => {
+            const nodeType = state.schema.nodes[node.type];
+            const content = node.content.map(c => {
+              const marks = c.marks?.map(m =>
+                state.schema.marks[m.type].create(m.attrs)
+              ) || [];
+              return state.schema.text(c.text, marks);
+            });
+            const paragraphNode = nodeType.create({}, content);
+            tr.insert(pos, paragraphNode);
+            pos += paragraphNode.nodeSize;
+          });
+
+          toPos = pos;
+
+          return true;
+        })
+        .run();
+    }
+
+     debounceSave(editor.getJSON());
+
+    onApplyChanges(fromPos, toPos);
+    onClose();
+    setStep('setup');
+};
+
+  const handleApplyChanges = () => {
+  let finalText = '';
+  let rephrasedContent = diffResults;
+
+  if (step === 'results') {
+    finalText = diffResults
+      .filter(item => item.selected)
+      .map(item => item.customText || item.rephrasedParagraph)
+      .join('\n\n');
+  } else {
+    finalText = rephrasedResults.customText || rephrasedResults.rephrasedParagraph;
+    rephrasedContent = [rephrasedResults]; // wrap in array for consistent mapping
+  }
+
+  let fromPos, toPos;
+  const highlightMarkAttrs = {
+    color: '#FFFACD',
+    backgroundColor: '#FFFACD',
+  };
+
+  if (editor && rephrasedContent) {
+    const { from, to } = editor.state.selection;
+
+    const nodes = rephrasedContent.map(item => ({
+      type: 'paragraph',
+      content: [
+        {
+          type: 'text',
+          text: (item.customText || item.rephrasedParagraph || '').trim(),
+          marks: [
+            {
+              type: 'highlight',
+              attrs: highlightMarkAttrs,
+            },
+          ],
+        },
+      ],
+    }));
+
+    editor
+      .chain()
+      .focus()
+      .deleteSelection()
+      .command(({ tr, state }) => {
+        let pos = tr.selection.from;
+        fromPos = pos;
+
+        nodes.forEach(node => {
+          const nodeType = state.schema.nodes[node.type];
+          const content = node.content
+            .filter(c => !!c.text?.trim()) // 🧹 Prevent empty text nodes
+            .map(c => {
+              const marks = c.marks?.map(m =>
+                state.schema.marks[m.type].create(m.attrs)
+              ) || [];
+              return state.schema.text(c.text, marks);
+            });
+
+          if (content.length > 0) {
+            const paragraphNode = nodeType.create({}, content);
+            tr.insert(pos, paragraphNode);
+            pos += paragraphNode.nodeSize;
+          }
+        });
+
+        toPos = pos;
+        return true;
+      })
+      .run();
+  }
+
+  debounceSave(editor.getJSON());
+  onClose();
+  setStep('setup');
+  onApplyChanges(fromPos, toPos);
+};
+
+
+  const handleClose = () => {
+    onClose();
+    setStep('setup');
+    setRephrasedResults({
+      rephrasedParagraph: '',
+      originalParagraph: [],
+      selected: false,
+    });
+    setDiffResults([]);
+    setDiffStreamingComplete(false);
+  };
+
+  const addPreConfiguredWord = (word: string) => {
+    if (!noChangeWords.includes(word)) {
+      setNoChangeWords(prev => prev ? `${prev}, ${word}` : word);
+    }
+  };
+
+  const removeContextItem = (type: 'plot' | 'character' | 'world', id: string) => {
+    switch (type) {
+      case 'plot':
+        setSelectedPlotNodes(prev => prev.filter(item => item.id !== id));
+        break;
+      case 'character':
+        setSelectedCharacters(prev => prev.filter(item => item.id !== id));
+        break;
+      case 'world':
+        setSelectedWorldObjects(prev => prev.filter(item => item.id !== id));
+        break;
+    }
+  };
+
+  return (
+    <div>
+       {!isLocalRephraseModalOpen && (
+       <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="max-w-6xl h-[90vh] flex flex-col overflow-hidden bg-gradient-to-br from-slate-50 to-white border-0 shadow-2xl">
+        <DialogHeader className="pb-6 border-b border-slate-200/60 flex-shrink-0">
+          <DialogTitle className="flex items-center gap-3 text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 flex items-center justify-center">
+              <Wand2 className="w-5 h-5 text-white" />
+            </div>
+           {retrieveActionTitle(action)}
+            {step !== 'setup' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStep(step === 'results' ? 'comparison' : 'setup')}
+                className="ml-auto text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 rounded-lg transition-all duration-200"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            )}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-hidden">
+          {step === 'setup' && (
+            <div className="space-y-6 overflow-y-auto h-full pr-2">
+              {/* Custom Instructions */}
+              <div className="space-y-2">
+                <Label htmlFor="instructions" className="text-sm font-medium text-gray-700">
+                  Instructions
+                </Label>
+                <Textarea
+                  id="instructions"
+                  value={customInstructions}
+                  onChange={(e) => setCustomInstructions(e.target.value)}
+                  placeholder="Provide specific instructions for rephrasing..."
+                  className="min-h-[80px] resize-none border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Context Selection */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Plot Canvas Nodes */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">Plot Context</Label>
+                  <Popover open={showPlotSearch} onOpenChange={setShowPlotSearch}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-full justify-start text-gray-600 border-gray-200">
+                        <Search className="w-4 h-4 mr-2" />
+                        Add Plot Nodes
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-0">
+                      <Command>
+                        <CommandInput placeholder="Search plot nodes..." value={plotNodeSearch} onValueChange={setPlotNodeSearch} />
+                        <CommandList>
+                          <CommandEmpty>No nodes found.</CommandEmpty>
+                          <CommandGroup>
+                            {plotNodes.filter(node => 
+                              node.name.toLowerCase().includes(plotNodeSearch.toLowerCase()) &&
+                              !selectedPlotNodes.find(selected => selected.id === node.id)
+                            ).map(node => (
+                              <CommandItem
+                                key={node.id}
+                                onSelect={() => {
+                                  setSelectedPlotNodes(prev => [...prev, node]);
+                                  setShowPlotSearch(false);
+                                }}
+                              >
+                                <div>
+                                  <div className="font-medium">{node.name}</div>
+                                  <div className="text-sm text-gray-500">{node.type}</div>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedPlotNodes.map(node => (
+                      <Badge key={node.id} variant="secondary" className="text-xs">
+                        {node.name}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-3 w-3 p-0 ml-1"
+                          onClick={() => removeContextItem('plot', node.id)}
+                        >
+                          <X className="h-2 w-2" />
+                        </Button>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Characters */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">Characters</Label>
+                  <Popover open={showCharacterSearch} onOpenChange={setShowCharacterSearch}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-full justify-start text-gray-600 border-gray-200">
+                        <Search className="w-4 h-4 mr-2" />
+                        Add Characters
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-0">
+                      <Command>
+                        <CommandInput placeholder="Search characters..." value={characterSearch} onValueChange={setCharacterSearch} />
+                        <CommandList>
+                          <CommandEmpty>No characters found.</CommandEmpty>
+                          <CommandGroup>
+                            {characters.filter(char => 
+                              char.name.toLowerCase().includes(characterSearch.toLowerCase()) &&
+                              !selectedCharacters.find(selected => selected.id === char.id)
+                            ).map(char => (
+                              <CommandItem
+                                key={char.id}
+                                onSelect={() => {
+                                  setSelectedCharacters(prev => [...prev, char]);
+                                  setShowCharacterSearch(false);
+                                }}
+                              >
+                                <div>
+                                  <div className="font-medium">{char.name}</div>
+                                  <div className="text-sm text-gray-500">{char.type}</div>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedCharacters.map(char => (
+                      <Badge key={char.id} variant="secondary" className="text-xs">
+                        {char.name}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-3 w-3 p-0 ml-1"
+                          onClick={() => removeContextItem('character', char.id)}
+                        >
+                          <X className="h-2 w-2" />
+                        </Button>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                {/* World Objects */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">World Objects</Label>
+                  <Popover open={showWorldSearch} onOpenChange={setShowWorldSearch}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-full justify-start text-gray-600 border-gray-200">
+                        <Search className="w-4 h-4 mr-2" />
+                        Add Objects
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80 p-0">
+                      <Command>
+                        <CommandInput placeholder="Search world objects..." value={worldObjectSearch} onValueChange={setWorldObjectSearch} />
+                        <CommandList>
+                          <CommandEmpty>No world objects found.</CommandEmpty>
+                          <CommandGroup>
+                            {worldObjects.filter(obj => 
+                              obj.name.toLowerCase().includes(worldObjectSearch.toLowerCase()) &&
+                              !selectedWorldObjects.find(selected => selected.id === obj.id)
+                            ).map(obj => (
+                              <CommandItem
+                                key={obj.id}
+                                onSelect={() => {
+                                  setSelectedWorldObjects(prev => [...prev, obj]);
+                                  setShowWorldSearch(false);
+                                }}
+                              >
+                                <div>
+                                  <div className="font-medium">{obj.name}</div>
+                                  <div className="text-sm text-gray-500">{obj.type}</div>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedWorldObjects.map(obj => (
+                      <Badge key={obj.id} variant="secondary" className="text-xs">
+                        {obj.name}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-3 w-3 p-0 ml-1"
+                          onClick={() => removeContextItem('world', obj.id)}
+                        >
+                          <X className="h-2 w-2" />
+                        </Button>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* No Change Words */}
+              <div className="space-y-2">
+                <Label htmlFor="noChangeWords" className="text-sm font-medium text-gray-700">
+                  Protected Words
+                </Label>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-1">
+                    {preConfiguredWords.map((word, index) => (
+                      <Button
+                        key={index}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => addPreConfiguredWord(word)}
+                        className="text-xs h-6 px-2 text-gray-600 border-gray-200 hover:bg-gray-50"
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        {word}
+                      </Button>
+                    ))}
+                  </div>
+                  <Input
+                    id="noChangeWords"
+                    value={noChangeWords}
+                    onChange={(e) => setNoChangeWords(e.target.value)}
+                    placeholder="Enter words that should not be changed (comma-separated)"
+                    className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Settings Row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">AI Model</Label>
+                  <Select value={llmModel} onValueChange={setLlmModel}>
+                    <SelectTrigger className="border-gray-200 focus:border-blue-500 focus:ring-blue-500">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableModels.map((model) => (
+                        <SelectItem key={model.value} value={model.value}>
+                          {model.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="showDiff" className="text-sm font-medium text-gray-700">Show Differences</Label>
+                  <Switch
+                    id="showDiff"
+                    checked={showDifference}
+                    onCheckedChange={setShowDifference}
+                  />
+                </div>
+              </div>
+
+              {/* Selected Text Preview */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">Selected Text Preview</Label>
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg max-h-32 overflow-y-auto">
+                  <div className="space-y-1">
+                    {textBlocks.map((block, index) => (
+                      <p key={index} className="text-xs text-gray-600 border-l-2 border-blue-300 pl-2 py-1">
+                        {block}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {/* Action Buttons */}
+              
+              {(action === 'expand' || action === 'shorten' || action === 'summarize')  ? (
+                  <>
+                    <Button
+                      onClick={() => handleAIFeature(action)}
+                      disabled={aiFeatureLoading || !selectedText}
+                      className="w-full h-12 text-lg font-semibold bg-blue-600 hover:bg-blue-700 text-white"
+                      size="lg"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                          Rephrasing...
+                        </>
+                      ) : (
+                        <>
+                          <Wand2 className="w-5 h-5 mr-2" />
+                          Rephrase Text
+                        </>
+                      )}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    {/* Rephrase Button */}
+                    <Button
+                      onClick={handleRephrase}
+                      disabled={isLoading || !selectedText}
+                      className="w-full h-12 text-lg font-semibold bg-blue-600 hover:bg-blue-700 text-white"
+                      size="lg"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                          Rephrasing...
+                        </>
+                      ) : (
+                        <>
+                          <Wand2 className="w-5 h-5 mr-2" />
+                          Rephrase Text
+                        </>
+                      )}
+                    </Button>
+                  </>
+                )}
+
+              
+             
+            </div>
+          )}
+
+         
+
+
+          {step === 'results' && (
+            <div className="flex flex-col h-full animate-fade-in">
+              {isLoading ? (
+                <div className="flex-1 flex flex-col items-center justify-center py-16 space-y-4">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 animate-pulse"></div>
+                    <Loader2 className="w-8 h-8 text-white absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-spin" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-lg font-semibold text-slate-700 mb-2">Processing Differences</h3>
+                    <p className="text-slate-500">Analyzing and comparing text variations...</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Modern Status Header */}
+                  <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 mb-6 flex-shrink-0">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-indigo-500/5"></div>
+                    <div className="relative flex items-center justify-between p-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="relative">
+                          <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 flex items-center justify-center shadow-md">
+                            <span className="text-sm font-bold text-white">
+                              {diffResults.filter(r => r.selected).length}
+                            </span>
+                          </div>
+                          <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full flex items-center justify-center">
+                            <Check className="w-2 h-2 text-white" />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-base font-semibold text-slate-800">
+                            {diffResults.filter(r => r.selected).length} of {diffResults.length} Selected
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {diffStreamingComplete ? 'Analysis complete' : 'Processing...'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <Button 
+                        onClick={handleApplyChanges} 
+                        disabled={!diffStreamingComplete || diffResults.filter(r => r.selected).length === 0}
+                        className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 disabled:from-gray-400 disabled:to-gray-500 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 disabled:cursor-not-allowed"
+                        size="sm"
+                      >
+                        {!diffStreamingComplete ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4 mr-2" />
+                            Apply Changes
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Diff Results Grid */}
+                  <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                    {diffResults.map((result, index) => (
+                      <div key={index} className="animate-fade-in" style={{ animationDelay: `${index * 100}ms` }}>
+                        <ModernDiffCard
+                          result={result}
+                          index={index}
+                          onToggleSelection={(index) => {
+                            setDiffResults(prev => 
+                              prev.map((item, i) => 
+                                i === index ? { ...item, selected: !item.selected } : item
+                              )
+                            );
+                          }}
+                          onEditParagraph={(index, newText) => {
+                            setDiffResults(prev => 
+                              prev.map((item, i) => 
+                                i === index 
+                                  ? { ...item, rephrasedParagraph: newText, edited: true, selected: true }
+                                  : item
+                              )
+                            );
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {step === 'comparison' && (
+            <div className="flex flex-col h-full animate-fade-in">
+              {isLoading ? (
+                <div className="flex-1 flex flex-col items-center justify-center py-16 space-y-4">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 animate-pulse"></div>
+                    <Loader2 className="w-8 h-8 text-white absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-spin" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-lg font-semibold text-slate-700 mb-2">Rephrasing Content</h3>
+                    <p className="text-slate-500">AI is working on your text...</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Comparison Header */}
+                  <div className="text-center py-4 flex-shrink-0">
+                    <h3 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-1">
+                      Text Comparison
+                    </h3>
+                    <p className="text-slate-600 text-sm">Review the changes and decide what to keep</p>
+                  </div>
+
+                  {/* Comparison Grid */}
+                  <div className="flex-1 grid grid-cols-2 gap-4 overflow-hidden">
+                    {/* Original Text Panel */}
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                      <div className="bg-red-50 px-4 py-3 border-b border-red-100">
+                        <h4 className="font-medium text-red-700 flex items-center gap-2 text-sm">
+                          <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                          Original Text
+                        </h4>
+                      </div>
+                      <div className="flex-1 p-4 overflow-y-auto">
+                        <div className="prose prose-sm max-w-none">
+                          <pre className="text-sm leading-relaxed text-red-700 whitespace-pre-wrap font-sans">
+                            {rephrasedResults.originalParagraph.join('\n')}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Rephrased Text Panel */}
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                      <div className="bg-green-50 px-4 py-3 border-b border-green-100">
+                        <h4 className="font-medium text-green-700 flex items-center gap-2 text-sm">
+                          <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                          Rephrased Text
+                        </h4>
+                      </div>
+                      <div className="flex-1 p-4 overflow-y-auto">
+                        <div className="prose prose-sm max-w-none">
+                          <pre className="text-sm leading-relaxed text-green-700 whitespace-pre-wrap font-sans">
+                            {rephrasedResults.rephrasedParagraph}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 flex-shrink-0">
+                    <Button
+                      variant="outline"
+                      onClick={handleDiffChecker}
+                      disabled={isLoading}
+                      className="border-slate-300 hover:bg-slate-50 transition-all duration-200"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Loading Diff...
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-4 h-4 mr-2" />
+                          Show Detailed Diff
+                        </>
+                      )}
+                    </Button>
+
+                    <Button
+                      onClick={handleApplyChanges}
+                      className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white font-medium px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                    >
+                      <Check className="w-4 h-4 mr-2" />
+                      Apply Changes
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+    )}
+       {step === 'localComparison' && isLocalRephraseModalOpen && (
+            <div className="flex flex-col h-full animate-fade-in">
+            
+                <RephraseComparisonModal
+                  textToRephrase={textToRephrase}
+                  onClose={handleCloseModal}
+                  onCompleteRephrasing={handleCompleteRephrasing}
+                />
+            </div>
+          )}
+    </div>
+    
+  );
+};
+
+interface ModernDiffCardProps {
+  result: RephrasedParagraph;
+  index: number;
+  onToggleSelection: (index: number) => void;
+  onEditParagraph: (index: number, text: string) => void;
+}
+
+const ModernDiffCard: React.FC<ModernDiffCardProps> = ({
+  result,
+  index,
+  onToggleSelection,
+  onEditParagraph,
+}) => {
+  const [isEditingOriginal, setIsEditingOriginal] = useState(false);
+  const [isEditingRephrased, setIsEditingRephrased] = useState(false);
+  const [editTextOriginal, setEditTextOriginal] = useState<string>(result.customText || result.originalParagraph?.join('\n\n') || '');
+  const [editTextRephrased, setEditTextRephrased] = useState(result.customText || result.rephrasedParagraph);
+  console.log("Initial Rephrased Text:", result);
+  const handleSaveOriginal = () => {
+    onEditParagraph(index, editTextOriginal);
+    setIsEditingOriginal(false);
+  };
+
+  const handleSaveRephrased = () => {
+    onEditParagraph(index, editTextRephrased);
+    setIsEditingRephrased(false);
+  };
+
+  const displayRephrasedText = result.customText || result.rephrasedParagraph;
+  console.log("Display Rephrased Text:", displayRephrasedText);
+  return (
+    <div className={cn(
+      "group relative bg-white rounded-lg border transition-all duration-200 hover:shadow-sm",
+      result.selected 
+        ? "border-green-200 bg-green-50/20" 
+        : "border-gray-200 hover:border-gray-300"
+    )}>
+      <div className="flex items-start gap-3 p-4">
+        {/* Original Text Column */}
+        <div className="flex-1 space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+            <span className="text-xs font-medium text-red-600 uppercase tracking-wide">Original</span>
+          </div>
+          
+          {isEditingOriginal ? (
+            <div className="space-y-2">
+              <Textarea
+                value={editTextOriginal}
+                onChange={(e) => setEditTextOriginal(e.target.value)}
+                className="min-h-[2px] resize-none text-sm border-red-200 focus:border-red-400 rounded-lg"
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleSaveOriginal} className="h-6 px-2 text-xs bg-green-500 hover:bg-green-600 text-white rounded">
+                  <Check className="w-3 h-3 mr-1" />
+                  Save
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setIsEditingOriginal(false)} className="h-6 px-2 text-xs text-slate-600 rounded">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div 
+              className="p-3 bg-gray-50 border border-gray-100 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+              onClick={() => setIsEditingOriginal(true)}
+            >
+              <p className="text-sm leading-relaxed text-red-700">
+                {result.originalParagraph?.join('\n\n')}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Selection Control */}
+        <div className="flex flex-col items-center gap-2 px-1 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onToggleSelection(index)}
+            className={cn(
+              "h-8 w-8 p-0 rounded-full transition-all duration-200",
+              result.selected 
+                ? "bg-green-500 hover:bg-green-600 text-white" 
+                : "bg-gray-200 hover:bg-red-200 text-gray-600 hover:text-red-700"
+            )}
+          >
+            {result.selected ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <X className="w-4 h-4" />
+            )}
+          </Button>
+          
+          <ArrowRight className={cn(
+            "w-4 h-4 transition-colors",
+            result.selected ? "text-green-500" : "text-gray-400"
+          )} />
+        </div>
+
+        {/* Rephrased Text Column */}
+        <div className="flex-1 space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+            <span className="text-xs font-medium text-green-600 uppercase tracking-wide">Rephrased</span>
+            {result.edited && (
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+            )}
+          </div>
+          
+          {isEditingRephrased ? (
+            <div className="space-y-2">
+              <Textarea
+                value={editTextRephrased}
+                onChange={(e) => setEditTextRephrased(e.target.value)}
+                className="min-h-[60px] resize-none text-sm border-green-200 focus:border-green-400 rounded-lg"
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleSaveRephrased} className="h-6 px-2 text-xs bg-green-500 hover:bg-green-600 text-white rounded">
+                  <Check className="w-3 h-3 mr-1" />
+                  Save
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setIsEditingRephrased(false)} className="h-6 px-2 text-xs text-slate-600 rounded">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div 
+              className={cn(
+                "p-3 border rounded-lg cursor-pointer transition-colors",
+                result.selected 
+                  ? "bg-gray-50 border-gray-100 hover:bg-gray-100"
+                  : "bg-gray-50 border-gray-100 hover:bg-gray-100"
+              )}
+              onClick={() => setIsEditingRephrased(true)}
+            >
+              <p className={cn(
+                "text-sm leading-relaxed",
+                result.selected 
+                  ? "text-green-700" 
+                  : "text-gray-600"
+              )}>
+                {displayRephrasedText}
+              </p>
+            </div>
+          )}
+
+           
+        </div>
+      </div>
+    </div>
+  );
+};

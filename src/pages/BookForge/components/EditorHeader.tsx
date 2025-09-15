@@ -1965,7 +1965,11 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                     <div className="flex justify-end">
                         <div className="flex items-center gap-4 flex-shrink-0">
                             {/* Tools Menu */}
-                            <DropdownMenu trigger={
+                            <DropdownMenu 
+                                portalToBody
+                                align="right"
+                                menuClassName="w-56 rounded-md bg-gradient-to-br from-gray-900 to-black dark:from-slate-100 dark:to-slate-200 shadow-lg ring-1 ring-black/10 dark:ring-white/10 p-1"
+                                trigger={
                                 <button className="flex items-center gap-2 p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">
                                     <SparklesIcon className="h-5 w-5" />
                                     <span className="text-sm font-medium">Tools</span>
@@ -1987,14 +1991,27 @@ const EditorHeader: React.FC<EditorHeaderProps> = ({
                                 </button>
                             </DropdownMenu>
 
-                             <DropdownMenu trigger={<button className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">{theme === 'dark' ? <MoonIcon className="h-5 w-5" /> : <SunIcon className="h-5 w-5" />}</button>}>
+                                      <DropdownMenu 
+                                          portalToBody
+                                          align="right"
+                                          menuClassName="w-56 rounded-md bg-gradient-to-br from-gray-900 to-black dark:from-slate-100 dark:to-slate-200 shadow-lg ring-1 ring-black/10 dark:ring-white/10 p-1"
+                                          trigger={<button className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">{theme === 'dark' ? <MoonIcon className="h-5 w-5" /> : <SunIcon className="h-5 w-5" />}</button>}>
                                 <button onClick={() => handleThemeChange('light')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <SunIcon className="h-4 w-4"/> Light</button>
                                 <button onClick={() => handleThemeChange('dark')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <MoonIcon className="h-4 w-4"/> Dark</button>
                                 <button onClick={() => handleThemeChange('system')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <ComputerDesktopIcon className="h-4 w-4"/> System</button>
                             </DropdownMenu>
 
-                            <DropdownMenu trigger={<img src="https://picsum.photos/seed/user/40/40" alt="User Avatar" className="w-9 h-9 rounded-full cursor-pointer ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-gray-900 ring-transparent hover:ring-purple-500 transition-all"/>}>
-                                <a href="#" className="block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">My Account</a>
+                            <DropdownMenu 
+                                portalToBody
+                                align="right"
+                                menuClassName="w-56 rounded-md bg-gradient-to-br from-gray-900 to-black dark:from-slate-100 dark:to-slate-200 shadow-lg ring-1 ring-black/10 dark:ring-white/10 p-1"
+                                trigger={<img src="https://picsum.photos/seed/user/40/40" alt="User Avatar" className="w-9 h-9 rounded-full cursor-pointer ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-gray-900 ring-transparent hover:ring-purple-500 transition-all"/>}>
+                                <button 
+                                    onClick={() => { try { window.dispatchEvent(new CustomEvent('account:open')); } catch {} }}
+                                    className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                                >
+                                    My Account
+                                </button>
                                 <button 
                                     onClick={handleLock}
                                     className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"

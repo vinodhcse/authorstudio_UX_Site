@@ -13,6 +13,8 @@ declare module '@tiptap/core' {
       setSceneBeat: (options?: {
         chapterName?: string;
         sceneBeatIndex?: number;
+  chapterId?: string;
+  sceneId?: string;
         summary?: string;
         goal?: string;
         characters?: string[];
@@ -50,6 +52,30 @@ export const SceneBeatExtension = Node.create<SceneBeatOptions>({
           }
           return {
             'data-id': attributes.id,
+          };
+        },
+      },
+      chapterId: {
+        default: null,
+        parseHTML: element => element.getAttribute('data-chapter-id'),
+        renderHTML: attributes => {
+          if (!attributes.chapterId) {
+            return {};
+          }
+          return {
+            'data-chapter-id': attributes.chapterId,
+          };
+        },
+      },
+      sceneId: {
+        default: null,
+        parseHTML: element => element.getAttribute('data-scene-id'),
+        renderHTML: attributes => {
+          if (!attributes.sceneId) {
+            return {};
+          }
+          return {
+            'data-scene-id': attributes.sceneId,
           };
         },
       },
@@ -168,6 +194,8 @@ export const SceneBeatExtension = Node.create<SceneBeatOptions>({
           id,
           chapterName: options.chapterName || 'Chapter 1',
           sceneBeatIndex: options.sceneBeatIndex || 1,
+          chapterId: (options as any).chapterId || null,
+          sceneId: (options as any).sceneId || null,
           summary: options.summary || '',
           goal: options.goal || '',
           characters: options.characters || [],
