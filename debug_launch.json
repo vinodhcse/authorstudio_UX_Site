@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Tauri app (MSVC)",
+      "type": "cppvsdbg",               
+      "request": "launch",
+      "program": "${workspaceFolder}\\src-tauri\\target\\debug\\app.exe",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RUST_BACKTRACE": "full",
+        "RUST_LOG": "tauri=trace,your_app_name=trace",
+        "TAURI_DEVTOOLS": "1"
+      }
+    },
+    {
+      "name": "Launch Tauri app (LLDB)",
+      "type": "lldb",                   
+      "request": "launch",
+      "program": "${workspaceFolder}/src-tauri/target/debug/your_app_name",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RUST_BACKTRACE": "full",
+        "RUST_LOG": "tauri=trace,your_app_name=trace",
+        "TAURI_DEVTOOLS": "1"
+      }
+    }
+  ]
+}

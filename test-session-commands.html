@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Session Commands</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { margin: 10px; padding: 10px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #005a85; }
+        .result { margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 4px; white-space: pre-wrap; }
+        .error { background: #ffe6e6; }
+    </style>
+</head>
+<body>
+    <h1>Test Session Commands (Migrated to app_surreal)</h1>
+    
+    <div>
+        <button onclick="testGetSession()">Get Session</button>
+        <button onclick="testSaveSession()">Save Session</button>
+        <button onclick="testClearSession()">Clear Session</button>
+        <button onclick="testGetUserKeys()">Get User Keys</button>
+        <button onclick="testSaveUserKeys()">Save User Keys</button>
+    </div>
+    
+    <div id="results"></div>
+
+    <script>
+        const { invoke } = window.__TAURI__.tauri;
+
+        function addResult(title, data, isError = false) {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = 'result' + (isError ? ' error' : '');
+            div.textContent = `${title}:\n${JSON.stringify(data, null, 2)}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        async function testGetSession() {
+            try {
+                const result = await invoke('app_get_session');
+                addResult('Get Session', result);
+            } catch (error) {
+                addResult('Get Session Error', error, true);
+            }
+        }
+
+        async function testSaveSession() {
+            try {
+                const session = {
+                    id: "current",
+                    user_id: "test_user_123",
+                    email: "test@example.com",
+                    name: "Test User",
+                    device_id: "device_123",
+                    access_exp: Date.now() + 3600000, // 1 hour from now
+                    subscription_status: "active",
+                    session_state: "active",
+                    updated_at: Date.now()
+                };
+                const result = await invoke('app_save_session', { session });
+                addResult('Save Session', result);
+            } catch (error) {
+                addResult('Save Session Error', error, true);
+            }
+        }
+
+        async function testClearSession() {
+            try {
+                const result = await invoke('app_clear_session');
+                addResult('Clear Session', result);
+            } catch (error) {
+                addResult('Clear Session Error', error, true);
+            }
+        }
+
+        async function testGetUserKeys() {
+            try {
+                const result = await invoke('app_get_user_keys', { userId: 'test_user_123' });
+                addResult('Get User Keys', result);
+            } catch (error) {
+                addResult('Get User Keys Error', error, true);
+            }
+        }
+
+        async function testSaveUserKeys() {
+            try {
+                const userKeys = {
+                    user_id: "test_user_123",
+                    udek_wrap_appkey: new Array(32).fill(0), // 32 byte array
+                    kdf_salt: new Array(16).fill(0), // 16 byte array
+                    kdf_iters: 100000,
+                    updated_at: Date.now()
+                };
+                const result = await invoke('app_save_user_keys', { userKeys });
+                addResult('Save User Keys', result);
+            } catch (error) {
+                addResult('Save User Keys Error', error, true);
+            }
+        }
+
+        // Test on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            addResult('Page Loaded', 'Ready to test session commands');
+        });
+    </script>
+</body>
+</html>

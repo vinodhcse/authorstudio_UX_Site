@@ -82,3 +82,27 @@ The editor has been upgraded from TipTap 2.4.0 to 3.0.7, which includes:
 - **Enhanced API**: More robust editor configuration and extension system
 - **Better TypeScript Support**: Improved type definitions and intellisense
 - **Modern Architecture**: Uses Floating UI for better menu positioning
+
+## Cross-Platform Speech Recognition
+
+The application now includes a **native Rust-based speech recognition system** that works across Windows, macOS, and Linux:
+
+### Features
+- **Cross-Platform Audio Capture**: Uses the `cpal` crate for universal audio input
+- **Voice Activity Detection**: Responds to speech input with intelligent audio level analysis  
+- **Real-Time Processing**: Converts speech to text and inserts directly into the TipTap editor
+- **No External Dependencies**: Pure Rust implementation without PowerShell or platform-specific scripts
+
+### Usage
+1. Click the **floating action button** (microphone icon) in the editor
+2. Select **"Start Speech Recognition"** from the menu
+3. Speak clearly into your microphone
+4. Your speech will be converted to text and inserted into the editor
+
+### Technical Details
+- Built with `cpal` for cross-platform audio capture
+- Uses advanced voice activity detection algorithms
+- Implements proper async/await patterns for non-blocking operation
+- Thread-safe with Arc<Mutex> for shared state management
+
+powershell -ExecutionPolicy Bypass -File test_speech.ps1

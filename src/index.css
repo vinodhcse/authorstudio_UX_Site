@@ -50,6 +50,25 @@
   scrollbar-width: none;  /* Firefox */
 }
 
+/* Asset Image Node Styles */
+.asset-image-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.asset-image-wrapper.selected {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.asset-image-loading.selected,
+.asset-image-error.selected {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
 /* Custom Node Selection Styles */
 .ProseMirror-selectednode {
   outline: none !important;

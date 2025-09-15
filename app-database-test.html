@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Database Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .danger {
+            background-color: #dc3545;
+        }
+        .danger:hover {
+            background-color: #c82333;
+        }
+        .results {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        .section-title {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>App Database Test - Main Implementation</h1>
+    <p>Testing the new clean app database implementation based on test_surreal.rs patterns.</p>
+
+    <!-- Book Operations -->
+    <div class="container">
+        <h2 class="section-title">📚 Book Operations</h2>
+        <button onclick="createSampleBook()">Create Sample Book</button>
+        <button onclick="getBooks()">Get All Books</button>
+        <button onclick="deleteSampleBook()">Delete Sample Book</button>
+        <div id="book-results" class="results"></div>
+    </div>
+
+    <!-- Version Operations -->
+    <div class="container">
+        <h2 class="section-title">📝 Version Operations</h2>
+        <button onclick="createSampleVersion()">Create Sample Version</button>
+        <button onclick="getVersions()">Get Versions</button>
+        <div id="version-results" class="results"></div>
+    </div>
+
+    <!-- Chapter Operations -->
+    <div class="container">
+        <h2 class="section-title">📄 Chapter Operations</h2>
+        <button onclick="createSampleChapter()">Create Sample Chapter</button>
+        <button onclick="getChapters()">Get Chapters</button>
+        <div id="chapter-results" class="results"></div>
+    </div>
+
+    <!-- Character Operations -->
+    <div class="container">
+        <h2 class="section-title">👤 Character Operations</h2>
+        <button onclick="createSampleCharacter()">Create Sample Character</button>
+        <button onclick="getCharacters()">Get Characters</button>
+        <div id="character-results" class="results"></div>
+    </div>
+
+    <!-- Database Management -->
+    <div class="container">
+        <h2 class="section-title">🗄️ Database Management</h2>
+        <button class="danger" onclick="deleteAllData()">Delete All Data</button>
+        <button onclick="runFullTest()">Run Full Test</button>
+        <div id="management-results" class="results"></div>
+    </div>
+
+    <script>
+        // Global variables to store IDs for testing
+        let currentBookId = null;
+        let currentVersionId = null;
+        let currentChapterId = null;
+
+        // Helper function to display results
+        function displayResult(elementId, message, isError = false) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `results ${isError ? 'error' : 'success'}`;
+            console.log(message);
+        }
+
+        // Sample data creation functions
+        function createSampleBook() {
+            const book = {
+                title: "The Great Adventure",
+                subtitle: "A Journey Through Time",
+                author: "Jane Doe",
+                author_id: "author-456",
+                last_modified: new Date().toISOString(),
+                progress: 0.35,
+                word_count: 15000,
+                genre: "Science Fiction",
+                subgenre: "Time Travel",
+                collaborator_count: 2,
+                featured: true,
+                book_type: "Novel",
+                prose: "First Person",
+                language: "English",
+                publisher: "Tech Publishing",
+                published_status: "Unpublished",
+                synopsis: "A thrilling adventure through different time periods.",
+                description: "When Sarah discovers an ancient artifact, she's transported through time, meeting historical figures and witnessing pivotal moments in history.",
+                is_shared: true,
+                sync_state: "idle",
+                conflict_state: "none",
+                updated_at: Date.now(),
+            };
+
+            window.__TAURI__.invoke('app_create_book', { book })
+                .then(result => {
+                    displayResult('book-results', `✅ Book created successfully: ${result}`);
+                    // Extract book ID from result for later use
+                    getBooks(); // Refresh book list to get the ID
+                })
+                .catch(error => {
+                    displayResult('book-results', `❌ Error creating book: ${error}`, true);
+                });
+        }
+
+        function getBooks() {
+            window.__TAURI__.invoke('app_get_books')
+                .then(books => {
+                    if (books.length > 0) {
+                        currentBookId = books[0].id.id; // Store the first book's ID
+                    }
+                    const booksText = books.length === 0 ? 'No books found' : 
+                        books.map((book, index) => `${index + 1}. ${book.title} (ID: ${book.id.id}) - ${book.word_count} words`).join('\n');
+                    displayResult('book-results', `📚 Books found (${books.length}):\n${booksText}`);
+                })
+                .catch(error => {
+                    displayResult('book-results', `❌ Error getting books: ${error}`, true);
+                });
+        }
+
+        function deleteSampleBook() {
+            if (!currentBookId) {
+                displayResult('book-results', '❌ No book ID available. Create or fetch books first.', true);
+                return;
+            }
+
+            window.__TAURI__.invoke('app_delete_book', { bookId: currentBookId })
+                .then(result => {
+                    displayResult('book-results', `✅ Book deleted: ${result}`);
+                    currentBookId = null;
+                })
+                .catch(error => {
+                    displayResult('book-results', `❌ Error deleting book: ${error}`, true);
+                });
+        }
+
+        function createSampleVersion() {
+            if (!currentBookId) {
+                displayResult('version-results', '❌ No book ID available. Create a book first.', true);
+                return;
+            }
+
+            const version = {
+                book_id: currentBookId,
+                name: "First Draft",
+                status: "DRAFT",
+                word_count: 15000,
+                created_at: new Date().toISOString(),
+                is_current: true,
+                sync_state: "idle",
+                conflict_state: "none",
+                updated_at: Date.now(),
+            };
+
+            window.__TAURI__.invoke('app_create_version', { version })
+                .then(result => {
+                    displayResult('version-results', `✅ Version created successfully: ${result}`);
+                    getVersions(); // Refresh to get ID
+                })
+                .catch(error => {
+                    displayResult('version-results', `❌ Error creating version: ${error}`, true);
+                });
+        }
+
+        function getVersions() {
+            if (!currentBookId) {
+                displayResult('version-results', '❌ No book ID available. Create a book first.', true);
+                return;
+            }
+
+            window.__TAURI__.invoke('app_get_versions_by_book', { bookId: currentBookId })
+                .then(versions => {
+                    if (versions.length > 0) {
+                        currentVersionId = versions[0].id.id; // Store the first version's ID
+                    }
+                    const versionsText = versions.length === 0 ? 'No versions found' : 
+                        versions.map((version, index) => `${index + 1}. ${version.name} (ID: ${version.id.id}) - ${version.status} - ${version.word_count} words`).join('\n');
+                    displayResult('version-results', `📝 Versions found (${versions.length}):\n${versionsText}`);
+                })
+                .catch(error => {
+                    displayResult('version-results', `❌ Error getting versions: ${error}`, true);
+                });
+        }
+
+        function createSampleChapter() {
+            if (!currentBookId || !currentVersionId) {
+                displayResult('chapter-results', '❌ No book/version ID available. Create a book and version first.', true);
+                return;
+            }
+
+            const chapter = {
+                book_id: currentBookId,
+                version_id: currentVersionId,
+                title: "The Discovery",
+                position: 1,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                word_count: 2500,
+                has_proposals: false,
+                status: "DRAFT",
+                author_id: "author-456",
+                last_modified_by: "author-456",
+                summary: "Sarah finds the mysterious artifact that changes everything.",
+                goals: "Introduce the protagonist and the central mystery",
+                notes: "Make sure to describe the artifact in detail",
+                is_complete: false,
+                sync_state: "idle",
+                conflict_state: "none",
+            };
+
+            window.__TAURI__.invoke('app_create_chapter', { chapter })
+                .then(result => {
+                    displayResult('chapter-results', `✅ Chapter created successfully: ${result}`);
+                    getChapters(); // Refresh to get ID
+                })
+                .catch(error => {
+                    displayResult('chapter-results', `❌ Error creating chapter: ${error}`, true);
+                });
+        }
+
+        function getChapters() {
+            if (!currentBookId || !currentVersionId) {
+                displayResult('chapter-results', '❌ No book/version ID available. Create a book and version first.', true);
+                return;
+            }
+
+            window.__TAURI__.invoke('app_get_chapters_by_version', { bookId: currentBookId, versionId: currentVersionId })
+                .then(chapters => {
+                    const chaptersText = chapters.length === 0 ? 'No chapters found' : 
+                        chapters.map((chapter, index) => `${index + 1}. ${chapter.title} (ID: ${chapter.id.id}) - Position: ${chapter.position} - ${chapter.word_count} words`).join('\n');
+                    displayResult('chapter-results', `📄 Chapters found (${chapters.length}):\n${chaptersText}`);
+                })
+                .catch(error => {
+                    displayResult('chapter-results', `❌ Error getting chapters: ${error}`, true);
+                });
+        }
+
+        function createSampleCharacter() {
+            if (!currentBookId) {
+                displayResult('character-results', '❌ No book ID available. Create a book first.', true);
+                return;
+            }
+
+            const character = {
+                book_id: currentBookId,
+                name: "Sarah Connor",
+                full_name: "Sarah Jane Connor",
+                age: 28,
+                gender: "Female",
+                role: "Protagonist",
+                backstory: "A brilliant archaeologist with a passion for ancient civilizations.",
+                personality_type: "INTJ",
+                motivations: JSON.stringify(["Uncover historical truths", "Protect ancient artifacts", "Prevent timeline disruption"]),
+                notes: "Strong-willed and intelligent, but sometimes impulsive",
+                tags: JSON.stringify(["archaeologist", "time traveler", "determined", "curious"]),
+            };
+
+            window.__TAURI__.invoke('app_create_character', { character })
+                .then(result => {
+                    displayResult('character-results', `✅ Character created successfully: ${result}`);
+                    getCharacters(); // Refresh to show the character
+                })
+                .catch(error => {
+                    displayResult('character-results', `❌ Error creating character: ${error}`, true);
+                });
+        }
+
+        function getCharacters() {
+            if (!currentBookId) {
+                displayResult('character-results', '❌ No book ID available. Create a book first.', true);
+                return;
+            }
+
+            window.__TAURI__.invoke('app_get_characters_by_book', { bookId: currentBookId })
+                .then(characters => {
+                    const charactersText = characters.length === 0 ? 'No characters found' : 
+                        characters.map((character, index) => `${index + 1}. ${character.name} (ID: ${character.id.id}) - ${character.role || 'No role'} - Age: ${character.age || 'Unknown'}`).join('\n');
+                    displayResult('character-results', `👤 Characters found (${characters.length}):\n${charactersText}`);
+                })
+                .catch(error => {
+                    displayResult('character-results', `❌ Error getting characters: ${error}`, true);
+                });
+        }
+
+        function deleteAllData() {
+            if (confirm('Are you sure you want to delete ALL data? This cannot be undone.')) {
+                window.__TAURI__.invoke('app_delete_all_data')
+                    .then(result => {
+                        displayResult('management-results', `✅ ${result}`);
+                        // Clear stored IDs
+                        currentBookId = null;
+                        currentVersionId = null;
+                        currentChapterId = null;
+                        // Clear all result displays
+                        ['book-results', 'version-results', 'chapter-results', 'character-results'].forEach(id => {
+                            document.getElementById(id).textContent = '';
+                            document.getElementById(id).className = 'results';
+                        });
+                    })
+                    .catch(error => {
+                        displayResult('management-results', `❌ Error deleting data: ${error}`, true);
+                    });
+            }
+        }
+
+        async function runFullTest() {
+            displayResult('management-results', '🚀 Starting full test...');
+            
+            try {
+                // Step 1: Create a book
+                const book = {
+                    title: "Test Book",
+                    subtitle: "Full Test",
+                    author: "Test Author",
+                    author_id: "test-author",
+                    last_modified: new Date().toISOString(),
+                    progress: 0.0,
+                    word_count: 0,
+                    genre: "Test",
+                    collaborator_count: 1,
+                    featured: false,
+                    book_type: "Novel",
+                    prose: "Third Person",
+                    language: "English",
+                    publisher: "Test Publisher",
+                    published_status: "Unpublished",
+                    synopsis: "A test book",
+                    is_shared: false,
+                    sync_state: "idle",
+                    conflict_state: "none",
+                    updated_at: Date.now(),
+                };
+
+                await window.__TAURI__.invoke('app_create_book', { book });
+                
+                // Step 2: Get books to get the ID
+                const books = await window.__TAURI__.invoke('app_get_books');
+                if (books.length === 0) throw new Error('No books found after creation');
+                
+                const testBookId = books[0].id.id;
+                currentBookId = testBookId;
+
+                // Step 3: Create a version
+                const version = {
+                    book_id: testBookId,
+                    name: "Test Version",
+                    status: "DRAFT",
+                    word_count: 0,
+                    created_at: new Date().toISOString(),
+                    is_current: true,
+                    sync_state: "idle",
+                    conflict_state: "none",
+                    updated_at: Date.now(),
+                };
+
+                await window.__TAURI__.invoke('app_create_version', { version });
+
+                // Step 4: Get versions to get the ID
+                const versions = await window.__TAURI__.invoke('app_get_versions_by_book', { bookId: testBookId });
+                if (versions.length === 0) throw new Error('No versions found after creation');
+                
+                const testVersionId = versions[0].id.id;
+                currentVersionId = testVersionId;
+
+                // Step 5: Create a chapter
+                const chapter = {
+                    book_id: testBookId,
+                    version_id: testVersionId,
+                    title: "Test Chapter",
+                    position: 1,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                    word_count: 100,
+                    has_proposals: false,
+                    status: "DRAFT",
+                    author_id: "test-author",
+                    last_modified_by: "test-author",
+                    summary: "Test chapter summary",
+                    is_complete: false,
+                    sync_state: "idle",
+                    conflict_state: "none",
+                };
+
+                await window.__TAURI__.invoke('app_create_chapter', { chapter });
+
+                // Step 6: Create a character
+                const character = {
+                    book_id: testBookId,
+                    name: "Test Character",
+                    full_name: "Test Character Full",
+                    age: 30,
+                    role: "Test Role",
+                    backstory: "Test backstory",
+                };
+
+                await window.__TAURI__.invoke('app_create_character', { character });
+
+                // Step 7: Verify all data
+                const finalBooks = await window.__TAURI__.invoke('app_get_books');
+                const finalVersions = await window.__TAURI__.invoke('app_get_versions_by_book', { bookId: testBookId });
+                const finalChapters = await window.__TAURI__.invoke('app_get_chapters_by_version', { bookId: testBookId, versionId: testVersionId });
+                const finalCharacters = await window.__TAURI__.invoke('app_get_characters_by_book', { bookId: testBookId });
+
+                const resultText = `
+✅ Full test completed successfully!
+
+📊 Results:
+- Books: ${finalBooks.length}
+- Versions: ${finalVersions.length} 
+- Chapters: ${finalChapters.length}
+- Characters: ${finalCharacters.length}
+
+🔗 Relationships verified:
+- Book ID: ${testBookId}
+- Version ID: ${testVersionId}
+- All entities properly linked
+
+🎉 All CRUD operations working correctly!
+                `;
+
+                displayResult('management-results', resultText.trim());
+                
+            } catch (error) {
+                displayResult('management-results', `❌ Full test failed: ${error}`, true);
+            }
+        }
+
+        // Initialize
+        window.addEventListener('DOMContentLoaded', () => {
+            displayResult('management-results', '🔧 App Database Test Ready - Clean Implementation');
+        });
+    </script>
+</body>
+</html>

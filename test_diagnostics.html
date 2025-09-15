@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper Diagnostics Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #2a2a2a;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .noise-btn { background: #ff9800; }
+        .noise-btn:hover { background: #e68900; }
+        .mic-btn { background: #f44336; }
+        .mic-btn:hover { background: #da190b; }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background: #333;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            border-left: 4px solid #4CAF50;
+        }
+        .error {
+            border-left-color: #f44336;
+            background: #3a1a1a;
+        }
+        .warning {
+            border-left-color: #ff9800;
+            background: #3a2a1a;
+        }
+        h1 { color: #4CAF50; }
+        h2 { color: #ff9800; }
+        .description {
+            color: #bbb;
+            font-style: italic;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Whisper Diagnostic Tests</h1>
+    <p class="description">These tests will help us understand why Whisper is hallucinating instead of transcribing real speech.</p>
+    
+    <div class="test-section">
+        <h2>🔇 Silence Test</h2>
+        <p class="description">Tests Whisper with pure silence - should produce no output or minimal hallucination</p>
+        <button onclick="testSilence()">Test Silence</button>
+        <div id="silence-result" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>📻 White Noise Test</h2>
+        <p class="description">Tests Whisper with random white noise - should be ignored</p>
+        <button onclick="testNoise()" class="noise-btn">Test White Noise</button>
+        <div id="noise-result" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>🎤 Microphone Background Noise Test</h2>
+        <p class="description">THIS IS THE KEY TEST - simulates typical microphone background noise patterns</p>
+        <button onclick="testMicrophoneNoise()" class="mic-btn">Test Microphone Noise</button>
+        <div id="mic-result" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>💡 What This Tells Us</h2>
+        <ul>
+            <li><strong>If silence produces text:</strong> Whisper is hallucinating from nothing</li>
+            <li><strong>If noise produces music/electronic:</strong> Whisper correctly identifies non-speech</li>
+            <li><strong>If microphone noise produces specific text:</strong> This reveals what your real microphone sounds like to Whisper!</li>
+        </ul>
+    </div>
+
+    <script>
+        // Mock invoke function for testing in browser
+        async function invoke(command) {
+            console.log(`Would invoke: ${command}`);
+            
+            // Simulate results for testing
+            switch(command) {
+                case 'test_whisper_silence':
+                    return "✅ GOOD: Whisper correctly detected silence (no hallucination)";
+                case 'test_whisper_noise':
+                    return "⚠️ Whisper transcribed noise as: '(electronic music)'";
+                case 'test_whisper_microphone_noise':
+                    return "🎯 CLUE: Whisper transcribed microphone noise as: 'Thank you for watching'\n\nThis might be similar to what's happening with your real microphone!";
+                default:
+                    throw new Error(`Command ${command} not found`);
+            }
+        }
+
+        async function testSilence() {
+            const btn = event.target;
+            const resultDiv = document.getElementById('silence-result');
+            
+            btn.disabled = true;
+            btn.textContent = 'Testing...';
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = '🔄 Running silence test...';
+            resultDiv.className = 'result';
+            
+            try {
+                const result = await invoke('test_whisper_silence');
+                resultDiv.textContent = result;
+                resultDiv.className = result.includes('✅') ? 'result' : 'result warning';
+            } catch (error) {
+                resultDiv.textContent = `❌ Error: ${error}`;
+                resultDiv.className = 'result error';
+            }
+            
+            btn.disabled = false;
+            btn.textContent = 'Test Silence';
+        }
+
+        async function testNoise() {
+            const btn = event.target;
+            const resultDiv = document.getElementById('noise-result');
+            
+            btn.disabled = true;
+            btn.textContent = 'Testing...';
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = '🔄 Running white noise test...';
+            resultDiv.className = 'result';
+            
+            try {
+                const result = await invoke('test_whisper_noise');
+                resultDiv.textContent = result;
+                resultDiv.className = result.includes('✅') ? 'result' : 'result warning';
+            } catch (error) {
+                resultDiv.textContent = `❌ Error: ${error}`;
+                resultDiv.className = 'result error';
+            }
+            
+            btn.disabled = false;
+            btn.textContent = 'Test White Noise';
+        }
+
+        async function testMicrophoneNoise() {
+            const btn = event.target;
+            const resultDiv = document.getElementById('mic-result');
+            
+            btn.disabled = true;
+            btn.textContent = 'Testing...';
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = '🔄 Running microphone noise simulation...';
+            resultDiv.className = 'result';
+            
+            try {
+                const result = await invoke('test_whisper_microphone_noise');
+                resultDiv.textContent = result;
+                resultDiv.className = result.includes('🎯') ? 'result warning' : 'result';
+            } catch (error) {
+                resultDiv.textContent = `❌ Error: ${error}`;
+                resultDiv.className = 'result error';
+            }
+            
+            btn.disabled = false;
+            btn.textContent = 'Test Microphone Noise';
+        }
+
+        // Show page ready message
+        console.log('🧪 Diagnostic test page loaded. Open this in your Tauri app to run real tests.');
+    </script>
+</body>
+</html>

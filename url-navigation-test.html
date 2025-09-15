@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Navigation Test - AuthorStudio</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            background: #f8fafc;
+            color: #334155;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+        }
+        h1 {
+            color: #1e293b;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #475569;
+            margin-top: 30px;
+        }
+        .link-group {
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .test-link {
+            display: block;
+            color: #3b82f6;
+            text-decoration: none;
+            padding: 8px 12px;
+            margin: 5px 0;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            background: white;
+            transition: all 0.2s;
+        }
+        .test-link:hover {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        .url-pattern {
+            background: #1e293b;
+            color: #f1f5f9;
+            padding: 10px;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+        }
+        .param-list {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .status {
+            background: #dcfce7;
+            border: 1px solid #16a34a;
+            color: #15803d;
+            padding: 10px;
+            border-radius: 6px;
+            margin: 20px 0;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 AuthorStudio URL Navigation Test</h1>
+        
+        <div class="status">
+            ✅ URL-based tab navigation and hierarchical node viewing has been successfully implemented!
+        </div>
+
+        <h2>🆕 New Features</h2>
+        <div class="param-list">
+            <strong>Hierarchical Node Viewing:</strong><br>
+            • Only shows selected node + ancestors + descendants<br>
+            • Selected node and ancestors are expanded<br>
+            • Children are collapsed but visible<br>
+            • Breadcrumb navigation with back button<br>
+            • Clickable breadcrumb path to ancestors
+        </div>
+
+        <h2>📋 URL Pattern</h2>
+        <div class="url-pattern">
+            http://localhost:3004/#/book/{bookId}/version/{versionId}?mode={mode}&tab={tab}&selectedNodeId={nodeId}
+        </div>
+
+        <div class="param-list">
+            <strong>Query Parameters:</strong><br>
+            • <code>mode</code>: Writing | Planning | Formatting | Brainstorming<br>
+            • <code>tab</code>: PlotArcs | WorldBuilding | Character (only for Planning mode)<br>
+            • <code>selectedNodeId</code>: Node ID for plot navigation (preserves existing functionality)
+        </div>
+
+        <h2>🧪 Test Links</h2>
+
+        <div class="link-group">
+            <h3>Basic Navigation</h3>
+            <a href="http://localhost:3004/#/book/1/version/v1" class="test-link" target="_blank">
+                Default (Writing Mode)
+            </a>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning" class="test-link" target="_blank">
+                Planning Mode (Default to Plot Arcs)
+            </a>
+        </div>
+
+        <div class="link-group">
+            <h3>Planning Tabs</h3>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=PlotArcs" class="test-link" target="_blank">
+                Planning → Plot Arcs
+            </a>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=WorldBuilding" class="test-link" target="_blank">
+                Planning → World Building
+            </a>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=Character" class="test-link" target="_blank">
+                Planning → Characters
+            </a>
+        </div>
+
+        <div class="link-group">
+            <h3>Hierarchical Navigation</h3>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=PlotArcs&selectedNodeId=outline-1" class="test-link" target="_blank">
+                Outline Level (Root) 
+            </a>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=PlotArcs&selectedNodeId=act-1" class="test-link" target="_blank">
+                Act Level → Act 1
+            </a>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=PlotArcs&selectedNodeId=chapter-1" class="test-link" target="_blank">
+                Chapter Level → Chapter 1
+            </a>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=PlotArcs&selectedNodeId=scene-1" class="test-link" target="_blank">
+                Scene Level → Scene 1
+            </a>
+        </div>
+
+        <div class="link-group">
+            <h3>Different Story Parts</h3>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=PlotArcs&selectedNodeId=act-2" class="test-link" target="_blank">
+                Act 2 with Children
+            </a>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=PlotArcs&selectedNodeId=chapter-4" class="test-link" target="_blank">
+                Chapter 4 (Act 2)
+            </a>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=PlotArcs&selectedNodeId=scene-7" class="test-link" target="_blank">
+                Scene 7 (Deep Level)
+            </a>
+        </div>
+
+        <div class="link-group">
+            <h3>Advanced Combinations</h3>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=WorldBuilding&selectedNodeId=outline-1" class="test-link" target="_blank">
+                World Building + Node Selection
+            </a>
+            <a href="http://localhost:3004/#/book/1/version/v1?mode=Planning&tab=Character&selectedNodeId=scene-1" class="test-link" target="_blank">
+                Characters + Scene Selected
+            </a>
+        </div>
+
+        <h2>🔧 Features Implemented</h2>
+        <ul>
+            <li>✅ URL parameters automatically set when switching modes/tabs</li>
+            <li>✅ Direct URL navigation loads correct mode and tab</li>
+            <li>✅ Backward compatibility with existing selectedNodeId parameter</li>
+            <li>✅ URL updates preserve other query parameters</li>
+            <li>✅ Clean URLs (removes default parameters)</li>
+            <li>✅ Browser back/forward button support</li>
+            <li>🆕 Hierarchical node viewing (only shows relevant nodes)</li>
+            <li>🆕 Breadcrumb navigation with clickable path</li>
+            <li>🆕 Back button to return to overview</li>
+            <li>🆕 Ancestor expansion and descendant visibility</li>
+        </ul>
+
+        <h2>📝 URL Structure Examples</h2>
+        <div class="param-list">
+            <strong>Default URLs (cleaned):</strong><br>
+            • Writing mode: <code>/book/1/version/v1</code><br>
+            • Planning + Plot Arcs: <code>/book/1/version/v1?mode=Planning</code><br><br>
+            
+            <strong>Full URLs:</strong><br>
+            • <code>/book/1/version/v1?mode=Planning&tab=WorldBuilding</code><br>
+            • <code>/book/1/version/v1?mode=Planning&tab=PlotArcs&selectedNodeId=act-2</code><br>
+            • <code>/book/1/version/v1?mode=Planning&tab=Character&selectedNodeId=scene-1</code>
+        </div>
+
+        <h2>🎯 Usage Instructions</h2>
+        <ol>
+            <li>Click any test link above to verify navigation works</li>
+            <li>Use browser back/forward buttons to test history</li>
+            <li>Copy URLs to share specific views</li>
+            <li>Notice how URLs automatically update when switching tabs in the app</li>
+            <li><strong>🆕 Try hierarchical navigation:</strong>
+                <ul>
+                    <li>Click on a deep node (like Scene 1) to see breadcrumb</li>
+                    <li>Use breadcrumb links to navigate to parent levels</li>
+                    <li>Use "Back" button to return to overview</li>
+                    <li>Notice only relevant nodes are shown</li>
+                </ul>
+            </li>
+        </ol>
+
+        <p style="text-align: center; margin-top: 40px; color: #64748b;">
+            <em>Server running on localhost:3004 • Ready for testing! 🚀</em>
+        </p>
+    </div>
+</body>
+</html>

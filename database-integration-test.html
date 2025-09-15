@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Integration Test</title>
+    <script src="https://unpkg.com/@tauri-apps/api@2/dist/index.iife.js"></script>
+</head>
+<body>
+    <h1>Database Integration Test</h1>
+    <div id="output"></div>
+
+    <script>
+        const { invoke } = window.__TAURI__.core;
+        
+        async function testDatabaseIntegration() {
+            const output = document.getElementById('output');
+            
+            try {
+                // Test database initialization
+                output.innerHTML += '<p>🔄 Testing database initialization...</p>';
+                await invoke('init_database', { dataDir: 'test_integration' });
+                output.innerHTML += '<p>✅ Database initialized successfully</p>';
+                
+                // Test getting user books
+                output.innerHTML += '<p>🔄 Testing get_user_books...</p>';
+                const books = await invoke('get_user_books', { userId: 'test_user_123' });
+                output.innerHTML += `<p>✅ Retrieved ${books.length} books</p>`;
+                output.innerHTML += `<pre>${JSON.stringify(books, null, 2)}</pre>`;
+                
+                // Test session operations
+                output.innerHTML += '<p>🔄 Testing session operations...</p>';
+                const session = await invoke('get_session');
+                output.innerHTML += `<p>✅ Session retrieved: ${session ? 'exists' : 'none'}</p>`;
+                
+                output.innerHTML += '<p>🎉 All database integration tests passed!</p>';
+                
+            } catch (error) {
+                output.innerHTML += `<p>❌ Error: ${error}</p>`;
+                console.error('Database test error:', error);
+            }
+        }
+        
+        // Run tests when page loads
+        window.addEventListener('DOMContentLoaded', testDatabaseIntegration);
+    </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useEditor, EditorContent, Editor as TipTapEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -26,13 +26,22 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Placeholder from '@tiptap/extension-placeholder';
 import { motion, AnimatePresence } from 'framer-motion';
+import { loadUserSettings, type AISettings, type AIFeaturePreset } from '../../../stores/userSettingsStore';
+import { runFeature } from '../../../ai/runFeature';
 
-import { chapterContent } from '../../../data/chapterContent';
+import { Theme, Book, Version } from '../../../types';
+import PlanningPage from './PlanningPage';
+import CreateChapterPage from './CreateChapterPage';
+
+// Tool Window System Imports
+import DockSidebar from '../../../components/DockSidebar';
+import ToolManager from '../../../components/ToolManager';
+import { useToolWindowStore } from '../../../stores/toolWindowStore';
 import { 
     BoldIcon, ItalicIcon, UnderlineIcon, StrikethroughIcon, SuperscriptIcon, SubscriptIcon,
     HighlightIcon, CodeIcon, TextQuoteIcon, AlignLeftIcon, AlignCenterIcon, AlignRightIcon, 
     AlignJustifyIcon, LinkIcon, ImageIcon, TableIcon, MinusIcon, ListIcon, ListOrderedIcon,
-    CheckSquareIcon, PaletteIcon, Wand2Icon, UserIcon, MessageSquareIcon, 
+    CheckSquareIcon, PaletteIcon, Wand2Icon, 
     ChevronDownIcon, SparklesIcon, StickyNoteIcon, SlashIcon,
     PenIcon, PlusIcon, TheaterIcon
 } from '../../../constants';
@@ -42,11 +51,18 @@ import { SceneBeatExtension } from '../../../extensions/SceneBeatExtension';
 import { NoteSectionExtension } from '../../../extensions/NoteSectionExtension';
 import { CharacterImpersonationExtension } from '../../../extensions/CharacterImpersonationExtension';
 import { TestExtension } from '../../../extensions/TestExtension';
+import { DictationSectionNode } from '../../../components/custom-nodes/DictationSectionNode';
 import { SimpleExtension } from '../../../extensions/SimpleExtension';
+
+//Tauri
+import { useClipboard } from '../../../hooks/useClipboard';
+import { toast } from '../../../hooks/use-toast';
+import { Toaster } from '../../../components/ui/toaster';
+import { ChapterRevisionManager } from '../../../services/ChapterRevisionManager';
+import { useBookContext } from '../../../contexts/BookContext';
 
 const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }> = ({ trigger, children }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [position, setPosition] = useState({ top: 0, left: 0 });
     const ref = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLDivElement>(null);
 
@@ -73,7 +89,6 @@ const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }
             window.removeEventListener("resize", handleScroll);
         };
     }, [isOpen]);
-
     useEffect(() => {
         if (isOpen && triggerRef.current) {
             // Use requestAnimationFrame to ensure DOM is updated
@@ -124,7 +139,7 @@ const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }
                 };
                 
                 console.log('Final position:', finalPosition);
-                setPosition(finalPosition);
+                // Position is handled by the fixed positioning in the style
             });
         }
     }, [isOpen]);
@@ -157,6 +172,160 @@ const Dropdown: React.FC<{ trigger: React.ReactNode; children: React.ReactNode }
     );
 };
 
+// Helper component: recompute an anchor point (coordsAtPos) on scroll/resize and report back
+const RecomputeAnchor: React.FC<{ view: any; anchorPos: number; onUpdate: (pt: { top: number; left: number }) => void }>
+ = ({ view, anchorPos, onUpdate }) => {
+    // Keep latest callback without retriggering the effect
+    const cbRef = React.useRef(onUpdate);
+    useEffect(() => { cbRef.current = onUpdate; }, [onUpdate]);
+    useEffect(() => {
+        if (!view || typeof anchorPos !== 'number') return;
+        const recompute = () => {
+            try {
+                const c = view.coordsAtPos(anchorPos);
+                cbRef.current({ top: c.top, left: c.left });
+            } catch {}
+        };
+        recompute();
+        const handler = () => recompute();
+        window.addEventListener('scroll', handler, true);
+        window.addEventListener('resize', handler);
+        return () => {
+            window.removeEventListener('scroll', handler, true);
+            window.removeEventListener('resize', handler);
+        };
+    }, [view, anchorPos]);
+    return null;
+};
+
+// Modal: Pair each original paragraph with its rephrased paragraph
+type RephrasePair = { original: string[]; rephrased: string };
+const RephrasePairsModal: React.FC<{
+    pairs: RephrasePair[];
+    busy?: boolean;
+    onRephraseOne: (rowIndex: number) => Promise<string>;
+    onAccept: (finalParagraphs: string[]) => void;
+    onClose: () => void;
+}> = ({ pairs, busy = false, onRephraseOne, onAccept, onClose }) => {
+    const [rows, setRows] = useState(pairs.map(p => ({ original: p.original, rephrased: p.rephrased, useOriginal: false })));
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const [busyRow, setBusyRow] = useState<number | null>(null);
+
+    const updateRephrased = (i: number, text: string) => {
+        setRows(prev => prev.map((r, idx) => idx === i ? { ...r, rephrased: text } : r));
+    };
+    const toggleUseOriginal = (i: number) => {
+        setRows(prev => prev.map((r, idx) => idx === i ? { ...r, useOriginal: !r.useOriginal } : r));
+    };
+    const rephraseAgain = async (i: number) => {
+        try {
+            setBusyRow(i);
+            const newText = await onRephraseOne(i);
+            if (typeof newText === 'string') updateRephrased(i, newText);
+        } finally {
+            setBusyRow(null);
+        }
+    };
+    const acceptAll = () => {
+        const finals = rows.map(r => (r.useOriginal ? r.original.join('\n') : r.rephrased));
+        onAccept(finals);
+    };
+
+    // Keep rows in sync if new pairs arrive while modal is open (streaming updates)
+    useEffect(() => {
+        if (!pairs || pairs.length === 0) return;
+        setRows(prev => {
+            // Only append new rows if pairs length increased
+            if (pairs.length <= prev.length) return prev;
+            const extras = pairs.slice(prev.length).map(p => ({ original: p.original, rephrased: p.rephrased, useOriginal: false }));
+            return [...prev, ...extras];
+        });
+    }, [pairs]);
+
+    return (
+        <div className="fixed inset-0 bg-black/50 z-[140] flex items-center justify-center">
+            <div className="rounded-lg shadow-lg ring-1 ring-black/10 dark:ring-white/10 w-[1000px] max-h-[85vh] overflow-hidden flex flex-col bg-gradient-to-br from-gray-900 to-black dark:from-slate-100 dark:to-slate-200">
+                <div className="p-4 border-b border-white/10 dark:border-black/10 flex items-center justify-between">
+                    <div className="text-lg font-semibold flex items-center gap-2 text-slate-100 dark:text-slate-900">
+                        AI Text Rephraser
+                        {busy && (
+                            <span className="inline-flex items-center gap-1 text-xs text-blue-300">
+                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                                </svg>
+                                Streaming…
+                            </span>
+                        )}
+                        {!busy && (
+                            <span className="text-xs text-slate-300 dark:text-slate-700">{rows.length} received</span>
+                        )}
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={onClose} className="px-3 py-1.5 rounded bg-white/10 text-white dark:bg-black/10 dark:text-black">Cancel</button>
+                        <button onClick={acceptAll} className="px-3 py-1.5 rounded bg-purple-600 text-white">Accept All</button>
+                    </div>
+                </div>
+                <div className="p-3 overflow-auto divide-y divide-white/10 dark:divide-black/10 bg-white dark:bg-gray-900">
+                    {busy && rows.length === 0 && (
+                        <div className="py-10 flex items-center justify-center text-sm text-gray-500 gap-2">
+                            <svg className="animate-spin h-5 w-5 text-blue-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                            </svg>
+                            Waiting for first line…
+                        </div>
+                    )}
+                    {rows.map((row, i) => (
+                        <div key={i} className="py-3 grid grid-cols-2 gap-3 items-stretch">
+                            <div className="flex flex-col">
+                                <div className="text-xs uppercase text-gray-500 mb-1">Original</div>
+                                <div className="p-2 rounded border border-gray-200 dark:border-gray-800 text-sm bg-gray-50 dark:bg-gray-800 min-h-[140px] h-full">
+                                    <div className="space-y-1">
+                                        {row.original.map((ln, idx) => (
+                                            <div key={idx} className="whitespace-pre-wrap">{ln}</div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex flex-col">
+                                <div className="flex items-center justify-between mb-1">
+                                    <div className="text-xs uppercase text-gray-500">Rephrased</div>
+                                    <label className="text-xs flex items-center gap-1">
+                                        <input type="checkbox" checked={row.useOriginal} onChange={() => toggleUseOriginal(i)} />
+                                        Use original
+                                    </label>
+                                </div>
+                                {editingIndex === i ? (
+                                    <textarea
+                                        className="w-full p-2 rounded border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm min-h-[140px] h-full"
+                                        value={row.rephrased}
+                                        onChange={e => updateRephrased(i, e.target.value)}
+                                        onBlur={() => setEditingIndex(null)}
+                                        disabled={row.useOriginal}
+                                        autoFocus
+                                    />
+                                ) : (
+                                    <div
+                                        className={`p-2 rounded border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm whitespace-pre-wrap min-h-[140px] h-full ${row.useOriginal ? 'opacity-60' : 'cursor-text'}`}
+                                        onClick={() => !row.useOriginal && setEditingIndex(i)}
+                                    >
+                                        {row.rephrased}
+                                    </div>
+                                )}
+                                <div className="mt-2 flex gap-2">
+                                    <button onClick={() => rephraseAgain(i)} disabled={busyRow === i || row.useOriginal} className="px-2 py-1 rounded bg-indigo-600 text-white text-xs disabled:opacity-50">
+                                        {busyRow === i ? 'Rephrasing…' : 'Rephrase again'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
 const NoteModal: React.FC<{ 
     isOpen: boolean; 
     onClose: () => void; 
@@ -214,21 +383,748 @@ const NoteModal: React.FC<{
     );
 };
 
-const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
+const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.Dispatch<React.SetStateAction<boolean>>; isAIRunning: boolean }> = ({ editor, setIsAIRunning, isAIRunning }) => {
     const [isVisible, setIsVisible] = useState(false);
     const [position, setPosition] = useState({ top: 0, left: 0 });
     const [showNoteModal, setShowNoteModal] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+    const [aiSettings, setAISettings] = useState<AISettings | null>(null);
+    const [selectedPresets, setSelectedPresets] = useState<Record<string, string>>({});
+    const abortRef = useRef<AbortController | null>(null);
+    const beforeDocSnapshotRef = useRef<any | null>(null);
+    const stoppedRef = useRef<boolean>(false);
+    const [presetModal, setPresetModal] = useState<{ open: boolean; featureId?: string }>(() => ({ open: false }));
+    const [compareModal, setCompareModal] = useState<{ open: boolean; variants: Array<{ label: string; text: string }>; onAccept?: (text: string) => void }>({ open: false, variants: [] });
+    const [pairsModal, setPairsModal] = useState<{ open: boolean; pairs: RephrasePair[]; from: number; to: number }>({ open: false, pairs: [], from: 0, to: 0 });
+    const [selectionOverlay, setSelectionOverlay] = useState<null | {
+        anchor: { top: number; left: number };
+        anchorPos: number; // ProseMirror position to recompute coords on scroll/resize
+        status: 'loading' | 'confirm';
+        onAccept?: () => void;
+        onReject?: () => void;
+    }>(null);
+    
 
     // AI Tools
+    // Load AI settings once
+    useEffect(() => {
+        (async () => {
+            try {
+                const settings = await loadUserSettings();
+                setAISettings(settings.settings.aiSettings);
+                // seed defaults for each feature
+                const map: Record<string, string> = {};
+                settings.settings.aiSettings.features.forEach(f => {
+                    const def = f.presets.find(p => p.enabled ?? true) || f.presets[0];
+                    if (def) map[f.id] = def.id;
+                });
+                setSelectedPresets(map);
+            } catch (e) {
+                console.warn('AI settings load failed', e);
+            }
+        })();
+        // Listen for settings changes globally
+        const onChanged = async () => {
+            try {
+                const s = await loadUserSettings();
+                setAISettings(s.settings.aiSettings);
+                // Recompute default selected presets when settings update
+                const map: Record<string, string> = {};
+                s.settings.aiSettings.features.forEach(f => {
+                    const def = f.presets.find(p => p.enabled ?? true) || f.presets[0];
+                    if (def) map[f.id] = def.id;
+                });
+                setSelectedPresets(map);
+            } catch {}
+        };
+        if (typeof window !== 'undefined') {
+            window.addEventListener('user_settings:changed', onChanged);
+        }
+        return () => {
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('user_settings:changed', onChanged);
+            }
+        };
+    }, []);
+
+    // Single rephrase action; runtime decides single vs multi-line based on selection
     const aiTools = [
-        { name: 'Rephrase', icon: Wand2Icon, action: () => console.log('Rephrase') },
-        { name: 'Expand', icon: Wand2Icon, action: () => console.log('Expand') },
-        { name: 'Shorten', icon: Wand2Icon, action: () => console.log('Shorten') },
-        { name: 'Validate', icon: SparklesIcon, action: () => console.log('Validate') },
-        { name: 'Impersonate', icon: UserIcon, action: () => console.log('Impersonate') },
-        { name: 'Conversation', icon: MessageSquareIcon, action: () => console.log('Conversation') },
-    ];
+        { name: 'Rephrase', featureId: 'rephrasing', icon: Wand2Icon },
+        { name: 'Expand', featureId: 'expanding', icon: Wand2Icon },
+        { name: 'Shorten', featureId: 'concising', icon: Wand2Icon },
+        { name: 'Validate', featureId: 'validation', icon: SparklesIcon },
+        // Additional features can be wired later
+    ] as const;
+
+    const getSelectedPreset = (featureId: string, presetId?: string): AIFeaturePreset | undefined => {
+        if (!aiSettings) return undefined;
+        const feature = aiSettings.features.find(f => f.id === featureId);
+        if (!feature) return undefined;
+        const id = presetId || selectedPresets[featureId];
+        return feature.presets.find(p => p.id === id) || feature.presets.find(p => p.enabled ?? true) || feature.presets[0];
+    };
+
+    // (removed) legacy streaming helper replaced by paragraph-aware streaming
+
+    const handleRunTool = async (featureId: string) => {
+        // Always work with a local snapshot of AI settings; lazily load if missing
+        let settingsLocal: AISettings | null = aiSettings;
+        if (!settingsLocal) {
+            try {
+                const s = await loadUserSettings();
+                settingsLocal = s.settings.aiSettings;
+                setAISettings(settingsLocal);
+                // Seed selected presets map if empty
+                if (Object.keys(selectedPresets).length === 0) {
+                    const map: Record<string, string> = {};
+                    settingsLocal.features.forEach(f => {
+                        const def = f.presets.find(p => p.enabled ?? true) || f.presets[0];
+                        if (def) map[f.id] = def.id;
+                    });
+                    setSelectedPresets(map);
+                }
+            } catch (e) {
+                console.warn('AI settings load failed in handleRunTool', e);
+                return;
+            }
+        }
+        const computePreset = (settings: AISettings, fId: string, pid?: string): AIFeaturePreset | undefined => {
+            const feature = settings.features.find(f => f.id === fId);
+            if (!feature) return undefined;
+            const chosenId = pid || selectedPresets[fId];
+            return feature.presets.find(p => p.id === chosenId)
+                || feature.presets.find(p => p.enabled ?? true)
+                || feature.presets[0];
+        };
+        const preset = computePreset(settingsLocal!, featureId, selectedPresets[featureId]);
+        if (!preset) return;
+        console.log('[Editor] handleRunTool clicked', { featureId, presetId: preset.id });
+        const { from, to } = editor.state.selection;
+        const hasSelection = from !== to;
+        if (!hasSelection) return;
+        // Preserve multi-line selections: add newlines between block nodes and for hardBreaks
+        const selectionText = editor.state.doc.textBetween(from, to, '\n', '\n');
+
+    // Caret-based anchoring used for the mini panel
+        // Snapshot full document to support a robust Reject (restore snapshot)
+    const beforeDocSnapshot = (() => { try { return editor.getJSON(); } catch { return null; } })();
+    beforeDocSnapshotRef.current = beforeDocSnapshot;
+
+        // Rephrase: multi-line gets JSON, single-line gets plain text
+        const isMultiTool = featureId === 'rephrase_multiple_lines';
+        const isMultiline = isMultiTool || selectionText.includes('\n');
+    if (featureId === 'rephrasing' || isMultiTool) {
+            abortRef.current?.abort();
+            abortRef.current = new AbortController();
+            stoppedRef.current = false; // reset user-stop flag at new run start
+            if (isMultiline) {
+                setIsAIRunning(true);
+                // Prefer a JSON-capable preset if configured for multi-line
+                const hasMLFeature = !!settingsLocal!.features.find(f => f.id === 'rephrase_multiple_lines');
+                const requestedFeatureId = hasMLFeature ? 'rephrase_multiple_lines' : 'rephrasing';
+                const presetML = isMultiTool
+                    ? preset
+                    : (computePreset(settingsLocal!, requestedFeatureId) || preset);
+                const instruction = 'Respond strictly as JSON. Prefer an object with a "pairs" array; a plain JSON array is also accepted. Each item MUST be an object with either {"original": string[], "rephrased": string} or {"originalParagraphs": string[], "rephrasedText": string}. IMPORTANT: Stream results as an array of objects and emit each object as soon as it is ready. Do not wait to bundle all objects together. No code fences.';
+                // SDK-level JSON schema enforcement (object with pairs: []) for non-stream fallback
+                const responseFormat = {
+                    type: 'json_schema',
+                    json_schema: {
+                        name: 'RephrasePairs',
+                        schema: {
+                            type: 'object',
+                            additionalProperties: false,
+                            required: ['pairs'],
+                            properties: {
+                                pairs: {
+                                    type: 'array',
+                                    minItems: 1,
+                                    items: {
+                                        type: 'object',
+                                        additionalProperties: false,
+                                        required: ['original', 'rephrased'],
+                                        properties: {
+                                            original: { type: 'array', items: { type: 'string' }, minItems: 1 },
+                                            rephrased: { type: 'string' }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        strict: true
+                    }
+                } as any;
+
+                // Open the modal immediately with no rows; we'll append as we parse
+                setPairsModal({ open: true, pairs: [], from, to });
+
+                // Streaming JSON array parser (state machine) that tolerates partial objects and variations in keys
+                // It detects the pairs array start and then emits each completed object immediately.
+                let pairsStarted = false;        // we have seen the start of the pairs array [
+                let scanWindow = '';             // rolling window for detecting "pairs": [
+                let inObj = false;               // currently inside an object within the pairs array
+                let objDepth = 0;                // curly brace depth for current object
+                let objBuf = '';                 // buffer for the current object text
+                let inObjString = false;         // string-state inside current object
+                let inObjEscape = false;         // escape-state inside string
+
+                // Normalize possible key variants to our RephrasePair shape
+                const normalizePair = (obj: any): RephrasePair | null => {
+                    if (!obj || typeof obj !== 'object') return null;
+                    const origRaw = obj.original ?? obj.originalParagraphs ?? obj.original_paragraphs ?? obj.orig ?? obj.originalLines ?? obj.originalTexts ?? obj.original_texts ?? obj.origianlPartagrapohs;
+                    let original: string[] | null = null;
+                    if (Array.isArray(origRaw)) original = origRaw.map((x) => String(x));
+                    else if (typeof origRaw === 'string') original = [origRaw];
+                    // Some providers may nest original as object with lines
+                    else if (origRaw && typeof origRaw === 'object' && Array.isArray(origRaw.lines)) original = origRaw.lines.map((x: any) => String(x));
+
+                    const reRaw = obj.rephrased ?? obj.rephrasedText ?? obj.repjrasedText ?? obj.paraphrased ?? obj.paraphrase ?? obj.text ?? obj.output ?? obj.result;
+                    const rephrased = (reRaw !== undefined && reRaw !== null) ? String(reRaw) : undefined;
+
+                    if (!original || !rephrased) return null;
+                    return { original, rephrased };
+                };
+
+                const pushObject = (raw: string) => {
+                    try {
+                        const obj = JSON.parse(raw);
+                        // direct item case
+                        let pair = normalizePair(obj);
+                        // wrapped single-item case: { pairs: [ {..} ] }
+                        if (!pair && Array.isArray(obj?.pairs) && obj.pairs.length === 1) {
+                            pair = normalizePair(obj.pairs[0]);
+                        }
+                        if (!pair) return;
+                        setPairsModal(prev => ({ ...prev, pairs: [...prev.pairs, pair as RephrasePair] }));
+                    } catch {
+                        // ignore malformed chunk
+                    }
+                };
+
+                try {
+                    await runFeature({
+                        featureId: requestedFeatureId,
+                        settings: settingsLocal!,
+                        selectionText,
+                        presetId: presetML?.id,
+                        signal: abortRef.current.signal,
+                        stream: true,
+                        appendToUserPrompt: instruction,
+                        responseFormat,
+                        onDelta: (chunk: string) => {
+                            for (let i = 0; i < chunk.length; i++) {
+                                const ch = chunk[i];
+                                // If we haven't found the pairs array yet, keep a small rolling window and detect it with a regex
+                                if (!pairsStarted) {
+                                    scanWindow += ch;
+                                    // Keep last ~64 chars to bound memory
+                                    if (scanWindow.length > 64) scanWindow = scanWindow.slice(-64);
+                                    if (/"pairs"\s*:\s*\[$/.test(scanWindow)) {
+                                        pairsStarted = true; // next chars belong to items within the array
+                                    } else if (/^\s*\[$/.test(scanWindow)) {
+                                        // Fallback: provider streams a bare array like [ {..}, {..} ]
+                                        pairsStarted = true;
+                                    }
+                                    continue;
+                                }
+
+                                // We are within the pairs array stream
+                                if (!inObj) {
+                                    if (ch === '{') {
+                                        inObj = true;
+                                        objDepth = 1;
+                                        objBuf = '{';
+                                        inObjString = false;
+                                        inObjEscape = false;
+                                        continue;
+                                    }
+                                    // Array could end without any object (edge)
+                                    if (ch === ']') {
+                                        // Done with array
+                                        pairsStarted = false;
+                                        continue;
+                                    }
+                                    // Skip commas/whitespace between objects
+                                    continue;
+                                }
+
+                                // We are inside an object; accumulate and track string/escape and depth
+                                objBuf += ch;
+                                if (inObjString) {
+                                    if (inObjEscape) { inObjEscape = false; continue; }
+                                    if (ch === '\\') { inObjEscape = true; continue; }
+                                    if (ch === '"') { inObjString = false; continue; }
+                                    continue;
+                                } else {
+                                    if (ch === '"') { inObjString = true; continue; }
+                                    if (ch === '{') { objDepth++; continue; }
+                                    if (ch === '}') {
+                                        objDepth--;
+                                        if (objDepth === 0) {
+                                            // Completed one object; emit immediately
+                                            pushObject(objBuf);
+                                            inObj = false;
+                                            objBuf = '';
+                                        }
+                                        continue;
+                                    }
+                                    // other characters inside object (commas, spaces, brackets in arrays) are fine
+                                    continue;
+                                }
+                            }
+                        },
+                        onDone: (finalJson?: string) => {
+                            // Fallback: if nothing was appended during streaming, try parsing the final JSON
+                            if (finalJson) {
+                                try {
+                                    // Strip code fences if any
+                                    let text = finalJson.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
+                                    const parsed = JSON.parse(text);
+                                    let items: any[] = [];
+                                    if (Array.isArray(parsed)) items = parsed;
+                                    else if (Array.isArray(parsed?.pairs)) items = parsed.pairs;
+                                    if (items.length) {
+                                        const normed: RephrasePair[] = [];
+                                        for (const it of items) {
+                                            const p = normalizePair(it);
+                                            if (p) normed.push(p);
+                                        }
+                                        if (normed.length) {
+                                            setPairsModal(prev => prev.pairs.length ? prev : { ...prev, pairs: normed });
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.warn('Failed to parse final JSON for pairs fallback', e);
+                                }
+                            }
+                            setIsAIRunning(false);
+                        },
+                        onError: (e: any) => {
+                            console.error('AI error:', e);
+                            if (stoppedRef.current) {
+                                // user canceled; don't revert/close overlays here
+                                setIsAIRunning(false);
+                                stoppedRef.current = false;
+                                return;
+                            }
+                            setIsAIRunning(false);
+                        },
+                    } as any);
+                } catch (e) {
+                    console.error('Failed streaming multi-line:', e);
+                    if (stoppedRef.current) {
+                        setIsAIRunning(false);
+                        stoppedRef.current = false;
+                    } else {
+                        setIsAIRunning(false);
+                    }
+                }
+                return;
+            } else {
+                // Single-line: streaming plain text, transactionally
+                setIsAIRunning(true);
+                const originalContent = editor.state.doc.textBetween(from, to);
+                let insertedPos = from;
+                let accumulatedText = '';
+                // Robust cleaner for providers that insist on JSON/fences; buffers until we see real sentence content
+                let wrapperSkipped = false;
+                let pending = '';
+                // Start transaction: delete selection
+                let tr = editor.state.tr.delete(from, to);
+                editor.view.dispatch(tr);
+                // Position mini-panel above the caret where new text will be inserted
+                try {
+                    const caret = editor.view.coordsAtPos(from);
+                    setSelectionOverlay({
+                        anchor: { top: caret.top, left: caret.left },
+                        anchorPos: from,
+                        status: 'loading',
+                    });
+                } catch {}
+                let transactionStarted = true;
+                try {
+                    await runFeature({
+                        featureId,
+                        settings: settingsLocal!,
+                        selectionText,
+                        presetId: preset.id,
+                        signal: abortRef.current.signal,
+                        stream: true,
+                        // Force plain text, no JSON or fences
+                        appendToUserPrompt: 'Rephrase the Selection into a single sentence. Output ONLY the rephrased sentence as plain text — no JSON, no code fences, no quotes, no labels. Preserve meaning and tense.',
+                        onDelta: (s) => {
+                            pending += s;
+                            if (!wrapperSkipped) {
+                                // Strip leading fences/whitespace
+                                let changed = true;
+                                while (changed) {
+                                    changed = false;
+                                    const before = pending;
+                                    pending = pending.replace(/^```(?:json)?\s*/i, '');
+                                    pending = pending.replace(/^\s+/, '');
+                                    pending = pending.replace(/^\{+\s*/, '');
+                                    pending = pending.replace(/^\[+\s*/, '');
+                                    pending = pending.replace(/^"?(rephrased_text|text|output|result|content)"?\s*:\s*"?/i, '');
+                                    pending = pending.replace(/^"text"\s*:\s*"?/i, '');
+                                    pending = pending.replace(/^"variants"\s*:\s*\[\s*\{\s*"label"\s*:\s*"[^"]*"\s*,\s*"text"\s*:\s*"?/i, '');
+                                    pending = pending.replace(/^"?choices"?\s*:\s*\[\s*\{\s*"message"\s*:\s*\{\s*"content"\s*:\s*"?/i, '');
+                                    if (pending !== before) changed = true;
+                                }
+                                // Decide if we have started natural sentence content (letters or digits)
+                                if (/[A-Za-z0-9]/.test(pending)) {
+                                    wrapperSkipped = true;
+                                } else {
+                                    // Still waiting for meaningful content; do not emit yet
+                                    return;
+                                }
+                            }
+                            // Remove trailing code fence markers within stream
+                            pending = pending.replace(/```$/i, '');
+                            // Emit only delta since last insert
+                            const toEmit = pending.slice(accumulatedText.length);
+                            if (!toEmit) return;
+                            accumulatedText += toEmit;
+                            editor.view.dispatch(editor.state.tr.insertText(toEmit, insertedPos));
+                            insertedPos += toEmit.length;
+                        },
+                        onDone: () => {
+                            // Clean any trailing quote/brace/backticks if slipped through
+                            let cleaned = accumulatedText.replace(/`{0,3}\s*$/,'').replace(/[}\]]+\s*$/,'');
+                            cleaned = cleaned.replace(/"\s*}\s*$/,'').replace(/\s*"\s*$/,'');
+                            if (cleaned.length !== accumulatedText.length) {
+                                const toRemove = accumulatedText.length - cleaned.length;
+                                editor.view.dispatch(
+                                    editor.state.tr.delete(insertedPos - toRemove, insertedPos)
+                                );
+                                insertedPos -= toRemove;
+                                accumulatedText = cleaned;
+                            }
+                            setIsAIRunning(false);
+                            // Show accept/reject above the insertion caret
+                            try {
+                                const caret = editor.view.coordsAtPos(from);
+                                setSelectionOverlay({
+                                    anchor: { top: caret.top, left: caret.left },
+                                    anchorPos: from,
+                                    status: 'confirm',
+                                    onAccept: () => {
+                                        setSelectionOverlay(null);
+                                    },
+                                    onReject: () => {
+                                        try {
+                                            if (beforeDocSnapshot) {
+                                                editor.commands.setContent(beforeDocSnapshot as any, { emitUpdate: false });
+                                            } else if (transactionStarted) {
+                                                editor.view.dispatch(
+                                                    editor.state.tr
+                                                        .delete(from, from + accumulatedText.length)
+                                                        .insertText(originalContent, from)
+                                                );
+                                            }
+                                        } finally {
+                                            setSelectionOverlay(null);
+                                        }
+                                    }
+                                });
+                            } catch {
+                                setSelectionOverlay(prev => prev ? { ...prev, status: 'confirm' } : prev);
+                            }
+                        },
+                        onError: (e) => {
+                            console.error('AI error:', e);
+                            if (stoppedRef.current) {
+                                // user canceled; keep confirm UI, don't revert
+                                setIsAIRunning(false);
+                                stoppedRef.current = false;
+                                return;
+                            }
+                            // Revert if error
+                            if (transactionStarted) {
+                                editor.view.dispatch(
+                                    editor.state.tr
+                                        .delete(from, from + accumulatedText.length)
+                                        .insertText(originalContent, from)
+                                );
+                            }
+                            setIsAIRunning(false);
+                            setSelectionOverlay(null);
+                        },
+                    });
+                } catch (error) {
+                    console.error('Failed to process AI feature:', error);
+                    if (stoppedRef.current) {
+                        setIsAIRunning(false);
+                        stoppedRef.current = false;
+                    } else {
+                        // Revert if error
+                        if (transactionStarted) {
+                            editor.view.dispatch(
+                                editor.state.tr
+                                    .delete(from, from + accumulatedText.length)
+                                    .insertText(originalContent, from)
+                            );
+                        }
+                        setIsAIRunning(false);
+                        setSelectionOverlay(null);
+                    }
+                }
+                return;
+            }
+        }
+        // Concising (Shorten): stream chunk-by-chunk into a single insertion
+        if (featureId === 'concising') {
+            // Cancel any in-flight run and start fresh
+            abortRef.current?.abort();
+            abortRef.current = new AbortController();
+            stoppedRef.current = false; // reset user-stop flag at new run start
+            setIsAIRunning(true);
+            // Start by deleting the selection once
+            editor.view.dispatch(editor.state.tr.delete(from, to));
+            // Position mini-panel above the caret where text will be inserted
+            try {
+                const caret = editor.view.coordsAtPos(from);
+                setSelectionOverlay({
+                    anchor: { top: caret.top, left: caret.left },
+                    anchorPos: from,
+                    status: 'loading',
+                });
+            } catch {}
+            // Stream tokens and insert as they arrive
+            const originalContent = editor.state.doc.textBetween(from, to);
+            let insertedPos = from;
+            let accumulatedText = '';
+            let transactionStarted = true;
+            let pending = '';
+            let wrapperSkipped = false; // in case provider tries to wrap in JSON/fences
+            try {
+                await runFeature({
+                    featureId,
+                    settings: settingsLocal!,
+                    selectionText,
+                    presetId: preset.id,
+                    signal: abortRef.current.signal,
+                    stream: true,
+                    appendToUserPrompt: 'Shorten the Selection. Output ONLY the shortened text as plain text — no JSON, no code fences, no quotes, no labels.',
+                    onDelta: (s: string) => {
+                        pending += s;
+                        if (!wrapperSkipped) {
+                            // Strip common wrappers at the start
+                            let changed = true;
+                            while (changed) {
+                                changed = false;
+                                const before = pending;
+                                pending = pending.replace(/^```(?:json)?\s*/i, '');
+                                pending = pending.replace(/^\s+/, '');
+                                pending = pending.replace(/^\{+\s*/, '');
+                                pending = pending.replace(/^\[+\s*/, '');
+                                pending = pending.replace(/^"?(shortened_text|rephrased_text|text|output|result|content)"?\s*:\s*"?/i, '');
+                                if (pending !== before) changed = true;
+                            }
+                            if (/[A-Za-z0-9]/.test(pending)) {
+                                wrapperSkipped = true;
+                            } else {
+                                return; // keep buffering until real content begins
+                            }
+                        }
+                        // Clean trailing fence marker if provider closes early
+                        pending = pending.replace(/```$/i, '');
+                        const toEmit = pending.slice(accumulatedText.length);
+                        if (!toEmit) return;
+                        accumulatedText += toEmit;
+                        editor.view.dispatch(editor.state.tr.insertText(toEmit, insertedPos));
+                        insertedPos += toEmit.length;
+                    },
+                    onDone: () => {
+                        // Trim any trailing quotes/braces left by eager providers
+                        let cleaned = accumulatedText.replace(/`{0,3}\s*$/, '').replace(/[}\]]+\s*$/, '');
+                        cleaned = cleaned.replace(/"\s*}\s*$/, '').replace(/\s*"\s*$/, '');
+                        if (cleaned.length !== accumulatedText.length) {
+                            const toRemove = accumulatedText.length - cleaned.length;
+                            editor.view.dispatch(
+                                editor.state.tr.delete(insertedPos - toRemove, insertedPos)
+                            );
+                            insertedPos -= toRemove;
+                            accumulatedText = cleaned;
+                        }
+                        setIsAIRunning(false);
+                        // Present accept/reject UI above caret
+                        try {
+                            const caret = editor.view.coordsAtPos(from);
+                            setSelectionOverlay({
+                                anchor: { top: caret.top, left: caret.left },
+                                anchorPos: from,
+                                status: 'confirm',
+                                onAccept: () => setSelectionOverlay(null),
+                                onReject: () => {
+                                    try {
+                                        if (beforeDocSnapshot) {
+                                            editor.commands.setContent(beforeDocSnapshot as any, { emitUpdate: false });
+                                        } else if (transactionStarted) {
+                                            editor.view.dispatch(
+                                                editor.state.tr
+                                                    .delete(from, from + accumulatedText.length)
+                                                    .insertText(originalContent, from)
+                                            );
+                                        }
+                                    } finally {
+                                        setSelectionOverlay(null);
+                                    }
+                                }
+                            });
+                        } catch {
+                            setSelectionOverlay(prev => prev ? { ...prev, status: 'confirm' } : prev);
+                        }
+                    },
+                    onError: (e: any) => {
+                        console.error('AI error (concising):', e);
+                        if (stoppedRef.current) {
+                            setIsAIRunning(false);
+                            stoppedRef.current = false;
+                            return;
+                        }
+                        if (transactionStarted) {
+                            editor.view.dispatch(
+                                editor.state.tr
+                                    .delete(from, from + accumulatedText.length)
+                                    .insertText(originalContent, from)
+                            );
+                        }
+                        setIsAIRunning(false);
+                        setSelectionOverlay(null);
+                    },
+                });
+            } catch (e) {
+                console.error('Failed to stream concising:', e);
+                if (stoppedRef.current) {
+                    setIsAIRunning(false);
+                    stoppedRef.current = false;
+                } else {
+                    if (transactionStarted) {
+                        editor.view.dispatch(
+                            editor.state.tr
+                                .delete(from, from + accumulatedText.length)
+                                .insertText(originalContent, from)
+                        );
+                    }
+                    setIsAIRunning(false);
+                    setSelectionOverlay(null);
+                }
+            }
+            return;
+        }
+        // Other features: paragraph-aware streaming (each \n starts a new TipTap paragraph)
+        abortRef.current?.abort();
+        abortRef.current = new AbortController();
+        stoppedRef.current = false; // reset user-stop flag at new run start
+    setIsAIRunning(true);
+    // Start by deleting the selection once; then append paragraphs as they complete
+    editor.view.dispatch(editor.state.tr.delete(from, to));
+    // Position mini-panel above the caret where paragraphs will be inserted
+        try {
+            const caret = editor.view.coordsAtPos(from);
+            setSelectionOverlay({
+                anchor: { top: caret.top, left: caret.left },
+                anchorPos: from,
+                status: 'loading',
+            });
+        } catch {}
+        let current = '';
+        try {
+            await runFeature({
+                featureId,
+    settings: settingsLocal!,
+                selectionText,
+                presetId: preset.id,
+                signal: abortRef.current.signal,
+        stream: true,
+                onDelta: (chunk) => {
+                    current += chunk;
+                    // Normalize newlines and emit every complete paragraph we have
+                    const parts = current.split(/\r?\n/);
+                    // keep the last part as the new current (may be incomplete)
+                    current = parts.pop() ?? '';
+                    for (const para of parts) {
+                        const text = para; // don't trim; preserve writer's spaces
+                        // Skip emitting if it's an empty paragraph (avoid noise)
+                        if (text.length === 0) {
+                            // Insert an empty paragraph only if we already inserted some content
+                            // to respect explicit blank lines
+                            editor.chain().focus().insertContent({ type: 'paragraph', content: [] }).run();
+                        } else {
+                            editor.chain().focus().insertContent({ type: 'paragraph', content: [{ type: 'text', text }] }).run();
+                        }
+                    }
+                },
+                onDone: () => {
+                    if (current.length > 0) {
+                        editor.chain().focus().insertContent({ type: 'paragraph', content: [{ type: 'text', text: current }] }).run();
+                        current = '';
+                    }
+                    setIsAIRunning(false);
+                    // Present accept/reject UI above caret
+                    try {
+                        const caret = editor.view.coordsAtPos(from);
+                        setSelectionOverlay({
+                            anchor: { top: caret.top, left: caret.left },
+                            anchorPos: from,
+                            status: 'confirm',
+                            onAccept: () => setSelectionOverlay(null),
+                            onReject: () => {
+                                try {
+                                    if (beforeDocSnapshot) {
+                                        editor.commands.setContent(beforeDocSnapshot as any, { emitUpdate: false });
+                                    }
+                                } finally {
+                                    setSelectionOverlay(null);
+                                }
+                            }
+                        });
+                    } catch {
+                        setSelectionOverlay(prev => prev ? { ...prev, status: 'confirm' } : prev);
+                    }
+                },
+                onError: (e) => {
+                    console.error('AI error:', e);
+                    if (stoppedRef.current) {
+                        setIsAIRunning(false);
+                        stoppedRef.current = false;
+                        return;
+                    }
+                    setIsAIRunning(false);
+                    // Revert on error if we can
+                    try {
+                        if (beforeDocSnapshot) {
+                            editor.commands.setContent(beforeDocSnapshot as any, { emitUpdate: false });
+                        }
+                    } finally {
+                        setSelectionOverlay(null);
+                    }
+                },
+            });
+        } catch (e) {
+            console.error('Failed to stream feature:', e);
+            if (stoppedRef.current) {
+                setIsAIRunning(false);
+                stoppedRef.current = false;
+            } else {
+                setIsAIRunning(false);
+                try {
+                    if (beforeDocSnapshot) {
+                        editor.commands.setContent(beforeDocSnapshot as any, { emitUpdate: false });
+                    }
+                } finally {
+                    setSelectionOverlay(null);
+                }
+            }
+        }
+    };
+
+    const GearIcon: React.FC<{ className?: string }> = ({ className }) => (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.983 6.5a1 1 0 0 1 .934.648l.3.8a1 1 0 0 0 .66.61l.82.26a1 1 0 0 1 .6.6l.26.82a1 1 0 0 0 .61.66l.8.3a1 1 0 0 1 .648.934v1a1 1 0 0 1-.648.934l-.8.3a1 1 0 0 0-.61.66l-.26.82a1 1 0 0 1-.6.6l-.82.26a1 1 0 0 0-.66.61l-.3.8a1 1 0 0 1-.934.648h-1a1 1 0 0 1-.934-.648l-.3-.8a1 1 0 0 0-.66-.61l-.82-.26a1 1 0 0 1-.6-.6l-.26-.82a1 1 0 0 0-.61-.66l-.8-.3A1 1 0 0 1 6.5 12.483v-1a1 1 0 0 1 .648-.934l.8-.3a1 1 0 0 0 .61-.66l.26-.82a1 1 0 0 1 .6-.6l.82-.26a1 1 0 0 0 .66-.61l.3-.8A1 1 0 0 1 10.983 6.5h1z" />
+            <circle cx="11.983" cy="11.983" r="2.25" />
+        </svg>
+    );
 
     // Text Format Options (Block Types)
     const textFormatOptions = [
@@ -296,61 +1192,61 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
         const updateMenu = () => {
             const { from, to } = editor.state.selection;
             const hasSelection = from !== to;
-            console.log('Selection update:', { from, to, hasSelection });
+           // console.log('Selection update:', { from, to, hasSelection });
             const selectedText = editor.state.doc.textBetween(from, to).trim();
-            console.log('Selected text:', selectedText);
+           // console.log('Selected text:', selectedText);
             if (hasSelection && selectedText.length > 0) {
                 // Check if selection is within a custom node (prevent bubble menu in custom nodes)
-                const $from = editor.state.doc.resolve(from);
-                console.log('Selection resolved:', $from);
-                // Look up the node tree to see if we're inside a custom node
+                const { $from } = editor.state.selection as any;
                 let isInCustomNode = false;
                 for (let i = $from.depth; i >= 0; i--) {
                     const node = $from.node(i);
-                    if (node.type.name === 'sceneBeat' || 
-                        node.type.name === 'noteSection' || 
-                        node.type.name === 'characterImpersonation') {
+                    if (
+                        node.type.name === 'sceneBeat' ||
+                        node.type.name === 'noteSection' ||
+                        node.type.name === 'characterImpersonation'
+                    ) {
                         isInCustomNode = true;
                         break;
                     }
                 }
-                
+
                 // Don't show bubble menu if selection is within a custom node
                 if (isInCustomNode) {
                     setIsVisible(false);
                     return;
                 }
-                
+
                 const startPos = editor.view.coordsAtPos(from);
                 const endPos = editor.view.coordsAtPos(to);
-                
+
                 // Calculate the center position
                 const centerX = (startPos.left + endPos.left) / 2;
                 const selectionTop = Math.min(startPos.top, endPos.top);
                 const selectionBottom = Math.max(startPos.bottom, endPos.bottom);
-                
+
                 // Menu dimensions
                 const menuHeight = 120; // Approximate menu height
                 const menuWidth = 800; // Approximate menu width
                 const viewportWidth = window.innerWidth;
                 const viewportHeight = window.innerHeight;
-                
+
                 // Ensure menu stays within viewport horizontally
                 const leftPos = Math.max(menuWidth / 2, Math.min(centerX, viewportWidth - menuWidth / 2));
-                
+
                 // Try to position above the selection first
                 let topPos = selectionTop - menuHeight - 10;
-                
+
                 // If not enough space above, position below
                 if (topPos < 10) {
                     topPos = selectionBottom + 10;
                 }
-                
+
                 // Ensure menu doesn't go below viewport
                 if (topPos + menuHeight > viewportHeight - 10) {
                     topPos = viewportHeight - menuHeight - 10;
                 }
-                
+
                 setPosition({
                     top: Math.max(10, topPos),
                     left: leftPos,
@@ -370,12 +1266,171 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
         };
     }, [editor]);
 
-    if (!isVisible) {
-        return null;
-    }
+    // React to BookContext restore signal
+    const { lastRestored } = useBookContext();
+    useEffect(() => {
+        if (!editor || !lastRestored) return;
+        try {
+            editor.commands.setContent(lastRestored.content as any, { emitUpdate: false });
+            (window as any).__currentChapterJSON = lastRestored.content;
+        } catch (err) {
+            console.error('Failed to apply restored content to editor via context signal', err);
+        }
+    }, [lastRestored, editor]);
 
+                
+
+    // Always render modals; conditionally render the bubble itself
     return (
         <>
+        {/* Keep mini-panel anchored during scroll/resize */}
+    {selectionOverlay && (
+            <RecomputeAnchor view={editor.view} anchorPos={selectionOverlay.anchorPos} onUpdate={(pt) => {
+                setSelectionOverlay(prev => prev ? { ...prev, anchor: pt } : prev);
+            }} />
+        )}
+        {presetModal.open && aiSettings && presetModal.featureId && (
+            <PresetPickerModal 
+                featureId={presetModal.featureId}
+                aiSettings={aiSettings}
+                selectedId={selectedPresets[presetModal.featureId]}
+                onClose={() => setPresetModal({ open: false })}
+                onSave={(id) => { setSelectedPresets(prev => ({ ...prev, [presetModal.featureId as string]: id })); setPresetModal({ open: false }); }}
+            />
+        )}
+        {compareModal.open && (
+            <RephraseCompareModal 
+                variants={compareModal.variants}
+                onAccept={(t: string) => { compareModal.onAccept?.(t); }}
+                onClose={() => setCompareModal({ open: false, variants: [] })}
+            />
+        )}
+    {pairsModal.open && (
+            <RephrasePairsModal
+                busy={isAIRunning}
+                pairs={pairsModal.pairs}
+                onRephraseOne={async (rowIndex) => {
+                    try {
+                        const original = pairsModal.pairs[rowIndex]?.original?.join('\n') ?? '';
+                        if (!original) return '';
+                        let finalText = '';
+                        const presetR = getSelectedPreset('rephrasing');
+                        await runFeature({
+                            featureId: 'rephrasing',
+                            settings: aiSettings!,
+                            selectionText: original,
+                            presetId: presetR?.id,
+                            signal: undefined,
+                            stream: false,
+                            appendToUserPrompt: 'Rephrase into ONE paragraph. Output only the rephrased paragraph as plain text — no JSON, no code fences, no quotes.',
+                            onDone: (t: string) => { finalText = t; },
+                            onError: (e: any) => { console.error('AI error (row rephrase):', e); },
+                        } as any);
+                        return finalText;
+                    } catch (e) {
+                        console.error('Failed to rephrase row:', e);
+                        return '';
+                    }
+                }}
+                onAccept={(finalParagraphs) => {
+                    const nodes = finalParagraphs.map(p => p && p.length > 0
+                        ? { type: 'paragraph', content: [{ type: 'text', text: p }] }
+                        : { type: 'paragraph', content: [] }
+                    );
+                    editor.chain().focus().insertContentAt({ from: pairsModal.from, to: pairsModal.to }, nodes as any).run();
+                    setPairsModal({ open: false, pairs: [], from: 0, to: 0 });
+                }}
+                onClose={() => setPairsModal({ open: false, pairs: [], from: 0, to: 0 })}
+            />
+        )}
+        {selectionOverlay && (
+            <div
+                style={{
+                    position: 'fixed',
+                    top: `${Math.max(8, selectionOverlay.anchor.top - 40)}px`,
+                    left: `${selectionOverlay.anchor.left}px`,
+                    zIndex: 10000,
+                    pointerEvents: 'none',
+                }}
+            >
+                {selectionOverlay.status === 'loading' ? (
+                    <div className="pointer-events-auto flex items-center gap-2 px-2 py-1.5 rounded-md shadow-lg ring-1 ring-black/10 dark:ring-white/10 bg-gradient-to-br from-gray-900 to-black dark:from-slate-100 dark:to-slate-200">
+                        <div className="h-4 w-4 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
+                        <span className="text-xs text-slate-100 dark:text-slate-900">Working…</span>
+            <button
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 ml-1"
+                            onClick={(e) => {
+                                e.preventDefault(); e.stopPropagation();
+                try { abortRef.current?.abort(); } catch {}
+                stoppedRef.current = true;
+                                setIsAIRunning(false);
+                                // Move to confirm state (allow reject to restore snapshot)
+                                const from = selectionOverlay.anchorPos;
+                                try {
+                                    const caret = editor.view.coordsAtPos(from);
+                                    setSelectionOverlay({
+                                        anchor: { top: caret.top, left: caret.left },
+                                        anchorPos: from,
+                                        status: 'confirm',
+                                        onAccept: () => setSelectionOverlay(null),
+                                        onReject: () => {
+                                            try {
+                                                const snap = beforeDocSnapshotRef.current;
+                                                if (snap) {
+                                                    editor.commands.setContent(snap as any, { emitUpdate: false });
+                                                }
+                                            } finally { setSelectionOverlay(null); }
+                                        }
+                                    });
+                                } catch {
+                                    setSelectionOverlay(prev => prev ? { ...prev, status: 'confirm' } : prev);
+                                }
+                            }}
+                        >
+                            Stop
+                        </button>
+                    </div>
+                ) : (
+                    <div className="pointer-events-auto flex items-center gap-2 px-2 py-1.5 rounded-md shadow-lg ring-1 ring-black/10 dark:ring-white/10 bg-gradient-to-br from-gray-900 to-black dark:from-slate-100 dark:to-slate-200">
+                        <button
+                            className="text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700"
+                            onClick={() => selectionOverlay.onAccept && selectionOverlay.onAccept()}
+                        >
+                            Accept
+                        </button>
+                        <button
+                            className="text-xs px-2 py-1 rounded bg-white/10 text-white hover:bg-white/20 dark:bg-black/10 dark:text-black dark:hover:bg-black/20"
+                            onClick={() => selectionOverlay.onReject && selectionOverlay.onReject()}
+                        >
+                            Reject
+                        </button>
+                    </div>
+                )}
+            </div>
+        )}
+        {showNoteModal && (
+            <NoteModal
+                isOpen={showNoteModal}
+                onClose={() => setShowNoteModal(false)}
+                onSave={(note) => {
+                    const { from, to } = editor.state.selection;
+                    if (from !== to) {
+                        editor.chain()
+                            .focus()
+                            .setMark('highlight', { color: '#fef08a' })
+                            .insertContent(`<span data-note="${note}">`)
+                            .run();
+                    } else {
+                        editor.chain()
+                            .focus()
+                            .insertContent(`<mark style="background-color: #fef08a;" data-note="${note}">${note}</mark>`)
+                            .run();
+                    }
+                    setShowNoteModal(false);
+                }}
+            />
+        )}
+        {isVisible && (
         <div
             ref={menuRef}
             className="fixed z-50 bg-gray-800 text-white dark:bg-gray-100 dark:text-black rounded-xl shadow-lg border border-gray-700/50 dark:border-gray-200/50 max-w-6xl"
@@ -614,43 +1669,104 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
                 }>
                     <div className="space-y-1">
                         <div className="text-xs font-medium text-gray-400 dark:text-gray-600 px-3 py-1">AI Assistant</div>
-                        {aiTools.map(tool => (
-                            <button key={tool.name} onClick={tool.action} className="w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">
-                                <tool.icon className="w-4 h-4"/>
-                                {tool.name}
-                            </button>
-                        ))}
+                        {aiTools.map(tool => {
+                            const isRephrase = tool.featureId === 'rephrasing';
+                            let label: string = tool.name as unknown as string;
+                            if (isRephrase) {
+                                // Peek selection to hint behavior in UI label
+                                const { from, to } = editor.state.selection;
+                                const sel = editor.state.doc.textBetween(from, to, '\n', '\n');
+                                const isMulti = sel.includes('\n');
+                                label = isMulti ? 'Rephrase (Auto · multi-line)' : 'Rephrase (Auto)';
+                            }
+                            return (
+                                <div key={tool.name} className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-white/10 dark:hover:bg-black/10">
+                                    <button onClick={() => handleRunTool(tool.featureId)} className="flex items-center gap-3 text-sm text-gray-300 dark:text-gray-700">
+                                        <tool.icon className="w-4 h-4"/>
+                                        {label}
+                                    </button>
+                                    <button onClick={() => {
+                                        if (isRephrase) {
+                                            const { from, to } = editor.state.selection;
+                                            const sel = editor.state.doc.textBetween(from, to, '\n', '\n');
+                                            const isMulti = sel.includes('\n');
+                                            setPresetModal({ open: true, featureId: isMulti ? 'rephrase_multiple_lines' : 'rephrasing' });
+                                        } else {
+                                            setPresetModal({ open: true, featureId: tool.featureId });
+                                        }
+                                    }} className="p-1 rounded hover:bg-white/10 dark:hover:bg-black/10" title="Choose preset">
+                                        <GearIcon className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            );
+                        })}
                     </div>
                 </Dropdown>
                 </div>
             </div>
         </div>
-        {showNoteModal && (
-            <NoteModal
-                isOpen={showNoteModal}
-                onClose={() => setShowNoteModal(false)}
-                onSave={(note) => {
-                    // Highlight the selected text with yellow and add note attribute
-                    const { from, to } = editor.state.selection;
-                    if (from !== to) {
-                        // Wrap selected text with highlight and note
-                        editor.chain()
-                            .focus()
-                            .setMark('highlight', { color: '#fef08a' })
-                            .insertContent(`<span data-note="${note}">`)
-                            .run();
-                    } else {
-                        // Insert note at cursor position
-                        editor.chain()
-                            .focus()
-                            .insertContent(`<mark style="background-color: #fef08a;" data-note="${note}">${note}</mark>`)
-                            .run();
-                    }
-                    setShowNoteModal(false);
-                }}
-            />
-        )}
-        </>
+    )}
+    </>
+    );
+};
+
+// Simple modal to select preset for a feature
+const PresetPickerModal: React.FC<{ featureId: string; aiSettings: AISettings; selectedId?: string; onSave: (presetId: string) => void; onClose: () => void }> = ({ featureId, aiSettings, selectedId, onSave, onClose }) => {
+    const feature = aiSettings.features.find(f => f.id === featureId);
+    if (!feature) return null;
+    const [value, setValue] = useState<string>(selectedId || (feature.presets.find(p => p.enabled ?? true)?.id || feature.presets[0]?.id));
+    return (
+        <div className="fixed inset-0 z-[120] bg-black/50 flex items-center justify-center">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-[420px] max-w-[90vw] p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="font-semibold">Select Preset · {feature.label}</div>
+                    <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">✕</button>
+                </div>
+                <div className="space-y-2 max-h-[260px] overflow-auto">
+                    {feature.presets.map(p => {
+                        const provider = aiSettings.providers.find(pr => pr.id === p.provider);
+                        return (
+                          <label key={p.id} className="flex items-center gap-3 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+                              <input type="radio" name="preset" checked={value === p.id} onChange={() => setValue(p.id)} />
+                              <div className="flex-1">
+                                  <div className="text-sm font-medium">{p.name} {p.enabled === false && <span className="text-xs text-orange-500">(disabled)</span>}</div>
+                                  <div className="text-xs text-gray-500">{provider?.name || p.provider} · {p.model}</div>
+                              </div>
+                          </label>
+                        );
+                    })}
+                </div>
+                <div className="flex justify-end gap-2 mt-3">
+                    <button onClick={onClose} className="px-3 py-1.5 rounded border">Cancel</button>
+                    <button onClick={() => onSave(value)} className="px-3 py-1.5 rounded bg-purple-600 text-white">Use Preset</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Minimal compare modal for multi-line rephrase
+const RephraseCompareModal: React.FC<{ variants: Array<{ label: string; text: string }>; onAccept: (text: string) => void; onClose: () => void }> = ({ variants, onAccept, onClose }) => {
+    return (
+        <div className="fixed inset-0 z-[130] bg-black/50 flex items-center justify-center">
+            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-[800px] max-w-[95vw] p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="font-semibold">Compare Rephrases</div>
+                    <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700">✕</button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {variants.map((v, i) => (
+                        <div key={i} className="border rounded p-3 bg-gray-50 dark:bg-gray-800">
+                            <div className="text-xs font-semibold mb-2 text-gray-600 dark:text-gray-300">{v.label || `Option ${i + 1}`}</div>
+                            <div className="prose dark:prose-invert max-w-none whitespace-pre-wrap text-sm">{v.text}</div>
+                            <div className="flex justify-end mt-3">
+                                <button onClick={() => onAccept(v.text)} className="px-3 py-1.5 rounded bg-purple-600 text-white">Accept</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
     );
 };
 
@@ -775,9 +1891,9 @@ const TypographySettingsPopup: React.FC<{
             
             // Apply page width
             const widthMap = {
-                'narrow': '400px',
-                'medium': '600px', 
-                'wide': '800px',
+                'narrow': '50%',
+                'medium': '60%', 
+                'wide': '75%',
                 'full': '100%'
             };
             const editorContainer = container.parentElement?.parentElement;
@@ -1495,12 +2611,13 @@ const TypographySettingsPopup: React.FC<{
     );
 };
 
-const EditorFloatingMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
+const EditorFloatingMenu: React.FC<{ editor: TipTapEditor; currentChapter?: any; bookId?: string; versionId?: string }> = ({ editor, currentChapter, bookId, versionId }) => {
     const [isVisible, setIsVisible] = useState(false);
     const [position, setPosition] = useState({ top: 0, left: 0 });
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [showTooltip, setShowTooltip] = useState(false);
     const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
+    const { getPlotCanvas, updatePlotCanvas } = useBookContext();
 
     // Updated slash command options as requested
     const floatingMenuOptions = [
@@ -1516,29 +2633,110 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
         { 
             name: '🔗 Scene Beat', 
             icon: SparklesIcon, 
-            action: () => {
-                console.log('Scene Beat action called');
-                console.log('Editor chain available:', !!editor.chain);
-                console.log('setSceneBeat command available:', !!editor.commands.setSceneBeat);
-                
-                // Remove the "/" and insert a scene beat node
-                editor.chain().focus().deleteRange({ 
-                    from: editor.state.selection.from - 1, 
-                    to: editor.state.selection.from 
-                }).setSceneBeat({
-                    chapterName: 'Chapter 1',
-                    sceneBeatIndex: 1,
-                    summary: '',
-                    goal: '',
-                    characters: [],
-                    worldEntities: [],
-                    status: 'Draft'
-                }).run();
-                
-                // Clear selection after a brief delay to prevent bubble menu
-                setTimeout(() => {
-                    editor.chain().blur().run();
-                }, 50);
+            action: async () => {
+                try {
+                    // Remove the "/" trigger first
+                    editor.chain().focus().deleteRange({ 
+                        from: editor.state.selection.from - 1, 
+                        to: editor.state.selection.from 
+                    }).run();
+
+                    // Resolve current chapter and plot canvas context
+                    const ch = currentChapter;
+                    if (!ch) {
+                        console.warn('No current chapter; cannot create scene node');
+                        return;
+                    }
+                    const bookIdSafe = bookId || (window as any).__BOOK_CONTEXT__?.bookId;
+                    const versionIdSafe = versionId || (window as any).__BOOK_CONTEXT__?.versionId;
+                    if (!bookIdSafe || !versionIdSafe) {
+                        console.warn('Missing book/version; cannot update plot canvas');
+                    }
+
+                    // Load plot canvas and create a new scene node under the chapter's parent node
+                    let createdSceneId: string | null = null;
+                    let sceneIndex: number = 1;
+                    if (bookIdSafe && versionIdSafe) {
+                        if (getPlotCanvas && updatePlotCanvas) {
+                            const plotCanvas = await getPlotCanvas(bookIdSafe, versionIdSafe);
+                            const nodes = [...(plotCanvas?.nodes || [])];
+                            // Prefer the chapter's linkedPlotNodeId as parent if present
+                            let chapterParentId: string | undefined = ch.linkedPlotNodeId || undefined;
+                            // Otherwise, try to infer via existing scene linkage
+                            if (!chapterParentId) {
+                                const existingScenes = nodes.filter((n: any) => n.type === 'scene' && n.data?.data?.chapter === ch.id);
+                                chapterParentId = (existingScenes[0]?.data?.parentId as string | null) || undefined;
+                            }
+                            if (!chapterParentId) {
+                                // Try to find a chapter node whose title matches
+                                const guess = nodes.find((n: any) => n.type === 'chapter' && (n.data?.data?.title === ch.title));
+                                if (guess) chapterParentId = guess.id;
+                            }
+                            if (chapterParentId) {
+                                // Compute next scene index for this chapter
+                                const chapterScenes = nodes.filter((n: any) => n.type === 'scene' && n.data?.parentId === chapterParentId);
+                                sceneIndex = chapterScenes.length + 1;
+                                const genId = (p: string) => `${p}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+                                const sceneNodeId = genId('scnode');
+                                createdSceneId = sceneNodeId;
+                                const title = `${ch.title}_Scene_${sceneIndex}`;
+                                const positionY = 400 + (sceneIndex * 120);
+                                const sceneNode = {
+                                    id: sceneNodeId,
+                                    type: 'scene',
+                                    position: { x: 300, y: positionY },
+                                    data: {
+                                        id: sceneNodeId,
+                                        type: 'scene',
+                                        status: 'not-completed',
+                                        position: { x: 300, y: positionY },
+                                        parentId: chapterParentId,
+                                        childIds: [],
+                                        linkedNodeIds: [],
+                                        isExpanded: true,
+                                        data: {
+                                            title,
+                                            description: `Scene ${sceneIndex} of ${ch.title}`,
+                                            goal: '',
+                                            chapter: ch.id,
+                                            characters: [],
+                                            worlds: [],
+                                            timelineEventIds: []
+                                        }
+                                    }
+                                } as any;
+                                // Add to nodes and update parent's childIds
+                                const nextNodes = [...nodes, sceneNode].map((n: any) => {
+                                    if (n.id === chapterParentId) {
+                                        const data = { ...(n.data || {}) } as any;
+                                        const childIds = Array.isArray(data.childIds) ? [...data.childIds] : [];
+                                        if (!childIds.includes(sceneNodeId)) childIds.push(sceneNodeId);
+                                        return { ...n, data: { ...data, childIds } };
+                                    }
+                                    return n;
+                                });
+                                await updatePlotCanvas(bookIdSafe, versionIdSafe, { nodes: nextNodes, edges: plotCanvas?.edges || [] });
+                            }
+                        }
+                    }
+
+                    // Insert the SceneBeat node with proper attributes
+                    editor.chain().focus().setSceneBeat({
+                        chapterName: ch.title,
+                        chapterId: ch.id,
+                        sceneId: createdSceneId || undefined,
+                        sceneBeatIndex: sceneIndex,
+                        summary: '',
+                        goal: '',
+                        characters: [],
+                        worldEntities: [],
+                        status: 'Draft'
+                    }).run();
+
+                    setTimeout(() => editor.chain().blur().run(), 50);
+                } catch (e) {
+                    console.error('Failed to create Scene Beat and scene node', e);
+                }
             },
             description: 'Add a scene beat section with React Flow integration'
         },
@@ -1797,14 +2995,111 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor }> = ({ editor }) => {
 
 
 const Editor: React.FC<{ 
+    bookId?: string;
+    versionId?: string;
+    book?: Book;
+    version?: Version;
+    currentChapterId?: string; // Add this prop to specify which chapter to load
+    chapters: any[];
+    createChapter: (title: string) => Promise<any>;
+    saveChapterContent: (chapterId: string, content: any, isMinor?: boolean) => Promise<void>;
     showTypographySettings?: boolean;
     onCloseTypographySettings?: () => void;
     onOpenTypographySettings?: () => void;
     onEditorReady?: (editor: TipTapEditor) => void;
-}> = ({ showTypographySettings = false, onCloseTypographySettings, onOpenTypographySettings, onEditorReady }) => {
+    onChapterCreated?: (chapterId: string) => void; // Add callback for chapter creation
+    theme?: Theme;
+    activeMode?: string;
+    planningTab?: 'Plot Arcs' | 'World Building' | 'Characters';
+    planningSearchQuery?: string;
+}> = ({ 
+    bookId = 'default-book', 
+    versionId = 'v1',
+    book,
+    version,
+    currentChapterId, // Use the prop name directly
+    chapters,
+    createChapter,
+    saveChapterContent,
+    showTypographySettings = false, 
+    onCloseTypographySettings, 
+    onOpenTypographySettings, 
+    onEditorReady,
+    onChapterCreated, // Receive callback from parent
+    theme = 'dark',
+    activeMode = 'Writing',
+    planningTab = 'Plot Arcs',
+    planningSearchQuery = ''
+}) => {
     
-    // Remove the internal state since it's now managed by parent
-    // const [showTypographySettings, setShowTypographySettings] = useState(false);
+    const { copyToClipboard, canCopy } = useClipboard();
+    const { setCurrentContext } = useToolWindowStore();
+    // Global flag to gate autosave and revision events during AI streaming
+    const [isAIRunning, setIsAIRunning] = useState(false);
+    
+    // Chapter management is provided by parent to avoid duplicate hook usage
+    const [isCreatingChapter, setIsCreatingChapter] = useState(false);
+    
+    // Use the chapter ID from parent prop directly - no fallback needed
+    // The parent (BookForgePage) is responsible for chapter selection and URL management
+    const currentChapter = currentChapterId 
+        ? chapters.find(ch => ch.id === currentChapterId)
+        : null; // Don't default to first chapter - let parent handle initial selection
+    
+    // No fallback chapter selection needed - parent handles all chapter management
+    // Remove the automatic chapter selection logic since parent manages URL-based navigation
+    
+    // Handle chapter creation
+    const handleCreateChapter = async (title: string) => {
+        setIsCreatingChapter(true);
+        try {
+            const newChapter = await createChapter(title);
+            if (newChapter) {
+                // Save the initial content immediately (no timeout needed)
+                if (newChapter.content) {
+                    await saveChapterContent(newChapter.id, newChapter.content, false);
+                }
+                
+                // Always notify parent component that a new chapter was created
+                // The parent will handle navigation to the new chapter
+                if (onChapterCreated) {
+                    onChapterCreated(newChapter.id);
+                } else {
+                    console.warn('No onChapterCreated callback provided - chapter created but no navigation will occur');
+                }
+            }
+        } catch (error) {
+            console.error('Failed to create chapter:', error);
+        } finally {
+            setIsCreatingChapter(false);
+        }
+    };
+    
+    // Initialize tool window context
+    useEffect(() => {
+        setCurrentContext(bookId, versionId);
+    }, [bookId, versionId, setCurrentContext]);
+    
+    // Get initial content for editor
+    const editorContent = currentChapter?.content || '';
+    
+    // Initialize revision manager for the current chapter
+    const revisionManager = useRef(ChapterRevisionManager.getInstance());
+    
+    // Start revision session when chapter changes
+    useEffect(() => {
+        if (currentChapterId && currentChapter) {
+            console.log('🔄 Starting revision session for chapter:', currentChapterId);
+            revisionManager.current.startSession(currentChapterId);
+        }
+        
+        // Cleanup on unmount or chapter change
+        return () => {
+            if (currentChapterId) {
+                revisionManager.current.endSession(currentChapterId);
+            }
+        };
+    }, [currentChapterId, currentChapter]);
     
     // Expose the function to parent components through useEffect
     useEffect(() => {
@@ -1836,6 +3131,8 @@ const Editor: React.FC<{
                 strike: false,
                 horizontalRule: false,
                 blockquote: false,
+                // Disable link if we're adding Link extension separately
+                link: false,
             }),
             // Text formatting
             Underline,
@@ -1930,34 +3227,126 @@ const Editor: React.FC<{
             CharacterImpersonationExtension,
             TestExtension,
             SimpleExtension,
+            DictationSectionNode,
             
             // Placeholder
             Placeholder.configure({
                 placeholder: 'Start writing your masterpiece...',
             }),
         ],
-        content: chapterContent,
+        content: editorContent,
+        onUpdate: ({ editor }) => {
+            // Track content changes for revision management
+            if (currentChapterId) {
+                const content = editor.getJSON();
+                if (!isAIRunning) {
+                    revisionManager.current.onContentChange(currentChapterId, content);
+                    // Broadcast update for optional listeners (e.g., autosave snapshot services)
+                    try { window.dispatchEvent(new CustomEvent('chapterContentUpdated', { detail: { chapterId: currentChapter.id, content } })); } catch {}
+                }
+                // Expose current content for diff modal consumers
+                // Expose current content JSON for diff modal and snapshot writers
+                (window as any).__currentChapterJSON = content;
+            }
+        },
         editorProps: {
             attributes: {
                 class: 'prose dark:prose-invert prose-lg max-w-none focus:outline-none font-serif text-gray-800 dark:text-gray-300 leading-relaxed book-prose',
+            },
+            handleKeyDown(view, event) {
+            // Handle Ctrl+S / Cmd+S for manual save (major revision)
+            if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+                event.preventDefault();
+                if (currentChapter) {
+                    const content = editor?.getJSON();
+                    if (content) {
+                        // Major save; downstream hooks can create snapshot files
+                        saveChapterContent(currentChapter.id, content, false) // false = major revision
+                            .then(() => {
+                                toast({
+                                    title: "Chapter Saved",
+                                    description: "Your chapter has been saved as a major revision.",
+                                    variant: "default",
+                                });
+                            })
+                            .catch((error) => {
+                                toast({
+                                    title: "Save Failed",
+                                    description: "An error occurred while saving your chapter.",
+                                    variant: "destructive",
+                                });
+                                console.error('Manual save failed:', error);
+                            });
+                    }
+                }
+                return true;
+            }
+            
+            // Handle Ctrl+C / Cmd+C
+            if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
+                event.preventDefault();
+                const { state } = view;
+                const { from, to } = state.selection;
+                const selectedText = state.doc.textBetween(from, to);
+                
+                if (selectedText) {
+                    copyToClipboard(selectedText).then((success) => {
+                        if (!success) {
+                            // Show toast notification for blocked copy attempt
+                            toast({
+                                title: "Copy Blocked",
+                                description: "Copy operation was blocked by clipboard control. Please check your permissions.",
+                                variant: "destructive",
+                            });
+                        } else {
+                            // Show success toast for successful copy (only for short text to avoid spam)
+                            if (selectedText.length < 500) {
+                                toast({
+                                    title: "Text Copied",
+                                    description: `Copied ${selectedText.length} characters to clipboard.`,
+                                    variant: "default",
+                                });
+                            }
+                        }
+                    }).catch(() => {
+                        toast({
+                            title: "Copy Failed",
+                            description: "An error occurred while copying text.",
+                            variant: "destructive",
+                        });
+                    });
+                }
+                return true;
+            }
+            
+            if (event.key === 'Enter') {
+                const { selection } = view.state;
+                if (selection.empty && selection.$head.pos === view.state.doc.content.size) {
+                event.preventDefault();
+                return true;
+                }
+            }
+            return false;
             },
         },
     });
 
     if (!editor) {
         return null;
+    } else {
+        console.log('Editor content:', editor.getJSON());
     }
 
     // Debug logging - remove in production
-    console.log('Editor extensions loaded:', editor.extensionManager.extensions.map(ext => ext.name));
-    console.log('Available commands:', Object.keys(editor.commands));
-    console.log('Custom commands available:', {
+    //console.log('Editor extensions loaded:', editor.extensionManager.extensions.map(ext => ext.name));
+    //console.log('Available commands:', Object.keys(editor.commands));
+    /*console.log('Custom commands available:', {
         setSceneBeat: !!editor.commands.setSceneBeat,
         setNoteSection: !!editor.commands.setNoteSection,
         setCharacterImpersonation: !!editor.commands.setCharacterImpersonation,
         setTestNode: !!editor.commands.setTestNode,
         setSimpleNode: !!editor.commands.setSimpleNode,
-    });
+    });*/
 
     // Check if extensions are properly loaded
     const customExtensions = editor.extensionManager.extensions.filter(ext => 
@@ -1972,8 +3361,101 @@ const Editor: React.FC<{
         }
     }, [editor, onEditorReady]);
 
+    // Auto-save functionality with debouncing
+    const [autoSaveTimeout, setAutoSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+    
+    const handleContentChange = useCallback(() => {
+        if (!editor || !currentChapter) return;
+        console.log('HandleCContentChange', autoSaveTimeout);
+        // Clear existing timeout
+        if (autoSaveTimeout) {
+            clearTimeout(autoSaveTimeout);
+        }
+        
+        // Set new timeout for auto-save
+        const timeout = setTimeout(async () => {
+            const content = editor.getJSON();
+            try {
+                console.log('Chapter started saving changes:', currentChapter.id);
+                // Minor autosave; downstream hooks can create minor snapshot files
+                await saveChapterContent(currentChapter.id, content, true); // true = minor revision (auto-save)
+                console.log('Chapter auto-saved:', currentChapter.id);
+            } catch (error) {
+                console.error('Auto-save failed:', error);
+            }
+        }, isAIRunning ? 5 * 60 * 1000 : 2000); // 5 min debounce if AI is running, else 2s
+        
+        setAutoSaveTimeout(timeout);
+    }, [editor, currentChapter, saveChapterContent, autoSaveTimeout, isAIRunning]);
+    
+    // Set up content change listener for auto-save
+    useEffect(() => {
+        if (!editor) return;
+        
+        const handleUpdate = () => {
+            handleContentChange();
+        };
+        
+        editor.on('update', handleUpdate);
+        
+        return () => {
+            editor.off('update', handleUpdate);
+        };
+    }, [editor, handleContentChange]);
+    
+    // Update editor content when current chapter changes
+    useEffect(() => {
+        if (editor && currentChapter) {
+            const content = currentChapter.content || '';
+            if (JSON.stringify(editor.getJSON()) !== JSON.stringify(content)) {
+                editor.commands.setContent(content, { emitUpdate: false });
+            }
+              try { (window as any).__currentChapterJSON = content; } catch {}
+        }
+    }, [editor, currentChapter]);
+
+    // Listen for external chapter JSON updates (e.g., from RevisionDiffModal Apply/Create)
+    useEffect(() => {
+        if (!editor) return;
+        const NBSP = '\u00A0';
+        const sanitizeNode = (node: any): any | null => {
+            if (!node || typeof node !== 'object') return null;
+            if (node.type === 'text') {
+                const t = typeof node.text === 'string' ? node.text : '';
+                if (t.length === 0) return null;
+                return { ...node, text: t };
+            }
+            const content = Array.isArray(node.content) ? node.content.map(sanitizeNode).filter(Boolean) as any[] : undefined;
+            if (node.type === 'paragraph') {
+                const safeContent = content && content.length > 0 ? content : [{ type: 'text', text: NBSP }];
+                return { ...node, content: safeContent };
+            }
+            if (content) return { ...node, content };
+            return { ...node };
+        };
+        const sanitizeDoc = (doc: any) => {
+            if (!doc || typeof doc !== 'object') return { type: 'doc', content: [] };
+            const content = Array.isArray(doc.content) ? doc.content.map(sanitizeNode).filter(Boolean) : [];
+            return { type: 'doc', content };
+        };
+        const handler = (ev: Event) => {
+            const detail = (ev as CustomEvent).detail;
+            if (!detail) return;
+            const incoming = sanitizeDoc(detail);
+            try {
+                const currentJson = editor.getJSON();
+                if (JSON.stringify(currentJson) === JSON.stringify(incoming)) return;
+            } catch {}
+            editor.commands.setContent(incoming, { emitUpdate: false });
+            try { (window as any).__currentChapterJSON = incoming; } catch {}
+        };
+        window.addEventListener('chapter-json-updated', handler as EventListener);
+        return () => window.removeEventListener('chapter-json-updated', handler as EventListener);
+    }, [editor]);
+
     return (
-        <main className="flex-grow w-full overflow-y-auto custom-scrollbar relative pb-12">
+        <>
+            <main className="flex-grow w-full overflow-y-auto custom-scrollbar relative pb-12">
                 <style>
                 {`
                     .ProseMirror {
@@ -2148,24 +3630,115 @@ const Editor: React.FC<{
                         -ms-user-select: text;
                     }
                 `}
-            </style>
-            
-            <EditorBubbleMenu editor={editor} />
-            <EditorFloatingMenu editor={editor} />
-            <TypographySettingsPopup 
-                isOpen={showTypographySettings}
-                onClose={() => onCloseTypographySettings && onCloseTypographySettings()}
-                onApply={(settings) => {
-                    console.log('Applied typography settings:', settings);
-                    // Settings are already applied in the popup's handleApply function
-                }}
-                editor={editor}
-            />
+                </style>
+                
+                <EditorBubbleMenu editor={editor} setIsAIRunning={setIsAIRunning} isAIRunning={isAIRunning} />
+                <EditorFloatingMenu 
+                    editor={editor} 
+                    currentChapter={currentChapter || undefined}
+                    bookId={bookId}
+                    versionId={versionId}
+                />
+                <TypographySettingsPopup 
+                    isOpen={showTypographySettings}
+                    onClose={() => onCloseTypographySettings && onCloseTypographySettings()}
+                    onApply={(settings) => {
+                        console.log('Applied typography settings:', settings);
+                        // Settings are already applied in the popup's handleApply function
+                    }}
+                    editor={editor}
+                />
 
-            <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-16">
-                <EditorContent editor={editor} />
-            </div>
-        </main>
+                {activeMode === 'Planning' ? (
+                    <PlanningPage 
+                        book={book || {
+                            id: bookId,
+                            title: 'Current Book',
+                            lastModified: new Date().toISOString(),
+                            progress: 0,
+                            wordCount: 0,
+                            genre: 'Fiction',
+                            collaboratorCount: 1,
+                            collaborators: [],
+                            characters: [],
+                            featured: false,
+                            bookType: 'Novel',
+                            prose: 'Standard',
+                            language: 'English',
+                            publisher: '',
+                            publishedStatus: 'Unpublished',
+                            synopsis: ''
+                        }}
+                        version={version || {
+                            id: versionId,
+                            name: 'Working Draft',
+                            status: 'DRAFT',
+                            wordCount: 0,
+                            createdAt: new Date().toISOString(),
+                            contributor: {
+                                name: 'Author',
+                                avatar: ''
+                            },
+                            characters: [],
+                            plotArcs: [],
+                            worlds: [],
+                            chapters: []
+                        }}
+                        theme={theme}
+                        activeTab={planningTab}
+                        searchQuery={planningSearchQuery}
+                    />
+                ) : (
+                    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-16">
+                        {/* Show CreateChapterPage if no chapters exist */}
+                        {chapters.length === 0 ? (
+                            <CreateChapterPage 
+                                onCreateChapter={handleCreateChapter}
+                                isCreating={isCreatingChapter}
+                            />
+                        ) : (
+                            <>
+                                <EditorContent editor={editor} />
+                                
+                                {/* Tool Manager - Show tools available for this book/version */}
+                                <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">
+                                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                                        Available Tools
+                                    </h3>
+                                    <ToolManager bookId={bookId} versionId={versionId} />
+                                </div>
+                                </>
+                        )}
+                    </div>
+                )}
+
+                {/* Enhanced clipboard status indicator */}
+                {window.__TAURI__ && (
+                    <div className="fixed bottom-4 right-4 z-50">
+                        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-lg border transition-all duration-200 ${
+                            canCopy 
+                                ? 'bg-green-50 text-green-800 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' 
+                                : 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'
+                        }`}>
+                            <div className={`w-2 h-2 rounded-full ${
+                                canCopy ? 'bg-green-500' : 'bg-red-500'
+                            }`} />
+                            <span className="text-sm font-medium">
+                                {canCopy ? 'Copy Enabled' : 'Copy Restricted'}
+                            </span>
+                        </div>
+                    </div>
+                )}
+
+               
+            </main>
+
+            {/* Tool Window Dock Sidebar */}
+            <DockSidebar bookId={bookId} versionId={versionId} theme={theme === 'system' ? 'dark' : theme} />
+
+            {/* Toast notifications - moved outside main for better visibility */}
+            <Toaster />
+        </>
     );
 };
 

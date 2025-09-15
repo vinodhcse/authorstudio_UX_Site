@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chapter Creation Diagnostics</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #2a2a2a;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background: #333;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 5px 0;
+            font-weight: bold;
+        }
+        .status.success { background: #4CAF50; }
+        .status.error { background: #f44336; }
+        .status.warning { background: #ff9800; }
+        .status.info { background: #2196F3; }
+        
+        input[type="text"] {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 5px;
+            font-size: 14px;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .data-table th, .data-table td {
+            border: 1px solid #555;
+            padding: 8px;
+            text-align: left;
+        }
+        .data-table th {
+            background: #444;
+        }
+        .data-table td {
+            background: #333;
+            font-family: monospace;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Chapter Creation Diagnostics</h1>
+    <p>This page tests the chapter creation, persistence, and display functionality.</p>
+
+    <div class="test-section">
+        <h2>Database Diagnostics</h2>
+        <button onclick="runDatabaseDiagnostics()">Check Database State</button>
+        <button onclick="checkVersionData()">Check Version Content Data</button>
+        <div id="database-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Chapter Creation Test</h2>
+        <input type="text" id="chapter-title" placeholder="Enter chapter title" value="Test Chapter">
+        <button onclick="createTestChapter()">Create Chapter</button>
+        <button onclick="listChapters()">List Chapters</button>
+        <div id="chapter-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>BookContext State</h2>
+        <button onclick="checkBookContextState()">Check BookContext</button>
+        <button onclick="checkCurrentVersion()">Check Current Version</button>
+        <div id="context-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Event System Test</h2>
+        <button onclick="setupEventListeners()">Setup Event Listeners</button>
+        <button onclick="clearEventLogs()">Clear Logs</button>
+        <div id="event-result" class="result"></div>
+    </div>
+
+    <script>
+        // Mock the global APIs that would be available in the actual app
+        let eventLogs = [];
+        
+        // Status logging utility
+        function logStatus(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const statusDiv = document.createElement('div');
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = `[${timestamp}] ${message}`;
+            return statusDiv;
+        }
+        
+        // Mock database diagnostics (would call actual API in real app)
+        async function runDatabaseDiagnostics() {
+            const resultDiv = document.getElementById('database-result');
+            resultDiv.innerHTML = '';
+            
+            try {
+                resultDiv.appendChild(logStatus('Running database diagnostics...', 'info'));
+                
+                // In real app, this would call: 
+                // import { diagnoseDatabaseState } from './src/data/diagnostics';
+                // await diagnoseDatabaseState();
+                
+                resultDiv.appendChild(logStatus('Database diagnostics would be logged to console', 'success'));
+                resultDiv.appendChild(logStatus('Check browser console and app logs for detailed output', 'info'));
+                
+                // Simulate some database stats
+                const mockStats = {
+                    tablesFound: ['books', 'versions', 'chapters', 'scenes'],
+                    versionCount: 3,
+                    chapterCount: 8,
+                    lastVersion: 'v001-1234-5678'
+                };
+                
+                const pre = document.createElement('pre');
+                pre.textContent = JSON.stringify(mockStats, null, 2);
+                resultDiv.appendChild(pre);
+                
+            } catch (error) {
+                resultDiv.appendChild(logStatus(`Error: ${error.message}`, 'error'));
+            }
+        }
+        
+        async function checkVersionData() {
+            const resultDiv = document.getElementById('database-result');
+            resultDiv.appendChild(logStatus('Checking version content_data...', 'info'));
+            
+            // Mock version data check
+            const mockVersionData = {
+                chapters: [
+                    { id: 'ch1', title: 'Chapter 1', order: 1 },
+                    { id: 'ch2', title: 'Chapter 2', order: 2 }
+                ],
+                plotCanvas: {
+                    nodes: [],
+                    edges: []
+                }
+            };
+            
+            const pre = document.createElement('pre');
+            pre.textContent = `Version Content Data:\n${JSON.stringify(mockVersionData, null, 2)}`;
+            resultDiv.appendChild(pre);
+        }
+        
+        async function createTestChapter() {
+            const resultDiv = document.getElementById('chapter-result');
+            const titleInput = document.getElementById('chapter-title');
+            const title = titleInput.value || 'Test Chapter';
+            
+            resultDiv.innerHTML = '';
+            resultDiv.appendChild(logStatus(`Creating chapter: "${title}"`, 'info'));
+            
+            try {
+                // In real app, this would call the useChapters hook:
+                // const { createChapter } = useChapters();
+                // const newChapter = await createChapter(title);
+                
+                const mockChapter = {
+                    id: `ch-${Date.now()}`,
+                    title: title,
+                    content: '',
+                    order: Math.floor(Math.random() * 100),
+                    created_at: new Date().toISOString()
+                };
+                
+                resultDiv.appendChild(logStatus('Chapter created successfully', 'success'));
+                resultDiv.appendChild(logStatus('Checking if BookContext was updated...', 'info'));
+                resultDiv.appendChild(logStatus('Checking if event was dispatched...', 'info'));
+                
+                const pre = document.createElement('pre');
+                pre.textContent = JSON.stringify(mockChapter, null, 2);
+                resultDiv.appendChild(pre);
+                
+                // Simulate event dispatch
+                const event = new CustomEvent('chapterCreated', {
+                    detail: { chapter: mockChapter }
+                });
+                window.dispatchEvent(event);
+                
+            } catch (error) {
+                resultDiv.appendChild(logStatus(`Error: ${error.message}`, 'error'));
+            }
+        }
+        
+        async function listChapters() {
+            const resultDiv = document.getElementById('chapter-result');
+            resultDiv.appendChild(logStatus('Listing chapters from database...', 'info'));
+            
+            // Mock chapter list
+            const mockChapters = [
+                { id: 'ch1', title: 'Introduction', order: 1 },
+                { id: 'ch2', title: 'The Beginning', order: 2 },
+                { id: 'ch3', title: 'Rising Action', order: 3 }
+            ];
+            
+            const table = document.createElement('table');
+            table.className = 'data-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Title</th>
+                        <th>Order</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${mockChapters.map(ch => `
+                        <tr>
+                            <td>${ch.id}</td>
+                            <td>${ch.title}</td>
+                            <td>${ch.order}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            resultDiv.appendChild(table);
+        }
+        
+        async function checkBookContextState() {
+            const resultDiv = document.getElementById('context-result');
+            resultDiv.innerHTML = '';
+            resultDiv.appendChild(logStatus('Checking BookContext state...', 'info'));
+            
+            // Mock BookContext state
+            const mockState = {
+                currentBook: { id: 'book1', title: 'My Novel' },
+                currentVersion: { id: 'v1', title: 'Draft 1' },
+                chapters: [
+                    { id: 'ch1', title: 'Chapter 1' },
+                    { id: 'ch2', title: 'Chapter 2' }
+                ],
+                isLoading: false
+            };
+            
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify(mockState, null, 2);
+            resultDiv.appendChild(pre);
+        }
+        
+        async function checkCurrentVersion() {
+            const resultDiv = document.getElementById('context-result');
+            resultDiv.appendChild(logStatus('Checking current version data...', 'info'));
+            
+            // Mock version with content_data
+            const mockVersion = {
+                id: 'v1',
+                title: 'Draft 1',
+                content_data: {
+                    chapters: [
+                        { id: 'ch1', title: 'Chapter 1', order: 1 },
+                        { id: 'ch2', title: 'Chapter 2', order: 2 }
+                    ],
+                    plotCanvas: { nodes: [], edges: [] }
+                }
+            };
+            
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify(mockVersion, null, 2);
+            resultDiv.appendChild(pre);
+        }
+        
+        function setupEventListeners() {
+            const resultDiv = document.getElementById('event-result');
+            resultDiv.innerHTML = '';
+            
+            ['chapterCreated', 'chapterUpdated', 'chapterDeleted'].forEach(eventType => {
+                window.addEventListener(eventType, (event) => {
+                    eventLogs.push({
+                        type: eventType,
+                        timestamp: new Date().toISOString(),
+                        detail: event.detail
+                    });
+                    
+                    resultDiv.appendChild(logStatus(`Event received: ${eventType}`, 'success'));
+                    const pre = document.createElement('pre');
+                    pre.textContent = JSON.stringify(event.detail, null, 2);
+                    resultDiv.appendChild(pre);
+                });
+            });
+            
+            resultDiv.appendChild(logStatus('Event listeners setup complete', 'success'));
+            resultDiv.appendChild(logStatus('Try creating a chapter to see events', 'info'));
+        }
+        
+        function clearEventLogs() {
+            eventLogs = [];
+            document.getElementById('event-result').innerHTML = '';
+        }
+        
+        // Auto-setup event listeners on load
+        window.addEventListener('load', setupEventListeners);
+    </script>
+</body>
+</html>

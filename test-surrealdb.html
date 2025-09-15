@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test SurrealDB</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+        .test-button { padding: 10px 20px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .test-button:hover { background: #005a87; }
+        .test-result { margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px; white-space: pre-wrap; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+    </style>
+</head>
+<body>
+    <h1>Test SurrealDB CRUD Operations</h1>
+    
+    <div class="test-section">
+        <h2>Test Person Operations</h2>
+        <button class="test-button" onclick="createPerson()">Create Person</button>
+        <button class="test-button" onclick="getPeople()">Get All People</button>
+        <button class="test-button" onclick="deleteAllPeople()">Delete All People</button>
+        <div id="personResult" class="test-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Book Operations</h2>
+        <button class="test-button" onclick="createBook()">Create Book</button>
+        <button class="test-button" onclick="getBooks()">Get All Books</button>
+        <button class="test-button" onclick="deleteAllBooks()">Delete All Books</button>
+        <div id="bookResult" class="test-result"></div>
+    </div>
+
+    <script type="module">
+        const { invoke } = window.__TAURI__.core;
+
+        window.createPerson = async function() {
+            const result = document.getElementById('personResult');
+            try {
+                result.className = 'test-result';
+                result.textContent = 'Creating person...';
+                
+                const response = await invoke('test_create_person', {
+                    name: 'John Doe',
+                    age: 30
+                });
+                
+                result.className = 'test-result success';
+                result.textContent = `Person created successfully:\n${JSON.stringify(response, null, 2)}`;
+            } catch (error) {
+                result.className = 'test-result error';
+                result.textContent = `Error creating person: ${error}`;
+            }
+        };
+
+        window.getPeople = async function() {
+            const result = document.getElementById('personResult');
+            try {
+                result.className = 'test-result';
+                result.textContent = 'Getting all people...';
+                
+                const response = await invoke('test_get_people');
+                
+                result.className = 'test-result success';
+                result.textContent = `People:\n${JSON.stringify(response, null, 2)}`;
+            } catch (error) {
+                result.className = 'test-result error';
+                result.textContent = `Error getting people: ${error}`;
+            }
+        };
+
+        window.deleteAllPeople = async function() {
+            const result = document.getElementById('personResult');
+            try {
+                result.className = 'test-result';
+                result.textContent = 'Deleting all people...';
+                
+                const response = await invoke('test_delete_all_people');
+                
+                result.className = 'test-result success';
+                result.textContent = `All people deleted successfully:\n${JSON.stringify(response, null, 2)}`;
+            } catch (error) {
+                result.className = 'test-result error';
+                result.textContent = `Error deleting people: ${error}`;
+            }
+        };
+
+        window.createBook = async function() {
+            const result = document.getElementById('bookResult');
+            try {
+                result.className = 'test-result';
+                result.textContent = 'Creating book...';
+                
+                const response = await invoke('test_create_book', {
+                    title: 'Test Book',
+                    author: 'Test Author'
+                });
+                
+                result.className = 'test-result success';
+                result.textContent = `Book created successfully:\n${JSON.stringify(response, null, 2)}`;
+            } catch (error) {
+                result.className = 'test-result error';
+                result.textContent = `Error creating book: ${error}`;
+            }
+        };
+
+        window.getBooks = async function() {
+            const result = document.getElementById('bookResult');
+            try {
+                result.className = 'test-result';
+                result.textContent = 'Getting all books...';
+                
+                const response = await invoke('test_get_books');
+                
+                result.className = 'test-result success';
+                result.textContent = `Books:\n${JSON.stringify(response, null, 2)}`;
+            } catch (error) {
+                result.className = 'test-result error';
+                result.textContent = `Error getting books: ${error}`;
+            }
+        };
+
+        window.deleteAllBooks = async function() {
+            const result = document.getElementById('bookResult');
+            try {
+                result.className = 'test-result';
+                result.textContent = 'Deleting all books...';
+                
+                const response = await invoke('test_delete_all_books');
+                
+                result.className = 'test-result success';
+                result.textContent = `All books deleted successfully:\n${JSON.stringify(response, null, 2)}`;
+            } catch (error) {
+                result.className = 'test-result error';
+                result.textContent = `Error deleting books: ${error}`;
+            }
+        };
+    </script>
+</body>
+</html>

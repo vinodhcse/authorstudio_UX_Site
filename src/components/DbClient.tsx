@@ -1,0 +1,1420 @@
+import React, { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { appLog } from '../auth/fileLogger';
+import { useAuthStore } from '../auth/useAuthStore';
+import * as dal from '../data/dal'; // Import the new DAL
+import * as sqlite from '../auth/sqlite';
+import CoverPicker from './CoverPicker';
+
+interface DbClientProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+const DbClient: React.FC<DbClientProps> = ({ open, onClose }) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<any[]>([]);
+  const [table, setTable] = useState('person');
+  const [customQuery, setCustomQuery] = useState('SELECT * FROM person LIMIT 200');
+  const [dalBooks, setDalBooks] = useState<any[]>([]);
+  const [validationResults, setValidationResults] = useState<any>({});
+
+  // Comprehensive Database Validation
+  const validateAllDatabases = async () => {
+    setError(null);
+    setLoading(true);
+    const results: any = {};
+
+    try {
+      // Get authenticated user information
+      const authStore = useAuthStore.getState();
+      const authenticatedUserId = authStore.user?.id;
+      const userEmail = authStore.user?.email;
+      
+      // Use authenticated user ID or fallback
+      const testUserId = authenticatedUserId || 'test_user_123';
+      
+      appLog.info('db-validation', 'Starting validation with user context', { 
+        authenticatedUserId, 
+        userEmail, 
+        testUserId,
+        isAuthenticated: authStore.isAuthenticated 
+      });
+
+      // Test 1: User Keys Validation
+      appLog.info('db-validation', 'Testing user keys...');
+      try {
+        // Check if user keys exist
+        const existingKeys = await dal.getUserKeys(testUserId);
+        results.userKeys = {
+          exists: !!existingKeys,
+          data: existingKeys,
+          status: existingKeys ? 'Found existing keys' : 'No keys found',
+          userId: testUserId
+        };
+
+        // If no keys, create test keys
+        if (!existingKeys) {
+          const testKeys = {
+            udekWrapAppkey: new Uint8Array([1, 2, 3, 4, 5]),
+            kdfSalt: new Uint8Array([6, 7, 8, 9, 10]),
+            kdfIters: 100000
+          };
+          await dal.setUserKeys(testUserId, testKeys);
+          
+          // Verify keys were saved
+          const savedKeys = await dal.getUserKeys(testUserId);
+          results.userKeys.created = !!savedKeys;
+          results.userKeys.status = savedKeys ? 'Keys created and verified' : 'Failed to create keys';
+        }
+      } catch (err) {
+        results.userKeys = { error: String(err), status: 'Failed' };
+      }
+
+      // Test 2: Session Data Validation
+      appLog.info('db-validation', 'Testing session data...');
+      try {
+        let sessionData = null;
+        if (userEmail) {
+          sessionData = await sqlite.getSessionRow(userEmail);
+        } else if (authenticatedUserId) {
+          sessionData = await sqlite.getSessionRow(undefined, authenticatedUserId);
+        } else {
+          sessionData = await sqlite.getSessionRow();
+        }
+        results.session = {
+          exists: !!sessionData,
+          data: sessionData,
+          status: sessionData ? `Session found for ${userEmail || authenticatedUserId || 'current user'}` : 'No session data',
+          authContext: { userEmail, authenticatedUserId, isAuthenticated: authStore.isAuthenticated }
+        };
+      } catch (err) {
+        results.session = { error: String(err), status: 'Failed to retrieve session' };
+      }
+
+      // Test 3: Books Validation
+      appLog.info('db-validation', 'Testing books...');
+      try {
+        const books = await dal.getUserBooks(testUserId);
+        results.books = {
+          count: books.length,
+          data: books,
+          status: `Found ${books.length} books`
+        };
+        if (books.length === 0) {
+          const newBook = {
+            book_id: `book_${Date.now()}`,
+            owner_user_id: testUserId,
+            title: 'Validation Test Book',
+            is_shared: 0,
+            sync_state: 'idle',
+            conflict_state: 'none',
+            updated_at: Date.now()
+          };
+          await dal.createBook(newBook);
+          const updatedBooks = await dal.getUserBooks(testUserId);
+          results.books.created = true;
+          results.books.count = updatedBooks.length;
+          results.books.status = `Created test book, now have ${updatedBooks.length} books`;
+        }
+      } catch (err) {
+        results.books = { error: String(err), status: 'Failed' };
+      }
+
+      // Test 4: Versions Validation
+      appLog.info('db-validation', 'Testing versions...');
+      try {
+        const books = await dal.getUserBooks(testUserId);
+        if (books.length > 0) {
+          const versions = await dal.getVersionsByBook(books[0].book_id);
+          results.versions = {
+            count: versions.length,
+            bookId: books[0].book_id,
+            data: versions,
+            status: `Found ${versions.length} versions for book ${books[0].title}`
+          };
+          if (versions.length === 0) {
+            const newVersion = {
+              version_id: `version_${Date.now()}`,
+              book_id: books[0].book_id,
+              owner_user_id: testUserId,
+              title: 'Test Version',
+              enc_scheme: '',
+              is_current: 1,
+              has_proposals: 0,
+              pending_ops: 0,
+              sync_state: 'idle',
+              conflict_state: 'none',
+              created_at: Date.now(),
+              updated_at: Date.now()
+            };
+            await dal.createVersion(newVersion);
+            const updatedVersions = await dal.getVersionsByBook(books[0].book_id);
+            results.versions.created = true;
+            results.versions.count = updatedVersions.length;
+            results.versions.status = `Created test version, now have ${updatedVersions.length} versions`;
+          }
+        } else {
+          results.versions = { status: 'No books available for version testing' };
+        }
+      } catch (err) {
+        results.versions = { error: String(err), status: 'Failed' };
+      }
+
+      // Test 5: Chapters Validation
+      appLog.info('db-validation', 'Testing chapters...');
+      try {
+        const books = await dal.getUserBooks(testUserId);
+        if (books.length > 0) {
+          const versions = await dal.getVersionsByBook(books[0].book_id);
+          if (versions.length > 0) {
+            const chapters = await dal.getChaptersByVersion(books[0].book_id, versions[0].version_id);
+            results.chapters = {
+              count: chapters.length,
+              bookId: books[0].book_id,
+              versionId: versions[0].version_id,
+              data: chapters,
+              status: `Found ${chapters.length} chapters`
+            };
+            if (chapters.length === 0) {
+              const newChapter = {
+                chapter_id: `chapter_${Date.now()}`,
+                book_id: books[0].book_id,
+                version_id: versions[0].version_id,
+                owner_user_id: testUserId,
+                enc_scheme: '',
+                content_enc: new Uint8Array(),
+                content_iv: new Uint8Array(),
+                has_proposals: 0,
+                pending_ops: 0,
+                sync_state: 'idle',
+                conflict_state: 'none',
+                created_at: Date.now(),
+                updated_at: Date.now()
+              };
+              await dal.createChapter(newChapter);
+              const updatedChapters = await dal.getChaptersByVersion(books[0].book_id, versions[0].version_id);
+              results.chapters.created = true;
+              results.chapters.count = updatedChapters.length;
+              results.chapters.status = `Created test chapter, now have ${updatedChapters.length} chapters`;
+            }
+          } else {
+            results.chapters = { status: 'No versions available for chapter testing' };
+          }
+        } else {
+          results.chapters = { status: 'No books available for chapter testing' };
+        }
+      } catch (err) {
+        results.chapters = { error: String(err), status: 'Failed' };
+      }
+
+      // Test 6: Asset System Validation
+      appLog.info('db-validation', 'Testing asset system...');
+      try {
+        const assets = await invoke<any[]>('asset_list_all');
+        const assetLinks = await invoke<any[]>('link_list_all');
+        results.assets = {
+          assetCount: assets.length,
+          linkCount: assetLinks.length,
+          assets: assets.slice(0, 5), // Show first 5 assets
+          links: assetLinks.slice(0, 5), // Show first 5 links
+          status: `Found ${assets.length} assets and ${assetLinks.length} links`
+        };
+      } catch (err) {
+        results.assets = { error: String(err), status: 'Failed to retrieve assets' };
+      }
+
+      // Test 6.1: SimpleAssetService File Operations Test
+      appLog.info('db-validation', 'Testing simplified asset file operations...');
+      try {
+        // Test file path creation
+        const testBookId = 'test_book_123';
+        const testHash = 'test_hash_456';
+        const testFileName = 'test_cover.jpg';
+        
+        // Test the Tauri commands that SimpleAssetService uses
+        const filePathResult = await invoke<string>('create_file_path', { 
+          relativePath: `books/${testBookId}/files/${testHash}`,
+          fileName: testFileName
+        });
+        
+        results.simpleAssets = {
+          filePathCreation: 'SUCCESS',
+          testPath: filePathResult,
+          status: 'SimpleAssetService file operations ready'
+        };
+        
+        appLog.info('db-validation', 'SimpleAssetService file path test successful', { filePathResult });
+      } catch (err) {
+        results.simpleAssets = { 
+          error: String(err), 
+          status: 'Failed to test SimpleAssetService file operations' 
+        };
+        appLog.error('db-validation', 'SimpleAssetService test failed', { error: String(err) });
+      }
+
+      // Test 7: Database Schema Validation
+      appLog.info('db-validation', 'Testing database schema...');
+      try {
+        const tables = await invoke<any>('surreal_query', { 
+          query: 'INFO FOR DB;' 
+        });
+        results.schema = {
+          data: tables,
+          status: 'Schema information retrieved'
+        };
+      } catch (err) {
+        results.schema = { error: String(err), status: 'Failed to get schema info' };
+      }
+
+      // Test 8: File System Validation
+      appLog.info('db-validation', 'Testing file system...');
+      try {
+        const configDir = await invoke<string>('get_config_dir');
+        results.fileSystem = {
+          configDir,
+          status: `Config directory: ${configDir}`
+        };
+      } catch (err) {
+        results.fileSystem = { error: String(err), status: 'Failed to get config directory' };
+      }
+
+      setValidationResults(results);
+      setRows([results]);
+      appLog.info('db-validation', 'Validation completed', { results });
+
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-validation', 'Validation failed', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // DAL Test Functions
+  const dalCreateBook = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const newBook = {
+        book_id: `book_${Date.now()}`,
+        owner_user_id: 'test_user_123',
+        title: `DAL Test Book ${Date.now()}`,
+        is_shared: 0,
+        sync_state: 'idle',
+        conflict_state: 'none',
+        updated_at: Date.now()
+      };
+      await dal.createBook(newBook);
+      appLog.info('dal-test', 'Created book via DAL', { newBook });
+      setRows([newBook]);
+      await dalGetBooks();
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('dal-test', 'Failed to create book via DAL', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const dalGetBooks = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const books = await dal.getUserBooks('test_user_123');
+      setDalBooks(books);
+      setRows(books);
+      appLog.info('dal-test', 'Got books via DAL', { count: books.length });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('dal-test', 'Failed to get books via DAL', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const dalCreateVersion = async () => {
+    if (dalBooks.length === 0) {
+      setError('No books available. Create a book first.');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const book = dalBooks[0];
+      const newVersion = {
+        version_id: `version_${Date.now()}`,
+        book_id: book.book_id,
+        owner_user_id: 'test_user_123',
+        title: `Version ${Date.now()}`,
+        enc_scheme: '',
+        is_current: 1,
+        has_proposals: 0,
+        pending_ops: 0,
+        sync_state: 'idle',
+        conflict_state: 'none',
+        created_at: Date.now(),
+        updated_at: Date.now()
+      };
+      await dal.createVersion(newVersion);
+      appLog.info('dal-test', 'Created version via DAL', { newVersion });
+      setRows([newVersion]);
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('dal-test', 'Failed to create version via DAL', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const dalCreateChapter = async () => {
+    if (dalBooks.length === 0) {
+      setError('No books available. Create a book first.');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const book = dalBooks[0];
+      const versions = await dal.getVersionsByBook(book.book_id);
+      let version = versions.find(v => v.is_current === 1);
+      if (!version) {
+        const newVersion = {
+          version_id: `version_${Date.now()}`,
+          book_id: book.book_id,
+          owner_user_id: 'test_user_123',
+          title: 'Draft',
+          enc_scheme: '',
+          is_current: 1,
+          has_proposals: 0,
+          pending_ops: 0,
+          sync_state: 'idle',
+          conflict_state: 'none',
+          created_at: Date.now(),
+          updated_at: Date.now()
+        };
+        await dal.createVersion(newVersion);
+        version = newVersion;
+      }
+      const newChapter = {
+        chapter_id: `chapter_${Date.now()}`,
+        book_id: book.book_id,
+        version_id: version.version_id,
+        owner_user_id: 'test_user_123',
+        enc_scheme: '',
+        content_enc: new Uint8Array(),
+        content_iv: new Uint8Array(),
+        has_proposals: 0,
+        pending_ops: 0,
+        sync_state: 'idle',
+        conflict_state: 'none',
+        created_at: Date.now(),
+        updated_at: Date.now()
+      };
+      await dal.createChapter(newChapter);
+      appLog.info('dal-test', 'Created chapter via DAL', { newChapter });
+      setRows([newChapter]);
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('dal-test', 'Failed to create chapter via DAL', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+    // Print SurrealDB schema for version table
+  const printVersionTableSchema = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const schema = await invoke<any>('app_surreal_query', { query: 'INFO FOR TABLE version;' });
+      console.log(JSON.stringify(schema, null, 2));
+    } catch (err) {
+      setError('Failed to get version table schema: ' + String(err));
+    }
+    setLoading(false);
+  };
+  
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        appGetBooks(); // Trigger app books retrieval
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  const runCustom = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('surreal_query', { query: customQuery });
+      setRows(Array.isArray(res) ? res : []);
+    } catch (err: any) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Test Database Functions
+  const testCreatePerson = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('test_create_person', {
+        name: `Test Person ${Date.now()}`,
+        age: Math.floor(Math.random() * 50) + 18
+      });
+      setRows([res]);
+      appLog.info('db-client', 'Test person created', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to create test person', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testGetPeople = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('test_get_people');
+      setRows(Array.isArray(res) ? res : []);
+      appLog.info('db-client', 'Test people retrieved', { count: Array.isArray(res) ? res.length : 0 });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get test people', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testCreateBook = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_create_book', {
+        title: `Test Book ${Date.now()}`,
+        author: `Test Author ${Math.floor(Math.random() * 100)}`
+      });
+      setRows([res]);
+      appLog.info('db-client', 'Test book created', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to create test book', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testGetBooks = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_get_books');
+      setRows(Array.isArray(res) ? res : []);
+      appLog.info('db-client', 'Test books retrieved', { count: Array.isArray(res) ? res.length : 0 });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get test books', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testDeleteAllPeople = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('test_delete_all_people');
+      setRows([{ message: 'All test people deleted', result: res }]);
+      appLog.info('db-client', 'All test people deleted', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to delete test people', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testDeleteAllBooks = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('test_delete_all_books');
+      setRows([{ message: 'All test books deleted', result: res }]);
+      appLog.info('db-client', 'All test books deleted', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to delete test books', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Cover Upload Test Function
+  const testCoverUpload = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      // Import SimpleAssetService for testing
+      const { SimpleAssetService } = await import('../services/SimpleAssetService');
+      
+      // Create a test image file (1x1 red pixel PNG)
+      const testImageData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChAGAWWjOwgAAAABJRU5ErkJggg==';
+      
+      // Convert data URL to File object
+      const response = await fetch(testImageData);
+      const blob = await response.blob();
+      const testFile = new File([blob], 'test-cover.png', { type: 'image/png' });
+      
+      const testBookId = 'test_book_cover_' + Date.now();
+      
+      appLog.info('db-client', 'Starting cover upload test', { testBookId, fileName: testFile.name });
+      
+      // Test the simplified cover upload
+      const result = await SimpleAssetService.uploadCover(testFile, testBookId);
+      
+      // Test loading the asset back
+      const loadedAsset = await SimpleAssetService.loadAssetForDisplay(result.assetId);
+      
+      setRows([{
+        testType: 'Cover Upload Test',
+        success: true,
+        assetId: result.assetId,
+        fileRef: result.fileRef,
+        dataUrlLength: result.dataUrl.length,
+        loadedAssetLength: loadedAsset ? loadedAsset.length : 0,
+        message: 'Cover upload and load test successful'
+      }]);
+      
+      appLog.success('db-client', 'Cover upload test completed successfully', { 
+        assetId: result.assetId,
+        testBookId 
+      });
+      
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Cover upload test failed', { error: String(err) });
+      setRows([{
+        testType: 'Cover Upload Test',
+        success: false,
+        error: String(err),
+        message: 'Cover upload test failed'
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  // App Database Test Functions
+  const appCreateSession = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const sessionData = {
+        user_id: 'test_user_123',
+        email: 'test@example.com',
+        name: 'Test User',
+      };
+      const res = await invoke<any>('app_save_session', { session: sessionData });
+      setRows([res]);
+      appLog.info('db-client', 'App session created', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to create app book', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const appGetAppSessions = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_get_session');
+      setRows(Array.isArray(res) ? res : (res == null ? [] : [res]));
+      appLog.info('db-client', 'App sessions retrieved', { count: Array.isArray(res) ? res.length : 0 });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get app sessions', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // App Database Test Functions
+  const appCreateBook = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const bookData = {
+        title: `App Book ${Date.now()}`,
+        subtitle: null,
+        author: `App Author ${Math.floor(Math.random() * 100)}`,
+        author_id: null,
+        cover_image: null,
+        last_modified: new Date().toISOString(),
+        progress: 0.0,
+        word_count: 0,
+        genre: 'Fiction',
+        subgenre: null,
+        collaborator_count: 1,
+        featured: false,
+        book_type: 'Novel',
+        prose: 'Standard',
+        language: 'English',
+        publisher: 'Self-Published',
+        published_status: 'Unpublished',
+        publisher_link: null,
+        print_isbn: null,
+        ebook_isbn: null,
+        publisher_logo: null,
+        synopsis: 'Test book synopsis',
+        description: 'Test book description',
+        is_shared: false,
+        sync_state: 'idle',
+        conflict_state: 'none',
+        updated_at: Date.now(),
+        book_genre: 'Fantasy',
+      };
+      const res = await invoke<any>('app_create_book', { book: bookData });
+      setRows([res]);
+      appLog.info('db-client', 'App book created', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to create app book', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const appGetBooks = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_get_books');
+      setRows(Array.isArray(res) ? res : []);
+      appLog.info('db-client', 'App books retrieved', { count: Array.isArray(res) ? res.length : 0 });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get app books', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const appDeleteAllBooks = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_delete_all_data');
+      setRows([{ message: 'All app data deleted', result: res }]);
+      appLog.info('db-client', 'All app data deleted', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to delete app data', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testDeleteVersion = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_delete_versions', { });
+      setRows([{ message: 'Version deleted', result: res }]);
+      appLog.info('db-client', 'Version deleted', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to delete version', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // New CRUD Test Functions
+  const testVersionCRUD = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      // First ensure we have a book
+      const books = await invoke<any[]>('app_get_books');
+      let testBookId: string;
+      
+      if (books.length === 0) {
+        // Create a test book
+        const newBook = await invoke<any>('app_create_book', {
+          book: {
+            title: 'Test Book for Version CRUD',
+            author: 'Test Author',
+            book_id: 'test_book_' + Date.now()
+          }
+        });
+        testBookId = newBook.book_id;
+      } else {
+        testBookId = books[0].book_id || books[0].id;
+      }
+
+      // Test Version CRUD operations
+      const results: any[] = [];
+      let version_id = 'test_version_' + Date.now();
+      // 1. Create Version
+      let version1 = {
+          versionid: version_id,                 // Unique ID for version
+          bookid: "book_67890",                   // Associated book ID
+          name: "Test Version CRUD",              // Display name of the version
+          status: "DRAFT",                        // "DRAFT" | "IN_REVIEW" | "FINAL"
+          wordcount: 12345,                       // Example word count
+          createdat: "2025-08-26T12:30:00Z",      // ISO string for created date
+          contributor: {
+            userid: "test_user",
+            role: "AUTHOR",
+            name: "Jane Doe"
+          },                                      // Can be JSON object with user metadata
+          revlocal: "rev_local_abc123",           // Local revision SHA/ID
+          revcloud: "rev_cloud_def456",           // Cloud revision SHA/ID
+          syncstate: "SYNCED",                    // "SYNCED" | "DIRTY" | "CONFLICT"
+          conflictstate: "NONE",                  // "NONE" | "PENDING" | "RESOLVED"
+          updatedat: Date.now()                   // Epoch timestamp (ms)
+        };
+
+      const versionRecord = await invoke<any>('app_create_version', { version: version1 });
+      results.push({ operation: 'CREATE', status: 'SUCCESS', versionRecord });
+
+      // 2. Get Version
+      const version = await invoke<any>('app_get_version_by_id', { versionId: version_id });
+      
+      results.push({ operation: 'READ', status: version ? 'SUCCESS' : 'FAILED', version });
+
+      
+        const allVersions = await invoke<any>('app_get_versions', { });
+      allVersions.map((v: any) => {
+
+        results.push({ operation: 'READ', status: 'SUCCESS', version: v });
+      });
+      /*
+
+      // 3. Update Version
+      const updateResult = await invoke<string>('app_update_version', {
+        version_id: version_id,
+        version: {
+          version_id: version_id,
+          name: 'Updated Test Version',
+          description: 'Updated description',
+          user_id: 'test_user',
+          book_id: testBookId
+        }
+      });
+      results.push({ operation: 'UPDATE', status: 'SUCCESS', result: updateResult });
+
+      // 4. Get All Versions for Book
+      const versions = await invoke<any[]>('app_get_versions_by_book', { book_id: testBookId });
+      results.push({ operation: 'LIST', status: 'SUCCESS', count: versions.length, versions });
+*/
+      setRows(results);
+      appLog.info('db-client', 'Version CRUD test completed', { results });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Version CRUD test failed', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testChapterCRUD = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      // First ensure we have a book and version
+      const books = await invoke<any[]>('app_get_books');
+      let testBookId: string;
+      let testVersionId: string;
+      
+      if (books.length === 0) {
+        // Create a test book
+        const newBook = await invoke<any>('app_create_book', {
+          book: {
+            title: 'Test Book for Chapter CRUD',
+            author: 'Test Author',
+            book_id: 'test_book_' + Date.now()
+          }
+        });
+        testBookId = newBook.book_id;
+        
+        // Create a version
+        const versionRecord = await invoke<any>('app_create_version', {
+          version: {
+            book_id: testBookId,
+            name: 'Test Version',
+            status: 'DRAFT'
+          }
+        });
+        testVersionId = versionRecord.version_id;
+      } else {
+        testBookId = books[0].book_id || books[0].id;
+        const versions = await invoke<any[]>('app_get_versions_by_book', { book_id: testBookId });
+        
+        if (versions.length === 0) {
+          const versionRecord = await invoke<any>('app_create_version', {
+            version: {
+              book_id: testBookId,
+              name: 'Test Version',
+              status: 'DRAFT'
+            }
+          });
+          testVersionId = versionRecord.version_id;
+        } else {
+          testVersionId = versions[0].version_id || versions[0].id;
+        }
+      }
+
+      // Test Chapter CRUD operations
+      const results: any[] = [];
+
+      // 1. Create Chapter
+      const chapterId = await invoke<string>('app_create_chapter', {
+        book_id: testBookId,
+        version_id: testVersionId,
+        chapter: {
+          title: 'Test Chapter CRUD',
+          content: 'This is test chapter content',
+          order_index: 1
+        }
+      });
+      results.push({ operation: 'CREATE', status: 'SUCCESS', chapterId });
+
+      // 2. Get Chapter
+      const chapter = await invoke<any>('app_get_chapter_by_id', { chapter_id: chapterId });
+      results.push({ operation: 'READ', status: chapter ? 'SUCCESS' : 'FAILED', chapter });
+
+      // 3. Update Chapter
+      const updateResult = await invoke<string>('app_update_chapter', {
+        chapter_id: chapterId,
+        chapter: {
+          title: 'Updated Test Chapter',
+          content: 'Updated chapter content',
+          order_index: 1
+        }
+      });
+      results.push({ operation: 'UPDATE', status: 'SUCCESS', result: updateResult });
+
+      // 4. Get All Chapters for Version
+      const chapters = await invoke<any[]>('app_get_chapters_by_version', { 
+        book_id: testBookId, 
+        version_id: testVersionId 
+      });
+      results.push({ operation: 'LIST', status: 'SUCCESS', count: chapters.length, chapters });
+
+      setRows(results);
+      appLog.info('db-client', 'Chapter CRUD test completed', { results });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Chapter CRUD test failed', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testDatabaseInit = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await invoke<string>('init_database');
+      setRows([{ message: 'Database initialized', result }]);
+      appLog.info('db-client', 'Database initialized', { result });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Database initialization failed', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // File Asset Test Functions
+  const testCreateFileAsset = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const fileAsset = {
+        file_asset_id: 'test_asset_' + Date.now(),
+        sha256: 'test_hash_' + Date.now(),
+        ext: 'jpg',
+        mime: 'image/jpeg',
+        size_bytes: 12345,
+        width: 300,
+        height: 400,
+        local_path: 'test/path/image.jpg',
+        status: 'local_only',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const res = await invoke<any>('app_create_file_asset', { fileAsset });
+      setRows([{ message: 'File asset created', result: res }]);
+      appLog.info('db-client', 'File asset created', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to create file asset', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testGetFileAssetByHash = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_get_file_asset_by_sha256', { sha256: 'test_hash_' + Date.now() });
+      setRows([{ message: 'File asset retrieved by hash', result: res }]);
+      appLog.info('db-client', 'File asset retrieved by hash', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get file asset by hash', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testGetFileAssetsByStatus = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_get_file_assets_by_status', { status: 'local_only' });
+      setRows(Array.isArray(res) ? res : [res]);
+      appLog.info('db-client', 'File assets retrieved by status', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get file assets by status', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testDeleteFileAsset = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const fileAssetId = 'test_asset_' + Date.now();
+      const res = await invoke<any>('app_delete_file_asset', { fileAssetId });
+      setRows([{ message: 'File asset deleted', result: res }]);
+      appLog.info('db-client', 'File asset deleted', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to delete file asset', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testDeleteAllFileAssets = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await invoke<any>('app_delete_all_file_assets');
+      setRows([{ message: 'All file assets deleted', result: res }]);
+      appLog.info('db-client', 'All file assets deleted', { result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to delete all file assets', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testGetPendingAssets = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const { AssetService } = await import('../services/AssetService');
+      const pendingAssets = await AssetService.getPendingAssets();
+      setRows(pendingAssets.map(asset => ({
+        message: 'Pending Asset',
+        result: {
+          id: asset.id,
+          local_path: asset.local_path,
+          status: asset.status,
+          mime: asset.mime,
+          size_bytes: asset.size_bytes
+        }
+      })));
+      appLog.info('db-client', 'Pending assets retrieved', { count: pendingAssets.length, assets: pendingAssets });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get pending assets', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Main Database Test Functions
+  const mainCreateBook = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const bookId = `book_${Date.now()}`;
+      const ownerUserId = 'test_user_123';
+      const bookData = {
+        book_id: bookId,
+        owner_user_id: ownerUserId,
+        title: `Main Book ${Date.now()}`,
+        is_shared: 0,
+        enc_metadata: null,
+        enc_schema: null,
+        rev_local: null,
+        rev_cloud: null,
+        sync_state: 'idle',
+        conflict_state: 'none',
+        last_local_change: Date.now(),
+        last_cloud_change: null,
+        updated_at: Date.now(),
+      };
+      const res = await invoke<any>('book_create', { row: bookData });
+      setRows([{ message: 'Main book created', bookId, result: res }]);
+      appLog.info('db-client', 'Main book created', { bookId, result: res });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to create main book', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const mainGetBooks = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const ownerUserId = 'test_user_123';
+      const res = await invoke<any>('book_get_by_user', { ownerUserId });
+      setRows(Array.isArray(res) ? res : []);
+      appLog.info('db-client', 'Main books retrieved', { count: Array.isArray(res) ? res.length : 0 });
+    } catch (err: any) {
+      setError(String(err));
+      appLog.error('db-client', 'Failed to get main books', { error: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-[95vw] h-[95vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-lg font-semibold">Database Client</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+        </div>
+
+        <div className="flex-1 p-4 grid grid-cols-4 gap-4">
+          <div className="flex flex-col h-full">
+            <div className="mb-2 text-xs text-gray-500">Table</div>
+            <select value={table} onChange={e => setTable(e.target.value)} className="w-full mb-4 p-2 border rounded text-sm">
+              <option value="person">person</option>
+              <option value="book">book</option>
+              <option value="version">version</option>
+              <option value="chapter">chapter</option>
+              <option value="scene">scene</option>
+            </select>
+
+            {/* Scrollable button container */}
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+            <div className="mb-2 text-xs text-gray-500">Table</div>
+            <select value={table} onChange={e => setTable(e.target.value)} className="w-full mb-4 p-2 border rounded text-sm">
+              <option value="person">person</option>
+              <option value="book">book</option>
+              <option value="version">version</option>
+              <option value="chapter">chapter</option>
+              <option value="scene">scene</option>
+            </select>
+
+            <div className="mb-2 mt-4 text-xs text-gray-500">App Database (Ctrl+Shift+F)</div>
+            <div className="space-y-2">
+              <button
+                onClick={appCreateBook}
+                className="w-full p-2 text-xs bg-green-700 text-white rounded hover:bg-green-800"
+              >
+                Create App Book
+              </button>
+              <button
+                onClick={appGetBooks}
+                className="w-full p-2 text-xs bg-blue-700 text-white rounded hover:bg-blue-800"
+              >
+                Get App Books
+              </button>
+              <button
+                onClick={appDeleteAllBooks}
+                className="w-full p-2 text-xs bg-red-700 text-white rounded hover:bg-red-800"
+              >
+                Delete All App Books
+              </button>
+            </div>
+
+            <div className="mb-2 mt-4 text-xs text-gray-500">Version & Chapter CRUD</div>
+            <div className="space-y-2">
+              <button
+                onClick={testVersionCRUD}
+                className="w-full p-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Test Version CRUD
+              </button>
+
+            
+              <button
+                onClick={printVersionTableSchema}
+                className="w-full p-2 text-xs bg-blue-900 text-white rounded hover:bg-blue-700"
+              >
+                Print Version Table Schema
+              </button>
+              
+               <button
+                onClick={testDeleteVersion}
+                className="w-full p-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Delete Versions
+              </button>
+              <button
+                onClick={testChapterCRUD}
+                className="w-full p-2 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+              >
+                Test Chapter CRUD
+              </button>
+              <button
+                onClick={testDatabaseInit}
+                className="w-full p-2 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
+              >
+                Initialize Database
+              </button>
+              <button
+                onClick={validateAllDatabases}
+                className="w-full p-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+              >
+                Validate All Databases
+              </button>
+            </div>
+
+            <div className="mb-2 mt-4 text-xs text-gray-500">File Asset System</div>
+            <div className="space-y-2">
+              <button
+                onClick={testCreateFileAsset}
+                className="w-full p-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+              >
+                Create Test File Asset
+              </button>
+              <button
+                onClick={testGetFileAssetByHash}
+                className="w-full p-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+              >
+                Get File Asset by Hash
+              </button>
+              <button
+                onClick={testGetFileAssetsByStatus}
+                className="w-full p-2 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+              >
+                Get Assets by Status
+              </button>
+              <button
+                onClick={testDeleteFileAsset}
+                className="w-full p-2 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete File Asset
+              </button>
+              <button
+                onClick={testDeleteAllFileAssets}
+                className="w-full p-2 text-xs bg-red-700 text-white rounded hover:bg-red-800"
+              >
+                Delete All File Assets
+              </button>
+              <button
+                onClick={testGetPendingAssets}
+                className="w-full p-2 text-xs bg-yellow-600 text-white rounded hover:bg-yellow-700"
+              >
+                Get Pending Assets
+              </button>
+              <button
+                onClick={testCoverUpload}
+                className="w-full p-2 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
+              >
+                🖼️ Test Cover Upload
+              </button>
+            </div>
+
+            <div className="mb-2 mt-4 text-xs text-gray-500">Cover Picker Test</div>
+            <div className="space-y-2">
+              <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded">
+                <p className="text-xs mb-2">Test cover upload with real CoverPicker component:</p>
+                <CoverPicker
+                  bookId="test_book_cover_picker"
+                  currentCoverId={undefined}
+                  onCoverChanged={(coverId) => {
+                    console.log('Cover changed to:', coverId);
+                    setRows([{ 
+                      testType: 'CoverPicker Test', 
+                      coverId,
+                      message: `Cover changed to: ${coverId}` 
+                    }]);
+                  }}
+                  className="w-full max-w-xs"
+                />
+              </div>
+            </div>
+
+            <div className="mb-2 text-xs text-gray-500">Test Database</div>
+            <div className="space-y-2">
+              <button
+                onClick={appCreateSession}
+                className="w-full p-2 text-xs bg-green-700 text-white rounded hover:bg-green-800"
+              >
+                Create App Session
+              </button>
+              <button
+                onClick={appGetAppSessions}
+                className="w-full p-2 text-xs bg-blue-700 text-white rounded hover:bg-blue-800"
+              >
+                Get App Sessions
+              </button>
+              <button
+                onClick={appDeleteAllBooks}
+                className="w-full p-2 text-xs bg-red-700 text-white rounded hover:bg-red-800"
+              >
+                Delete All App Session
+              </button>
+            </div>
+
+            <div className="mb-2 text-xs text-gray-500">Test Database</div>
+            <div className="space-y-2">
+              <button
+                onClick={testCreatePerson}
+                className="w-full p-2 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+              >
+                Create Test Person
+              </button>
+              <button
+                onClick={testGetPeople}
+                className="w-full p-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Get All People
+              </button>
+              <button
+                onClick={testCreateBook}
+                className="w-full p-2 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+              >
+                Create Test Book
+              </button>
+              <button
+                onClick={testGetBooks}
+                className="w-full p-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Get All Books
+              </button>
+              <button
+                onClick={testDeleteAllPeople}
+                className="w-full p-2 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete All People
+              </button>
+              <button
+                onClick={testDeleteAllBooks}
+                className="w-full p-2 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete All Books
+              </button>
+            </div>
+
+            <div className="mb-2 mt-4 text-xs text-gray-500">🔍 COMPREHENSIVE DATABASE VALIDATION</div>
+            <div className="space-y-2">
+              <button
+                onClick={validateAllDatabases}
+                className="w-full p-2 text-xs bg-red-600 text-white rounded hover:bg-red-700 font-bold"
+              >
+                🔍 VALIDATE ALL DATABASES
+              </button>
+              <div className="text-xs text-gray-600 mt-1">
+                Tests: User Keys, Sessions, Books, Versions, Chapters, Assets, Schema, Files
+              </div>
+            </div>
+
+            <div className="mb-2 mt-4 text-xs text-gray-500">DAL Integration (via mainDal.ts)</div>
+            <div className="space-y-2">
+              <button
+                onClick={dalCreateBook}
+                className="w-full p-2 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
+              >
+                DAL Create Book
+              </button>
+              <button
+                onClick={dalGetBooks}
+                className="w-full p-2 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
+              >
+                DAL Get Books
+              </button>
+              <button
+                onClick={dalCreateVersion}
+                className="w-full p-2 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
+              >
+                DAL Create Version
+              </button>
+              <button
+                onClick={dalCreateChapter}
+                className="w-full p-2 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
+              >
+                DAL Create Chapter
+              </button>
+            </div>
+
+            
+
+            <div className="mb-2 mt-4 text-xs text-gray-500">Main Database</div>
+            <div className="space-y-2">
+              <button
+                onClick={mainCreateBook}
+                className="w-full p-2 text-xs bg-green-800 text-white rounded hover:bg-green-900"
+              >
+                Create Main Book
+              </button>
+              <button
+                onClick={mainGetBooks}
+                className="w-full p-2 text-xs bg-blue-800 text-white rounded hover:bg-blue-900"
+              >
+                Get Main Books
+              </button>
+            </div>
+
+            
+            </div> {/* End of scrollable container */}
+          </div>
+
+          <div className="col-span-3">
+            <div className="mb-2 text-xs text-gray-500">Query</div>
+            <textarea 
+              value={customQuery} 
+              onChange={e => setCustomQuery(e.target.value)} 
+              className="w-full h-24 p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm" 
+            />
+            <div className="flex items-center gap-2 mt-2">
+              <button onClick={runCustom} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">Run</button>
+              <button onClick={() => { setCustomQuery(`SELECT * FROM ${table} LIMIT 200`); }} className="px-3 py-1 border rounded text-sm">Reset</button>
+              {loading && <span className="text-sm text-gray-500">Loading...</span>}
+              {error && <span className="text-sm text-red-500">{error}</span>}
+            </div>
+
+            <div className="mt-4 max-h-[60vh] overflow-auto text-xs">
+              <pre className="whitespace-pre-wrap">{JSON.stringify(rows, null, 2)}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DbClient;

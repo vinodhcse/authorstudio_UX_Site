@@ -1,6 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { Chapter } from '../../../types';
 
 const FormInput: React.FC<{ id: string, label: string, placeholder: string, value: string, onChange: (e: React.ChangeEvent<HTMLInputElement>) => void, type?: string, optional?: boolean }> = ({ id, label, placeholder, value, onChange, type = "text", optional=false }) => (
     <div>
@@ -16,15 +17,38 @@ const FormInput: React.FC<{ id: string, label: string, placeholder: string, valu
 interface ChapterSettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
+    chapter?: Chapter;
+    onUpdateChapter?: (chapterId: string, updates: Partial<Chapter>) => Promise<void>;
 }
 
-const ChapterSettingsModal: React.FC<ChapterSettingsModalProps> = ({ isOpen, onClose }) => {
-    const [chapterName, setChapterName] = useState('Chapter 1: The Beginning');
-    const [subtitle, setSubtitle] = useState('An Unexpected Discovery');
+const ChapterSettingsModal: React.FC<ChapterSettingsModalProps> = ({ isOpen, onClose, chapter, onUpdateChapter }) => {
+    const [chapterName, setChapterName] = useState('');
+    const [subtitle, setSubtitle] = useState('');
 
-    const handleSubmit = (e: React.FormEvent) => {
+    // Update form when chapter changes
+    useEffect(() => {
+        if (chapter) {
+            setChapterName(chapter.title || '');
+            setSubtitle(''); // Add subtitle field to Chapter type if needed
+        } else {
+            setChapterName('');
+            setSubtitle('');
+        }
+    }, [chapter]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        // Handle form submission logic here
+        if (chapter && onUpdateChapter) {
+            try {
+                await onUpdateChapter(chapter.id, {
+                    title: chapterName,
+                    // subtitle: subtitle, // Add this field to Chapter type if needed
+                });
+                onClose();
+            } catch (error) {
+                console.error('Failed to update chapter:', error);
+            }
+        }
         onClose();
     };
 
@@ -48,8 +72,12 @@ const ChapterSettingsModal: React.FC<ChapterSettingsModalProps> = ({ isOpen, onC
             >
                 <form onSubmit={handleSubmit} className="p-8 space-y-6">
                     <div>
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Chapter Settings</h2>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Manage details for this chapter.</p>
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                            {chapter ? 'Edit Chapter Settings' : 'Chapter Settings'}
+                        </h2>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            {chapter ? `Manage details for "${chapter.title}".` : 'Manage details for this chapter.'}
+                        </p>
                     </div>
 
                     <div className="space-y-4">

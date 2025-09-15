@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Book } from '../types';
+import { AssetService } from '../services/AssetService';
 
 interface FeaturedBookProps {
   book: Book;
@@ -11,6 +12,32 @@ interface FeaturedBookProps {
 
 const FeaturedBook: React.FC<FeaturedBookProps> = ({ book, onSelect }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>();
+
+  // Load cover image from asset system
+  useEffect(() => {
+    const loadCoverImage = async () => {
+      if (book.coverImageRef?.assetId) {
+        try {
+          const fileRef = await AssetService.getFileRef(book.coverImageRef.assetId);
+          if (fileRef) {
+            // Try to get data URL for local files
+            const imageUrl = await AssetService.getLocalImageDataUrl(fileRef);
+            setCoverImageUrl(imageUrl);
+          }
+        } catch (error) {
+          console.warn('Failed to load cover image from assets:', error);
+          // Fallback to book.coverImage if available
+          setCoverImageUrl(book.coverImage);
+        }
+      } else {
+        // Use legacy cover image if no asset reference
+        setCoverImageUrl(book.coverImage);
+      }
+    };
+
+    loadCoverImage();
+  }, [book.coverImageRef?.assetId, book.coverImage]);
 
   useEffect(() => {
     if (!book.characters || book.characters.length === 0) return;
@@ -24,8 +51,8 @@ const FeaturedBook: React.FC<FeaturedBookProps> = ({ book, onSelect }) => {
     // Fallback rendering if there are no characters
     return (
        <div className="relative w-full h-[50vh] max-h-[500px] rounded-2xl overflow-hidden shadow-2xl shadow-purple-500/10 dark:shadow-black/50 mb-12">
-        {book.coverImage ? (
-            <img src={book.coverImage} alt={book.title} className="w-full h-full object-cover" />
+        {coverImageUrl ? (
+            <img src={coverImageUrl} alt={book.title} className="w-full h-full object-cover" />
         ) : (
              <div className="absolute inset-0 bg-gradient-to-br from-gray-700 via-gray-900 to-black" />
         )}

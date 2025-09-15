@@ -1,9 +1,12 @@
 
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { Book } from '../types';
 import { BookOpenIcon } from '../constants';
+import { useBookContext } from '../contexts/BookContext';
+import { SimpleAssetService } from '../services/SimpleAssetService';
+import { appLog } from '../auth/fileLogger';
 
 interface ProgressBarProps {
   progress: number;
@@ -34,6 +37,46 @@ interface BookCardProps {
   onSelect: () => void;
 }
 
+// Sync status icons and labels
+const getSyncIcon = (syncState?: string, conflictState?: string) => {
+  const iconClass = "w-4 h-4";
+  
+  if (conflictState !== 'none' && conflictState) {
+    return <div className={`${iconClass} bg-red-500 rounded-full animate-pulse`} title="Sync conflict" />;
+  }
+  
+  switch (syncState) {
+    case 'pushing':
+    case 'pulling':
+      return <div className={`${iconClass} bg-blue-500 rounded-full animate-spin border-2 border-blue-200 border-t-transparent`} title="Syncing..." />;
+    case 'dirty':
+      return <div className={`${iconClass} bg-yellow-500 rounded-full`} title="Needs sync" />;
+    case 'idle':
+      return <div className={`${iconClass} bg-green-500 rounded-full`} title="Synced" />;
+    default:
+      return <div className={`${iconClass} bg-gray-400 rounded-full`} title="Unknown status" />;
+  }
+};
+
+const getSyncLabel = (syncState?: string, conflictState?: string) => {
+  if (conflictState !== 'none' && conflictState) {
+    return 'Conflict';
+  }
+  
+  switch (syncState) {
+    case 'pushing':
+      return 'Uploading...';
+    case 'pulling':
+      return 'Downloading...';
+    case 'dirty':
+      return 'Needs Sync';
+    case 'idle':
+      return 'Synced';
+    default:
+      return 'Unknown';
+  }
+};
+
 const cardVariants = {
   hidden: { opacity: 0, y: 20 },
   show: { opacity: 1, y: 0, transition: { duration: 0.5 } },
@@ -41,6 +84,51 @@ const cardVariants = {
 
 const BookCard: React.FC<BookCardProps> = ({ book, onSelect }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>();
+  const { syncBook } = useBookContext();
+
+  // Load cover image from asset system
+  useEffect(() => {
+    const loadCoverImage = async () => {
+      const currentCoverId = book.coverImageRef?.assetId || (book.coverImageRef as any)?.id;
+      
+      if (currentCoverId) {
+        try {
+          // Use simplified asset loading (same as BookHero)
+          const imageUrl = await SimpleAssetService.loadAssetForDisplay(currentCoverId);
+          setCoverImageUrl(imageUrl);
+          // Debug log: show snippet of the resolved URL
+          appLog.info('book-card', 'Resolved cover image URL', { 
+            bookId: book.id,
+            coverId: currentCoverId, 
+            urlSnippet: imageUrl ? imageUrl.slice(0, 120) : null 
+          });
+        } catch (error) {
+          console.warn('Failed to load cover image from assets:', error);
+          appLog.error('book-card', 'Failed to load cover image', { 
+            bookId: book.id,
+            coverId: currentCoverId, 
+            error 
+          });
+          // Fallback to book.coverImage if available
+          setCoverImageUrl(book.coverImage);
+          appLog.info('book-card', 'Fallback cover image used', { 
+            bookId: book.id,
+            coverUrl: book.coverImage ? String(book.coverImage).slice(0, 120) : null 
+          });
+        }
+      } else {
+        // Use legacy cover image if no asset reference
+        setCoverImageUrl(book.coverImage);
+        appLog.info('book-card', 'Using legacy cover image', { 
+          bookId: book.id,
+          coverUrl: book.coverImage ? String(book.coverImage).slice(0, 120) : null 
+        });
+      }
+    };
+
+    loadCoverImage();
+  }, [book.coverImageRef?.assetId, book.coverImage, book.id]);
 
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -53,6 +141,19 @@ const BookCard: React.FC<BookCardProps> = ({ book, onSelect }) => {
     x.set(event.clientX - rect.left - rect.width / 2);
     y.set(event.clientY - rect.top - rect.height / 2);
   };
+
+  const handleSyncClick = async (event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent triggering onSelect
+    try {
+      await syncBook(book.id);
+    } catch (error) {
+      console.error('Failed to sync book:', error);
+    }
+  };
+
+  const needsSync = book.syncState === 'dirty';
+  const hasConflict = book.conflictState !== 'none' && book.conflictState;
+  const isSyncing = book.syncState === 'pushing' || book.syncState === 'pulling';
 
   return (
     <motion.div
@@ -83,8 +184,8 @@ const BookCard: React.FC<BookCardProps> = ({ book, onSelect }) => {
             <motion.div layout="position" className={`flex gap-4 ${isHovered ? 'flex-col' : 'flex-row items-start'}`}>
                 {/* Image */}
                 <motion.div layout className={`relative rounded-lg overflow-hidden flex-shrink-0 ${isHovered ? 'w-full h-40' : 'w-24 h-32'}`}>
-                     {book.coverImage ? (
-                        <img src={book.coverImage} alt={book.title} className="absolute w-full h-full object-cover"/>
+                     {coverImageUrl ? (
+                        <img src={coverImageUrl} alt={book.title} className="absolute w-full h-full object-cover"/>
                      ) : (
                         <div className="absolute w-full h-full bg-gradient-to-br from-gray-700 via-gray-900 to-black flex items-center justify-center">
                             <BookOpenIcon className="w-8 h-8 text-gray-400" />
@@ -94,7 +195,25 @@ const BookCard: React.FC<BookCardProps> = ({ book, onSelect }) => {
 
                 {/* Details Container */}
                 <motion.div layout="position" className="flex flex-col flex-grow min-w-0">
-                    <h3 className="font-bold text-gray-800 dark:text-white truncate text-lg">{book.title}</h3>
+                    <div className="flex items-start justify-between">
+                        <h3 className="font-bold text-gray-800 dark:text-white truncate text-lg flex-grow mr-2">{book.title}</h3>
+                        {/* Sync Status Icon */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                            {getSyncIcon(book.syncState, book.conflictState)}
+                            {(needsSync || hasConflict) && (
+                                <button
+                                    onClick={handleSyncClick}
+                                    disabled={isSyncing}
+                                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50"
+                                    title="Sync now"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+                    </div>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{book.lastModified}</p>
                     <div className="mt-auto w-full">
                         <ProgressBar progress={book.progress} />
@@ -134,6 +253,8 @@ const BookCard: React.FC<BookCardProps> = ({ book, onSelect }) => {
                         <DetailItem label="Prose" value={book.prose} />
                         <DetailItem label="Language" value={book.language} />
                         <DetailItem label="Publisher" value={book.publisher} />
+                        <DetailItem label="Sync Status" value={getSyncLabel(book.syncState, book.conflictState)} />
+                        <DetailItem label="Last Updated" value={book.updatedAt ? new Date(book.updatedAt).toLocaleDateString() : 'Unknown'} />
                     </div>
                   </motion.div>
                 )}

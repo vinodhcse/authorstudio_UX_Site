@@ -5,6 +5,9 @@ import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { Theme, ActiveTab, Book } from '../types';
 import { SunIcon, MoonIcon, SystemIcon, SearchIcon, BookOpenIcon, ChevronDownIcon, PenIcon, PlusIcon } from '../constants';
+import { useAuthStore } from '../auth';
+import { appLog } from '../auth/fileLogger';
+
 
 const logoContainerVariants: Variants = {
   rest: {},
@@ -104,6 +107,36 @@ const Tab: React.FC<TabProps> = ({ name, path, isActive, onClick, className }) =
     );
 };
 
+const OnlineStatusIndicator: React.FC = () => {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  React.useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/10 dark:bg-white/10">
+      <div 
+        className={`w-2 h-2 rounded-full transition-colors duration-300 ${
+          isOnline ? 'bg-green-500' : 'bg-red-500'
+        }`}
+      />
+      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+        {isOnline ? 'Online' : 'Offline'}
+      </span>
+    </div>
+  );
+};
+
 const SearchBar: React.FC = () => (
   <div className="relative group w-full">
     <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500" />
@@ -163,14 +196,37 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, books }) => {
   const location = useLocation();
   const params = useParams<{ bookId?: string }>();
+  const { user, logout, lock } = useAuthStore();
   
   const isBookDetailsPage = location.pathname.startsWith('/book/');
   const book = isBookDetailsPage && params.bookId ? books.find(b => b.id === params.bookId) : null;
 
+  const handleLogout = async () => {
+    try {
+      await appLog.info('header', 'Starting logout process...');
+      await logout();
+      await appLog.success('header', 'Logout successful');
+      // No need to navigate as logout will reload the page
+    } catch (error) {
+      await appLog.error('header', 'Logout failed', error);
+    }
+  };
+
+  const handleLock = async () => {
+    try {
+      await appLog.info('header', 'Starting lock process...');
+      await lock();
+      await appLog.success('header', 'Lock successful');
+    } catch (error) {
+      await appLog.error('header', 'Lock failed', error);
+    }
+  };
+
   const mainTabs: {name: ActiveTab, path: string}[] = [
     { name: 'My Books', path: '/' },
     { name: 'Editing', path: '/editing' },
-    { name: 'Reviewing', path: '/reviewing' },
+    { name: 'Reviewing', path: '/reviewing' }
+    
   ];
 
   const mainNavTabsForMobile = mainTabs.map(t => t.name);
@@ -203,7 +259,7 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
                 <div className="flex items-center justify-center gap-4">
                     <Tab className="order-1" name="My Books" path="/" isActive={location.pathname === '/'} />
                     <Tab className="order-2" name="Editing" path="/editing" isActive={location.pathname === '/editing'} />
-                    <Tab className="order-4" name="Reviewing" path="/reviewing" isActive={location.pathname === '/reviewing'} />
+                    <Tab className="order-4" name="Reviewing" path="/reviewing" isActive={location.pathname === '/reviewing'} />                    
                     
                     <div className="order-3 flex items-center gap-2 bg-gradient-to-br from-gray-800 to-black dark:from-slate-200 dark:to-gray-50 rounded-full px-4 py-1 border border-gray-700 dark:border-gray-300 shadow-inner min-w-[32rem]">
                         <SearchBar />
@@ -231,6 +287,9 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
                 <PlusIcon className="h-4 w-4" />
                 Create
               </button>
+            
+            <OnlineStatusIndicator />
+            
             <DropdownMenu trigger={<button className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">{theme === 'dark' ? <MoonIcon className="h-5 w-5" /> : <SunIcon className="h-5 w-5" />}</button>}>
                 <button onClick={() => setTheme('light')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <SunIcon className="h-4 w-4"/> Light</button>
                 <button onClick={() => setTheme('dark')} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"> <MoonIcon className="h-4 w-4"/> Dark</button>
@@ -238,8 +297,28 @@ const Header: React.FC<HeaderProps> = ({ theme, setTheme, onOpenCreateModal, boo
             </DropdownMenu>
 
             <DropdownMenu trigger={<img src="https://picsum.photos/seed/user/40/40" alt="User Avatar" className="w-9 h-9 rounded-full cursor-pointer ring-2 ring-offset-2 ring-offset-gray-100 dark:ring-offset-gray-900 ring-transparent hover:ring-purple-500 transition-all"/>}>
-                <a href="#" className="block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">My Account</a>
-                <a href="#" className="block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">Logout</a>
+                <div className="px-4 py-2 text-sm text-gray-300 dark:text-gray-700 border-b border-gray-600 dark:border-gray-300">
+                  <div className="font-medium">{user?.name || 'User'}</div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500">{user?.email}</div>
+                </div>
+                <button 
+                  onClick={() => { try { window.dispatchEvent(new CustomEvent('account:open')); } catch {} }}
+                  className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                >
+                  My Account
+                </button>
+                <button 
+                  onClick={handleLock}
+                  className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                >
+                  Lock App
+                </button>
+                <button 
+                  onClick={handleLogout}
+                  className="w-full text-left block px-4 py-2 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10"
+                >
+                  Logout
+                </button>
             </DropdownMenu>
           </div>
         </div>
