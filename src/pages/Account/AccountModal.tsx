@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { AnimatePresence, motion, useMotionValue, useTransform } from 'framer-motion';
 import { AlignLeftIcon, AlignCenterIcon, AlignRightIcon, AlignJustifyIcon } from '../../constants';
 import { XMarkIcon, Cog6ToothIcon, CreditCardIcon, UserCircleIcon, ChartBarIcon, CpuChipIcon, PlusIcon, ArrowUpRightIcon, Squares2X2Icon, PencilIcon, TrashIcon, CheckIcon, Bars3Icon } from '@heroicons/react/24/outline';
@@ -145,8 +145,8 @@ const PresetModal: React.FC<{
                         .filter(m => {
                           // If editing the multi-line rephrase feature, prefer JSON-capable models
                           if (featureId === 'rephrase_multiple_lines') {
-                            // Don't hide unknowns (undefined), just exclude explicit false flags
-                            return m.supportsJson === false;
+                            // Don't hide unknowns (undefined); exclude explicit non-JSON models
+                            return m.supportsJson !== false;
                           }
                           return true;
                         })
@@ -155,7 +155,7 @@ const PresetModal: React.FC<{
                           // Heuristic: when editing a preset we don't have feature context in this component.
                           // We hint via preset name/label.
                           const needsJson = /multi[- ]?line|pairs|json/i.test(draft.name || '') || /json/i.test(draft.label || '');
-                          return needsJson ? (m.supportsJson === false) : true;
+                          return needsJson ? (m.supportsJson !== false) : true;
                         })
                         .map((m) => {
                           const priceBadge = (m.priceIn || m.priceOut)
@@ -286,11 +286,13 @@ const AISettingsEditor: React.FC<{
   // Hold local drag ordering to avoid committing until drop
   const [localPresetOrders, setLocalPresetOrders] = useState<Record<string, AIFeaturePreset[]>>({});
   const [showPresetModal, setShowPresetModal] = useState(false);
-  const [presetTarget, setPresetTarget] = useState<{ fIdx:number; pIdx:number }|null>(null);
+  // Store featureId instead of filtered index to avoid mismatch when list is filtered
+  const [presetTarget, setPresetTarget] = useState<{ featureId:string; pIdx:number }|null>(null);
   const [providerModal, setProviderModal] = useState(false);
   const [subTab, setSubTab] = useState<'providers'|'features'|'theme'|'collab'|'advanced'>('providers');
   // Track which provider card is in edit mode
   const [editingProviderIdx, setEditingProviderIdx] = useState<number | null>(null);
+  const [featureQuery, setFeatureQuery] = useState('');
   // Tilt card wrapper (3D tilt akin to BookCard)
   const TiltCard: React.FC<{ className?: string; children: React.ReactNode; disabled?: boolean }> = ({ className, children, disabled }) => {
     const x = useMotionValue(0);
@@ -530,6 +532,14 @@ Stream objects one-by-one without code fences.`;
     onChange({ ...value, features: nextF });
   };
 
+  // Resolve preset target into current indices on the full features array
+  const resolvedPresetTarget = useMemo(() => {
+    if (!presetTarget) return null;
+    const fIdx = features.findIndex(f => f.id === presetTarget.featureId);
+    if (fIdx < 0) return null;
+    return { fIdx, pIdx: presetTarget.pIdx };
+  }, [presetTarget, features]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -637,8 +647,23 @@ Stream objects one-by-one without code fences.`;
 
       {subTab==='features' && (
         <SectionCard title="AI Features" description="Enable, edit presets, drag handle supports multi-row jumps">
+          <div className="mb-3">
+            <input
+              placeholder="Search features…"
+              className={fieldCls + ' max-w-md'}
+              value={featureQuery}
+              onChange={(e)=> setFeatureQuery(e.target.value)}
+            />
+          </div>
           <div className="grid md:grid-cols-3 gap-3">
-            {features.map((f, fIdx) => {
+            {features
+              .filter(f => {
+                const q = featureQuery.trim().toLowerCase();
+                if (!q) return true;
+                const hay = `${f.label} ${f.id}`.toLowerCase();
+                return hay.includes(q);
+              })
+              .map((f, fIdx) => {
               const list = localPresetOrders[f.id] ?? f.presets;
               const headerProv = providers.find(pp => pp.id === list[0]?.provider);
               return (
@@ -678,7 +703,7 @@ Stream objects one-by-one without code fences.`;
                             <div className="flex items-center gap-2 min-w-0">
                               <Bars3Icon className="h-4 w-4 text-gray-500" onPointerDown={(e)=>beginPresetDrag(e,f.id,p.id,pIdx)} />
                               <ProviderLogo provider={providers.find(pp=>pp.id===p.provider)} size={24} />
-                              <button onClick={()=>{ setPresetTarget({fIdx,pIdx}); setShowPresetModal(true); }} className="text-xs font-medium truncate hover:underline">{p.name}</button>
+                              <button onClick={()=>{ setPresetTarget({ featureId: f.id, pIdx }); setShowPresetModal(true); }} className="text-xs font-medium truncate hover:underline">{p.name}</button>
                               <label className="inline-flex items-center gap-1 text-[10px] ml-2">
                                 <input type="checkbox" checked={p.enabled !== false} onChange={e=>{
                                   const next=[...features];
@@ -699,7 +724,7 @@ Stream objects one-by-one without code fences.`;
                               )}
                             </div>
                             <div className="flex items-center gap-1">
-                              <button title="Edit" className="p-1 rounded hover:bg-gray-500/10" onClick={()=>{ setPresetTarget({fIdx,pIdx}); setShowPresetModal(true); }}>
+                              <button title="Edit" className="p-1 rounded hover:bg-gray-500/10" onClick={()=>{ setPresetTarget({ featureId: f.id, pIdx }); setShowPresetModal(true); }}>
                                 <PencilIcon className="h-4 w-4" />
                               </button>
                               <button
@@ -719,7 +744,8 @@ Stream objects one-by-one without code fences.`;
                   </div>
                 </div>
               );
-            })}
+            })
+              }
           </div>
         </SectionCard>
       )}
@@ -816,14 +842,14 @@ Stream objects one-by-one without code fences.`;
         </SectionCard>
       )}
 
-  {showPresetModal && presetTarget && (
+  {showPresetModal && resolvedPresetTarget && (
         <PresetModal
           open={showPresetModal}
           onClose={()=>setShowPresetModal(false)}
-          preset={features[presetTarget.fIdx].presets[presetTarget.pIdx]}
+          preset={features[resolvedPresetTarget.fIdx].presets[resolvedPresetTarget.pIdx]}
           providers={providers}
-          featureId={features[presetTarget.fIdx].id}
-          onSave={(draft)=> updateFeaturePreset(presetTarget.fIdx, presetTarget.pIdx, draft)}
+          featureId={features[resolvedPresetTarget.fIdx].id}
+          onSave={(draft)=> updateFeaturePreset(resolvedPresetTarget.fIdx, resolvedPresetTarget.pIdx, draft)}
         />
       )}
     </div>

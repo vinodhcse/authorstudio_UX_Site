@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { runFeature } from '../../../../ai/runFeature';
+import { loadUserSettings } from '../../../../stores/userSettingsStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Theme, Character } from '../../../../types';
 import { 
@@ -153,7 +155,8 @@ const CharacterProfileBuilderWrapper: React.FC<CharacterProfileBuilderWrapperPro
         clothingStyle: '',
         mannerisms: [],
         physicalQuirks: [],
-        disabilities: '',
+    disabilities: '',
+    appearanceSummary: (initialCharacter as any)?.appearanceSummary || '',
         
         // Personality
         personalityType: initialCharacter?.personalityType || '',
@@ -213,6 +216,9 @@ const CharacterProfileBuilderWrapper: React.FC<CharacterProfileBuilderWrapperPro
         image: initialCharacter?.image || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&h=400&fit=crop&crop=face'
     });
 
+    const [refs, setRefs] = useState<{[k:string]: string}>({ identity:'', appearance:'', personality:'', backstory:'', skills:'', relationships:'' });
+    const [busy, setBusy] = useState<{[k:string]: boolean}>({});
+
     const toggleSection = (sectionId: string) => {
         setOpenSections(prev => {
             const newSet = new Set(prev);
@@ -223,6 +229,41 @@ const CharacterProfileBuilderWrapper: React.FC<CharacterProfileBuilderWrapperPro
             }
             return newSet;
         });
+    };
+
+    const generateForSection = async (sectionId: 'identity'|'appearance'|'personality'|'backstory'|'skills'|'relationships') => {
+        const refText = (refs[sectionId]||'').trim();
+        if (!refText) return;
+        try {
+            setBusy(prev=>({...prev, [sectionId]: true}));
+            const settings = (await loadUserSettings()).settings.aiSettings;
+            const featureMap: Record<typeof sectionId, string> = {
+                identity: 'cb_identity',
+                appearance: 'cb_appearance',
+                personality: 'cb_personality',
+                backstory: 'cb_backstory',
+                skills: 'cb_skills',
+                relationships: 'cb_relationships',
+            } as const;
+            let final = '';
+            await runFeature({
+                featureId: featureMap[sectionId],
+                settings,
+                selectionText: refText,
+                stream: false,
+                onDone: (t) => { final = t; },
+                onError: (e) => { console.error('Character Builder AI error:', e); },
+            });
+            if (!final) return;
+            try {
+                const json = JSON.parse(final.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, ''));
+                setFormData(prev => ({ ...prev, ...json }));
+            } catch (e) {
+                console.warn('Failed to parse Character Builder JSON', e);
+            }
+        } finally {
+            setBusy(prev=>({...prev, [sectionId]: false}));
+        }
     };
 
     const handleChange = (field: string, value: any) => {
@@ -251,6 +292,13 @@ const CharacterProfileBuilderWrapper: React.FC<CharacterProfileBuilderWrapperPro
     // Identity Section
     const renderIdentitySection = () => (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="md:col-span-2 flex items-end gap-2">
+                <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Reference (e.g., "a wanderer like Aragorn")</label>
+                    <input type="text" value={refs.identity||''} onChange={(e)=>setRefs({...refs, identity:e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="Describe a reference archetype" />
+                </div>
+                <button type="button" onClick={()=>generateForSection('identity')} disabled={!!busy.identity} className="px-4 py-2 rounded-lg bg-purple-600 text-white disabled:opacity-50">{busy.identity? 'Generating…' : 'Generate'}</button>
+            </div>
             <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Full Name *
@@ -365,6 +413,25 @@ const CharacterProfileBuilderWrapper: React.FC<CharacterProfileBuilderWrapperPro
     // Appearance Section
     const renderAppearanceSection = () => (
         <div className="space-y-6">
+            <div className="flex items-end gap-2">
+                <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Reference (e.g., "looks like Harry Potter")</label>
+                    <input type="text" value={refs.appearance||''} onChange={(e)=>setRefs({...refs, appearance:e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="Describe an appearance archetype" />
+                </div>
+                <button type="button" onClick={()=>generateForSection('appearance')} disabled={!!busy.appearance} className="px-4 py-2 rounded-lg bg-purple-600 text-white disabled:opacity-50">{busy.appearance? 'Generating…' : 'Generate'}</button>
+            </div>
+            <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Appearance Summary (5–10 lines)
+                </label>
+                <textarea
+                    value={formData.appearanceSummary}
+                    onChange={(e) => handleChange('appearanceSummary', e.target.value)}
+                    rows={6}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
+                    placeholder="Write a vivid 5–10 line description of their actual appearance..."
+                />
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -463,6 +530,13 @@ const CharacterProfileBuilderWrapper: React.FC<CharacterProfileBuilderWrapperPro
     // Personality Section
     const renderPersonalitySection = () => (
         <div className="space-y-6">
+            <div className="flex items-end gap-2">
+                <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Reference (e.g., "personality like Sherlock Holmes")</label>
+                    <input type="text" value={refs.personality||''} onChange={(e)=>setRefs({...refs, personality:e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="Describe a personality archetype" />
+                </div>
+                <button type="button" onClick={()=>generateForSection('personality')} disabled={!!busy.personality} className="px-4 py-2 rounded-lg bg-purple-600 text-white disabled:opacity-50">{busy.personality? 'Generating…' : 'Generate'}</button>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -539,6 +613,13 @@ const CharacterProfileBuilderWrapper: React.FC<CharacterProfileBuilderWrapperPro
     // Backstory Section
     const renderBackstorySection = () => (
         <div className="space-y-6">
+            <div className="flex items-end gap-2">
+                <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Reference (e.g., "orphaned hero from a small village")</label>
+                    <input type="text" value={refs.backstory||''} onChange={(e)=>setRefs({...refs, backstory:e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="Describe a backstory archetype" />
+                </div>
+                <button type="button" onClick={()=>generateForSection('backstory')} disabled={!!busy.backstory} className="px-4 py-2 rounded-lg bg-purple-600 text-white disabled:opacity-50">{busy.backstory? 'Generating…' : 'Generate'}</button>
+            </div>
             <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Background Story
@@ -598,6 +679,13 @@ const CharacterProfileBuilderWrapper: React.FC<CharacterProfileBuilderWrapperPro
     // Skills Section
     const renderSkillsSection = () => (
         <div className="space-y-6">
+            <div className="flex items-end gap-2">
+                <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Reference (e.g., "duelist with latent magic")</label>
+                    <input type="text" value={refs.skills||''} onChange={(e)=>setRefs({...refs, skills:e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="Describe skills/abilities archetype" />
+                </div>
+                <button type="button" onClick={()=>generateForSection('skills')} disabled={!!busy.skills} className="px-4 py-2 rounded-lg bg-purple-600 text-white disabled:opacity-50">{busy.skills? 'Generating…' : 'Generate'}</button>
+            </div>
             <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Primary Skills
@@ -655,6 +743,13 @@ const CharacterProfileBuilderWrapper: React.FC<CharacterProfileBuilderWrapperPro
     // Relationships Section
     const renderRelationshipsSection = () => (
         <div className="space-y-6">
+            <div className="flex items-end gap-2">
+                <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Reference (e.g., "member of a secret order, rival to a noble")</label>
+                    <input type="text" value={refs.relationships||''} onChange={(e)=>setRefs({...refs, relationships:e.target.value})} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="Describe relationships/archetype" />
+                </div>
+                <button type="button" onClick={()=>generateForSection('relationships')} disabled={!!busy.relationships} className="px-4 py-2 rounded-lg bg-purple-600 text-white disabled:opacity-50">{busy.relationships? 'Generating…' : 'Generate'}</button>
+            </div>
             <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Group Affiliations

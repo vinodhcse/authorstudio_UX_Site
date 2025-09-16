@@ -144,6 +144,32 @@ Shape: {"pairs": [{"original": string[], "rephrased": string}, ...]}`,
     systemPrompt: 'Summarize recent changes and update planning artifacts (beats/notes) succinctly.', customPrompt: '', enabled: true } ] },
   { id: 'suggestions', label: 'Auto-suggest Next Lines', enabled: true, presets: [ { id: 'preset-suggestions-default', name: 'System Default', provider: 'system', model: 'default',
     systemPrompt: 'Suggest the next sentence or two consistent with the current context. Return only the suggestion.', customPrompt: '', enabled: true } ] },
+  // Character Builder features (per accordion)
+  { id: 'cb_identity', label: 'CharacterProfileBuilder — Identity', enabled: true, presets: [ { id: 'preset-cb-identity', name: 'System Default (JSON)', provider: 'system', model: 'default',
+    systemPrompt: `You are building a character's identity section from a reference description. Respond only with JSON matching schema.
+Input: a short reference phrase (e.g., "A wanderer like Aragorn").
+Output JSON keys: { fullName: string, aliases: string[], gender: string, pronouns: string, age: number, species: string, occupation: string, citizenship: string, lifestyle: string, characterRole: string, characterType: string }.
+Rules: Fill what you can plausibly infer from reference; leave unknowns as empty string or [] (age as null). No extra keys, no code fences.`, customPrompt: '', enabled: true } ] },
+  { id: 'cb_appearance', label: 'CharacterProfileBuilder — Appearance', enabled: true, presets: [ { id: 'preset-cb-appearance', name: 'System Default (JSON)', provider: 'system', model: 'default',
+    systemPrompt: `You are building a character's appearance from a reference description (e.g., "looks like Harry Potter"). Respond only with JSON.
+Output JSON keys: { height: string, build: string, hairColor: string, hairStyle: string, eyeColor: string, eyeShape: string, faceShape: string, vision: string, skinTone: string, distinguishingFeatures: string[], distinguishingMarks: string, accessories: string[], health: string, clothingStyle: string, mannerisms: string[], physicalQuirks: string[], disabilities: string, appearanceSummary: string }.
+Rules: Be faithful to the reference archetype; avoid copyrighted specifics; leave unknowns empty; no code fences. For appearanceSummary, write a vivid 5-10 line plain-text description of the character's actual appearance (no lists, no headings).`, customPrompt: '', enabled: true } ] },
+  { id: 'cb_personality', label: 'CharacterProfileBuilder — Personality', enabled: true, presets: [ { id: 'preset-cb-personality', name: 'System Default (JSON)', provider: 'system', model: 'default',
+    systemPrompt: `You map a reference persona to a personality profile. Respond only with JSON.
+Output JSON keys: { personalityType: string, traits: string[], coreTraits: string[], positiveTraits: string[], goals: string[], beliefs: string[], strengths: string[], weaknesses: string[], motto: string, fears: string[], desires: string[], internalConflicts: string[], externalConflicts: string[], dialogueQuirks: string[], personality: string, dominantTrait: string, selfPerception: string, othersPerception: string, mentalHealth: string, secrets: string[] }.
+Rules: Use general archetypal traits; keep concise; no code fences.`, customPrompt: '', enabled: true } ] },
+  { id: 'cb_backstory', label: 'CharacterProfileBuilder — Backstory', enabled: true, presets: [ { id: 'preset-cb-backstory', name: 'System Default (JSON)', provider: 'system', model: 'default',
+    systemPrompt: `You draft a plausible backstory outline from a reference. Respond only with JSON.
+Output JSON keys: { backstory: string, birthplace: string, childhood: string, family: object, education: string, majorEvents: string[], achievements: string[], failures: string[], romanticHistory: string, reputation: string, spiritualBeliefs: string }.
+Rules: Keep it neutral and non-copyright-lifting; concise; no code fences.`, customPrompt: '', enabled: true } ] },
+  { id: 'cb_skills', label: 'CharacterProfileBuilder — Skills & Abilities', enabled: true, presets: [ { id: 'preset-cb-skills', name: 'System Default (JSON)', provider: 'system', model: 'default',
+    systemPrompt: `You infer skills/abilities from a reference archetype. Respond only with JSON.
+Output JSON keys: { primarySkills: string[], weaponsMastery: object, magicalAbilities: string[], combatSkills: string[], specialTalents: object, limitations: string[], signatureMove: string }.
+Rules: Plausible, concise; no copyrighted moves; no code fences.`, customPrompt: '', enabled: true } ] },
+  { id: 'cb_relationships', label: 'CharacterProfileBuilder — Relationships', enabled: true, presets: [ { id: 'preset-cb-relationships', name: 'System Default (JSON)', provider: 'system', model: 'default',
+    systemPrompt: `You infer social ties from a reference persona. Respond only with JSON.
+Output JSON keys: { relationships: string[], groupAffiliations: string[], rivalries: string[], influence: string }.
+Rules: Avoid copyrighted proper nouns; keep generic; no code fences.`, customPrompt: '', enabled: true } ] },
       ],
     },
     project: {
