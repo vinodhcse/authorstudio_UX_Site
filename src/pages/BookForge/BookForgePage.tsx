@@ -55,6 +55,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
     
     // Use BookContext to get current book and version data
     const { currentBook, currentVersion, loading, error } = useCurrentBookAndVersion();
+
     
     // Load chapters for the current book/version - only if we have valid IDs
     const shouldLoadChapters = Boolean(bookId && versionId);
@@ -256,7 +257,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = '.docx';
-            input.onchange = async () => {
+        input.onchange = async () => {
                 const file = input.files?.[0];
                 if (!file) return;
                 try {
@@ -489,7 +490,7 @@ const BookForgePage: React.FC<BookForgePageProps> = ({ theme, setTheme }) => {
                 onReorderChapter={reorderChapter}
                 onNavigateToChapter={handleNavigateToChapter}
                 isChapterLoading={isChapterLoading}
-                onImportChapters={async (actId: string, file: File) => {
+        onImportChapters={async (actId: string, file: File) => {
                     try {
                         const res = await importDocx(file, { actId });
                         toast({ title: 'Import complete', description: `Imported ${res.count} chapter(s)` });

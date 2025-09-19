@@ -8,11 +8,11 @@
 ## 2) Scope
 
 - Desktop app: Tauri + React + Vite.
-- Inputs: DOCX file, optional Act selection/name, optional Scene Divider string (default ***).
+- Inputs: DOCX file, optional Act selection/name.
 - Conversion: DOCX → HTML (Mammoth) → TipTap JSON (@tiptap/html generateJSON with extensions).
 - Rules:
   - Split chapters by <h1> heading blocks.
-  - Replace the configured Scene Divider string within chapter bodies to a custom SceneDivider TipTap node.
+  - Detect canonical scene break patterns in the original document and emit SceneDivider TipTap nodes in a JSON post-processing pass. Rendering is controlled later by Typography settings.
 - Persistence: Insert chapters into Dexie immediately (syncState='dirty') to leverage existing cloud sync.
 - Act assignment:
   - If actId provided → attach.
@@ -79,7 +79,7 @@ export default defineConfig({
 ## 6) UX Flow
 
 - User opens Import DOCX modal.
-- Inputs: File, Act (select or new name), Scene Divider string (default ***).
+- Inputs: File, Act (select or new name).
 - On start: Modal turns into job popup with animation and progress.
 - On completion: Success state with “View Chapters”; errors show retry.
 
@@ -103,14 +103,14 @@ export default defineConfig({
   - input[type=file] → file.arrayBuffer(), or
   - Tauri FS plugin for path → ArrayBuffer/Uint8Array.
 - mammoth.convertToHtml({ arrayBuffer }, { convertImage: none, styleMap: [b/i/u/Quote mappings] })
-- Preprocess Scene Divider:
-  - Replace configured string (default ***) as standalone paragraph lines with `<hr data-scene-divider="true" />`.
-  - Preserve any legacy breaks (e.g., ---) similarly.
+- Scene Divider detection:
+  - Do not depend on a user-selected divider style during import.
+  - Convert to TipTap JSON first, then replace any standalone paragraph whose plain text matches canonical patterns with a `{ type: 'sceneDivider', attrs: { id } }` node. Canonical patterns include: `***`, `•••`, `■■■`, `———` (em-dash triple), plus a few safe fallbacks.
 - Split chapters by `<h1>(.*?)</h1>`.
 - TipTap JSON:
   - generateJSON(fullHtml, extensions), include SceneDivider extension so the marker becomes a node.
 
-Example conversion utility
+Example conversion utility (simplified)
 
 ```ts
 import mammoth from 'mammoth';
@@ -123,7 +123,8 @@ import Italic from '@tiptap/extension-italic';
 import Underline from '@tiptap/extension-underline';
 import Blockquote from '@tiptap/extension-blockquote';
 import HardBreak from '@tiptap/extension-hard-break';
-import SceneDivider from '@/tiptap/extensions/scene-divider';
+import { SceneDividerExtension } from '@/extensions/SceneDividerExtension';
+import { v4 as uuidv4 } from 'uuid';
 
 const baseExtensions = [
   Document,
@@ -134,10 +135,10 @@ const baseExtensions = [
   Underline,
   Blockquote,
   HardBreak,
-  SceneDivider,
+  SceneDividerExtension,
 ];
 
-export async function convertDocxToChapters(arrayBuffer: ArrayBuffer, sceneDivider = '***') {
+export async function convertDocxToChapters(arrayBuffer: ArrayBuffer) {
   const result = await mammoth.convertToHtml({ arrayBuffer }, {
     convertImage: mammoth.images.none,
     styleMap: [
@@ -150,12 +151,6 @@ export async function convertDocxToChapters(arrayBuffer: ArrayBuffer, sceneDivid
 
   let html = result.value || '';
 
-  const esc = sceneDivider.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const sceneRegex = new RegExp(`<p>\\s*${esc}\\s*</p>`, 'g');
-  html = html.replace(sceneRegex, '<hr data-scene-divider="true" />');
-
-  html = html.replace(/<p>([*\-~]{3,})<\/p>/g, '<hr data-scene-divider="true" />');
-
   const chunks = html.split(/<h1>(.*?)<\/h1>/g);
   const chapters: { title: string; content: any[] }[] = [];
 
@@ -164,7 +159,16 @@ export async function convertDocxToChapters(arrayBuffer: ArrayBuffer, sceneDivid
     const body = (chunks[i + 1] || '').trim();
     const fullHtml = `<h1>${title}<\/h1>${body}`;
     const json = generateJSON(fullHtml, baseExtensions);
-    chapters.push({ title, content: json?.content || [] });
+    const content = (json?.content || []).map(block => {
+      if (block.type !== 'paragraph') return block;
+      const text = (block.content || []).map((n: any) => n.text || '').join('').trim();
+      const canonical = ['***', '•••', '■■■', '———'];
+      if (canonical.includes(text)) {
+        return { type: 'sceneDivider', attrs: { id: uuidv4() } };
+      }
+      return block;
+    });
+    chapters.push({ title, content });
   }
 
   return chapters;
@@ -260,7 +264,7 @@ async function ensureChapterOutlineNode({ bookId, actId, chapterId, now }:
 
 ## 10) Import Job Orchestration
 
-- API: `startImportDocxJob({ file|path, bookId, actId?, actName?, sceneDivider? }) → Promise<JobId>`
+- API: `startImportDocxJob({ file|arrayBuffer, bookId, actId?, actName? }) → Promise<JobId>`
 - Creates Dexie.jobs record (status='queued'), runs async pipeline with progress updates and final status.
 
 ```ts
@@ -271,7 +275,7 @@ import { convertDocxToChapters } from '@/services/import/convertDocx';
 import { persistImportedChapters } from '@/services/import/persist';
 
 export async function startImportDocxJob(params: {
-  file?: File; path?: string; bookId: string; actId?: string; actName?: string; sceneDivider?: string;
+  file?: File; arrayBuffer?: ArrayBuffer; bookId: string; actId?: string; actName?: string;
 }) {
   const id = nanoid();
   const meta = { ...params, fileName: params.file?.name || params.path || '' };
@@ -283,13 +287,14 @@ export async function startImportDocxJob(params: {
     try {
       jobsStore.update(id, { status: 'running', currentStep: 1, progress: 5 });
 
-      let arrayBuffer: ArrayBuffer;
-      if (params.file) arrayBuffer = await params.file.arrayBuffer();
-      else arrayBuffer = await readArrayBufferFromPath(params.path!);
+  let arrayBuffer: ArrayBuffer;
+  if (params.arrayBuffer) arrayBuffer = params.arrayBuffer;
+  else if (params.file) arrayBuffer = await params.file.arrayBuffer();
+  else throw new Error('No file/arrayBuffer provided');
 
       jobsStore.update(id, { currentStep: 2, progress: 15 });
 
-      const chapters = await convertDocxToChapters(arrayBuffer, params.sceneDivider || '***');
+  const chapters = await convertDocxToChapters(arrayBuffer);
 
       jobsStore.update(id, { currentStep: 6, progress: 85 });
 

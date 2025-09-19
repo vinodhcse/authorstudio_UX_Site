@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, Editor as TipTapEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -26,12 +27,13 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Placeholder from '@tiptap/extension-placeholder';
 import { motion, AnimatePresence } from 'framer-motion';
-import { loadUserSettings, type AISettings, type AIFeaturePreset } from '../../../stores/userSettingsStore';
+import { loadUserSettings, updateTypographySettings, type AISettings, type AIFeaturePreset } from '../../../stores/userSettingsStore';
 import { runFeature } from '../../../ai/runFeature';
 
 import { Theme, Book, Version } from '../../../types';
 import PlanningPage from './PlanningPage';
 import CreateChapterPage from './CreateChapterPage';
+import ScrollMinimap from './ScrollMinimap';
 
 // Tool Window System Imports
 import DockSidebar from '../../../components/DockSidebar';
@@ -48,6 +50,7 @@ import {
 
 // Import custom extensions
 import { SceneBeatExtension } from '../../../extensions/SceneBeatExtension';
+import { SceneDividerExtension } from '../../../extensions/SceneDividerExtension';
 import { NoteSectionExtension } from '../../../extensions/NoteSectionExtension';
 import { CharacterImpersonationExtension } from '../../../extensions/CharacterImpersonationExtension';
 import { TestExtension } from '../../../extensions/TestExtension';
@@ -388,6 +391,8 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
     const [position, setPosition] = useState({ top: 0, left: 0 });
     const [showNoteModal, setShowNoteModal] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+    // Track if a mousedown started inside the menu so we can ignore the editor blur caused by it
+    const ignoreNextBlurRef = useRef(false);
     const [aiSettings, setAISettings] = useState<AISettings | null>(null);
     const [selectedPresets, setSelectedPresets] = useState<Record<string, string>>({});
     const abortRef = useRef<AbortController | null>(null);
@@ -1187,9 +1192,33 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
 
     const activeFormat = textFormatOptions.find(opt => opt.isActive)?.name || 'Paragraph';
 
+    // Dismiss bubble menu on outside click anywhere in the document
+    useEffect(() => {
+        const onDocDown = (e: MouseEvent) => {
+            if (!menuRef.current) return;
+            const target = e.target as Node;
+            const insideMenu = menuRef.current.contains(target);
+            const insideEditor = (editor.view.dom as HTMLElement).contains(target as Node);
+            if (process.env.NODE_ENV !== 'production') {
+                try { console.log('[BubbleMenu] document mousedown', { insideMenu, insideEditor, target: (target as HTMLElement)?.tagName }); } catch {}
+            }
+            if (!insideMenu && !insideEditor) {
+                setIsVisible(false);
+            }
+        };
+        // Use capture=false so clicks inside menu propagate first
+        document.addEventListener('mousedown', onDocDown, false);
+        return () => document.removeEventListener('mousedown', onDocDown, false);
+    }, [editor]);
+
     // Update bubble menu position and visibility
     useEffect(() => {
         const updateMenu = () => {
+            // Never show when editor isn't focused (e.g., page navigation, click outside)
+            if (!editor.isFocused) {
+                setIsVisible(false);
+                return;
+            }
             const { from, to } = editor.state.selection;
             const hasSelection = from !== to;
            // console.log('Selection update:', { from, to, hasSelection });
@@ -1263,6 +1292,35 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
         return () => {
             editor.off('selectionUpdate', updateMenu);  
             editor.off('transaction', updateMenu);
+        };
+    }, [editor]);
+
+    // Close bubble menu on window navigation and when editor DOM blurs
+    useEffect(() => {
+    const hide = () => {
+            // If the blur was initiated by a click within our menu, ignore it
+            if (ignoreNextBlurRef.current) {
+                if (process.env.NODE_ENV !== 'production') {
+                    try { console.log('[BubbleMenu] Ignoring blur triggered by menu click'); } catch {}
+                }
+                // reset flag on next tick
+                setTimeout(() => { ignoreNextBlurRef.current = false; }, 0);
+                return;
+            }
+            setIsVisible(false);
+        };
+        const dom = editor.view.dom as HTMLElement;
+        dom.addEventListener('blur', hide, true);
+        window.addEventListener('popstate', hide);
+        window.addEventListener('hashchange', hide);
+        window.addEventListener('beforeunload', hide);
+        document.addEventListener('visibilitychange', hide);
+        return () => {
+            dom.removeEventListener('blur', hide, true);
+            window.removeEventListener('popstate', hide);
+            window.removeEventListener('hashchange', hide);
+            window.removeEventListener('beforeunload', hide);
+            document.removeEventListener('visibilitychange', hide);
         };
     }, [editor]);
 
@@ -1440,6 +1498,16 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
                 transform: 'translateX(-50%)',
                 overflow: 'visible'
             }}
+            // Prevent the editor from losing focus when interacting with the menu
+            onMouseDown={(e) => {
+                // Keep editor focused so selection remains valid and blur handler doesn't hide the menu
+                e.preventDefault();
+                e.stopPropagation();
+                ignoreNextBlurRef.current = true;
+                if (process.env.NODE_ENV !== 'production') {
+                    try { console.log('[BubbleMenu] onMouseDown within menu'); } catch {}
+                }
+            }}
         >
             {/* Header with Quick Actions */}
             <div className="flex items-center gap-2 p-2 border-b border-gray-700/50 dark:border-gray-200/50" style={{ overflow: 'visible' }}>
@@ -1448,7 +1516,7 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.95 }}
                     transition={{ duration: 0.2 }}
-                    onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (process.env.NODE_ENV !== 'production') { try { console.log('[BubbleMenu] Blockquote clicked'); } catch {} } editor.chain().focus().toggleBlockquote().run(); }}
                     className={`p-2 rounded-lg hover:bg-white/10 dark:hover:bg-black/10 ${editor.isActive('blockquote') ? 'bg-white/20 dark:bg-black/20' : ''}`}
                     title="Toggle Blockquote"
                 >
@@ -1460,7 +1528,7 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.95 }}
                     transition={{ duration: 0.2 }}
-                    onClick={() => setShowNoteModal(true)}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowNoteModal(true); }}
                     className="p-2 rounded-lg hover:bg-white/10 dark:hover:bg-black/10"
                     title="Add Note"
                 >
@@ -1518,7 +1586,7 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
                     </button>
                 }>
                     {textFormatOptions.map(opt => (
-                        <button key={opt.name} onClick={opt.action} className={`w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 ${opt.isActive ? 'bg-white/20 dark:bg-black/20' : ''}`}>
+                        <button key={opt.name} onClick={(e) => { e.preventDefault(); e.stopPropagation(); opt.action(); }} className={`w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 ${opt.isActive ? 'bg-white/20 dark:bg-black/20' : ''}`}>
                             {opt.name}
                         </button>
                     ))}
@@ -1541,7 +1609,7 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
                         whileHover={{ scale: 1.1 }}
                         whileTap={{ scale: 0.95 }}
                         transition={{ duration: 0.2 }}
-                        onClick={tool.action} 
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (process.env.NODE_ENV !== 'production') { try { console.log('[BubbleMenu] Tool clicked', tool.name); } catch {} } tool.action(); }} 
                         className={`p-2 rounded-lg hover:bg-white/10 dark:hover:bg-black/10 ${tool.isActive ? 'bg-white/20 dark:bg-black/20' : ''}`} 
                         title={tool.name}
                     >
@@ -1568,7 +1636,7 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
                     <div className="space-y-1">
                         <div className="text-xs font-medium text-gray-400 dark:text-gray-600 px-3 py-1">Advanced</div>
                         {advancedFormatting.map(tool => (
-                            <button key={tool.name} onClick={tool.action} className={`w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 ${tool.isActive ? 'bg-white/20 dark:bg-black/20' : ''}`}>
+                            <button key={tool.name} onClick={(e) => { e.preventDefault(); e.stopPropagation(); tool.action(); }} className={`w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 ${tool.isActive ? 'bg-white/20 dark:bg-black/20' : ''}`}>
                                 <tool.icon className="w-4 h-4"/>
                                 {tool.name}
                             </button>
@@ -1593,7 +1661,7 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
                     <div className="space-y-1">
                         <div className="text-xs font-medium text-gray-400 dark:text-gray-600 px-3 py-1">Alignment</div>
                         {alignmentOptions.map(tool => (
-                            <button key={tool.name} onClick={tool.action} className={`w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 ${tool.isActive ? 'bg-white/20 dark:bg-black/20' : ''}`}>
+                            <button key={tool.name} onClick={(e) => { e.preventDefault(); e.stopPropagation(); tool.action(); }} className={`w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 ${tool.isActive ? 'bg-white/20 dark:bg-black/20' : ''}`}>
                                 <tool.icon className="w-4 h-4"/>
                                 {tool.name}
                             </button>
@@ -1618,7 +1686,7 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
                     <div className="space-y-1">
                         <div className="text-xs font-medium text-gray-400 dark:text-gray-600 px-3 py-1">Lists & Structure</div>
                         {listOptions.map(tool => (
-                            <button key={tool.name} onClick={tool.action} className={`w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 ${tool.isActive ? 'bg-white/20 dark:bg-black/20' : ''}`}>
+                            <button key={tool.name} onClick={(e) => { e.preventDefault(); e.stopPropagation(); tool.action(); }} className={`w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10 ${tool.isActive ? 'bg-white/20 dark:bg-black/20' : ''}`}>
                                 <tool.icon className="w-4 h-4"/>
                                 {tool.name}
                             </button>
@@ -1643,7 +1711,7 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
                     <div className="space-y-1">
                         <div className="text-xs font-medium text-gray-400 dark:text-gray-600 px-3 py-1">Insert</div>
                         {insertOptions.map(tool => (
-                            <button key={tool.name} onClick={tool.action} className="w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">
+                            <button key={tool.name} onClick={(e) => { e.preventDefault(); e.stopPropagation(); tool.action(); }} className="w-full text-left flex items-center gap-3 px-3 py-1.5 text-sm rounded-md text-gray-300 dark:text-gray-700 hover:bg-white/10 dark:hover:bg-black/10">
                                 <tool.icon className="w-4 h-4"/>
                                 {tool.name}
                             </button>
@@ -1681,11 +1749,13 @@ const EditorBubbleMenu: React.FC<{ editor: TipTapEditor; setIsAIRunning: React.D
                             }
                             return (
                                 <div key={tool.name} className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-white/10 dark:hover:bg-black/10">
-                                    <button onClick={() => handleRunTool(tool.featureId)} className="flex items-center gap-3 text-sm text-gray-300 dark:text-gray-700">
+                                    <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRunTool(tool.featureId); }} className="flex items-center gap-3 text-sm text-gray-300 dark:text-gray-700">
                                         <tool.icon className="w-4 h-4"/>
                                         {label}
                                     </button>
-                                    <button onClick={() => {
+                                    <button onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
                                         if (isRephrase) {
                                             const { from, to } = editor.state.selection;
                                             const sel = editor.state.doc.textBetween(from, to, '\n', '\n');
@@ -1780,6 +1850,8 @@ interface TypographySettings {
     pageWidth: string;
     textAlignment: string;
     sceneDivider: string;
+    sceneDividerImage?: string; // data URL for image-based divider
+    sceneDividerImageWidth?: number; // px width for image divider
     typewriterMode: boolean;
     rememberPosition: boolean;
 }
@@ -1802,12 +1874,41 @@ const TypographySettingsPopup: React.FC<{
         paragraphSpacing: '0.5em',
         pageWidth: 'medium',
         textAlignment: 'left',
-        sceneDivider: 'asterisks',
+    sceneDivider: 'asterisks',
+    sceneDividerImage: undefined,
+    sceneDividerImageWidth: 400,
         typewriterMode: false,
         rememberPosition: true,
     });
 
     const [originalSettings, setOriginalSettings] = useState<TypographySettings | null>(null);
+    const [dividerGallery, setDividerGallery] = useState<string[]>([]);
+
+    // Persistence helpers
+    const STORAGE_KEY = 'as:typographySettings:last';
+    const saveSettings = (s: TypographySettings) => {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch {}
+        try { (window as any).__typography_last__ = { sceneDivider: s.sceneDivider, sceneDividerImage: s.sceneDividerImage, sceneDividerImageWidth: s.sceneDividerImageWidth }; } catch {}
+        // Persist at user level as well
+        try {
+            updateTypographySettings({
+                fontFamily: s.fontFamily,
+                fontSize: s.fontSize,
+                textIndent: s.textIndent,
+                chicagoStyle: s.chicagoStyle,
+                lineHeight: s.lineHeight,
+                paragraphSpacing: s.paragraphSpacing,
+                pageWidth: s.pageWidth,
+                textAlignment: s.textAlignment,
+                sceneDivider: s.sceneDivider,
+                sceneDividerImage: s.sceneDividerImage,
+                sceneDividerImageWidth: s.sceneDividerImageWidth,
+                typewriterMode: s.typewriterMode,
+                rememberPosition: s.rememberPosition,
+            } as any);
+        } catch {}
+    };
+    // (loadSettings removed; we now prefer user-level settings)
 
     // Professional fonts for publishing - organized by categories
     const fontFamilies = {
@@ -1848,6 +1949,15 @@ const TypographySettingsPopup: React.FC<{
     // Apply settings in real-time to editor
     const applySettingsToEditor = (newSettings: TypographySettings) => {
         console.log('Applying settings to editor:', newSettings);
+        // Persist latest settings for reuse
+        saveSettings(newSettings);
+        try { (window as any).__typography_last__ = {
+            sceneDivider: newSettings.sceneDivider,
+            sceneDividerImage: newSettings.sceneDividerImage,
+            sceneDividerImageWidth: newSettings.sceneDividerImageWidth,
+        }; } catch {}
+        // Notify custom node views to re-render when typography changes
+        try { window.dispatchEvent(new CustomEvent('as:typography:updated', { detail: newSettings })); } catch {}
         const editorElement = editor.view.dom as HTMLElement;
         const container = editorElement.closest('.prose') as HTMLElement;
         
@@ -1931,6 +2041,17 @@ const TypographySettingsPopup: React.FC<{
                 [data-typography-id="${editorId}"] li p {
                     text-indent: 0 !important;
                 }
+                /* Scene divider images: centered, transparent, and sized */
+                [data-typography-id="${editorId}"] img[alt="Scene Divider"] {
+                    display: block !important;
+                    margin: 1.25em auto !important;
+                    background: transparent !important;
+                    border: 0 !important;
+                    box-shadow: none !important;
+                    max-width: 100% !important;
+                    width: ${(newSettings.sceneDividerImageWidth || 400)}px !important;
+                    height: auto !important;
+                }
             `;
             document.head.appendChild(styleElement);
             
@@ -1951,28 +2072,59 @@ const TypographySettingsPopup: React.FC<{
         }
     };
 
-    // Store original settings when panel opens
+    // Store original settings when panel opens; prefer user-level project settings (includes divider image)
     useEffect(() => {
         if (isOpen && !originalSettings) {
-            const editorElement = editor.view.dom as HTMLElement;
-            const container = editorElement.closest('.prose') as HTMLElement;
-            
-            if (container) {
-                const current: TypographySettings = {
-                    fontFamily: container.style.fontFamily || 'Georgia, serif',
-                    fontSize: 'text-base', // default
-                    textIndent: 'none',
-                    chicagoStyle: false,
-                    lineHeight: 'normal',
-                    paragraphSpacing: '0.5em',
-                    pageWidth: 'medium',
-                    textAlignment: 'left',
-                    sceneDivider: 'asterisks',
-                    typewriterMode: false,
-                    rememberPosition: true,
-                };
-                setOriginalSettings(current);
-            }
+            (async () => {
+                try {
+                    const us = await loadUserSettings();
+                    const ts = (us.settings?.project?.typographySettings || {}) as any;
+                    if (ts && Object.keys(ts).length) {
+                        const merged: TypographySettings = {
+                            fontFamily: ts.fontFamily || 'Georgia, serif',
+                            fontSize: ts.fontSize || 'text-base',
+                            textIndent: ts.textIndent || 'none',
+                            chicagoStyle: !!ts.chicagoStyle,
+                            lineHeight: ts.lineHeight || 'normal',
+                            paragraphSpacing: ts.paragraphSpacing || '0.5em',
+                            pageWidth: ts.pageWidth || 'medium',
+                            textAlignment: ts.textAlignment || 'left',
+                            sceneDivider: ts.sceneDivider || 'asterisks',
+                            sceneDividerImage: ts.sceneDividerImage,
+                            sceneDividerImageWidth: ts.sceneDividerImageWidth ?? 400,
+                            typewriterMode: !!ts.typewriterMode,
+                            rememberPosition: ts.rememberPosition ?? true,
+                        };
+                        setOriginalSettings(merged);
+                        setSettings(merged);
+                        setDividerGallery(Array.isArray(ts.sceneDividerImageAssets) ? ts.sceneDividerImageAssets : []);
+                        try { (window as any).__typography_last__ = { sceneDivider: merged.sceneDivider, sceneDividerImage: merged.sceneDividerImage, sceneDividerImageWidth: merged.sceneDividerImageWidth }; } catch {}
+                        return;
+                    }
+                } catch {}
+                // fallback to DOM read
+                const editorElement = editor.view.dom as HTMLElement;
+                const container = editorElement.closest('.prose') as HTMLElement;
+                if (container) {
+                    const current: TypographySettings = {
+                        fontFamily: container.style.fontFamily || 'Georgia, serif',
+                        fontSize: 'text-base',
+                        textIndent: 'none',
+                        chicagoStyle: false,
+                        lineHeight: 'normal',
+                        paragraphSpacing: '0.5em',
+                        pageWidth: 'medium',
+                        textAlignment: 'left',
+                        sceneDivider: 'asterisks',
+                        sceneDividerImage: undefined,
+                        sceneDividerImageWidth: 400,
+                        typewriterMode: false,
+                        rememberPosition: true,
+                    };
+                    setOriginalSettings(current);
+                    setSettings(current);
+                }
+            })();
         }
     }, [isOpen, originalSettings, editor]);
 
@@ -1984,8 +2136,20 @@ const TypographySettingsPopup: React.FC<{
         }
     }, [settings, isOpen, editor]);
 
+
+    // No automatic scene divider mutations during settings changes in development
+
     const handleApply = () => {
-        // Settings are already applied in real-time, just cleanup and close
+        // Persist and apply transformations, then close
+        saveSettings(settings);
+        try { (window as any).__typography_last__ = {
+            sceneDivider: settings.sceneDivider,
+            sceneDividerImage: settings.sceneDividerImage,
+            sceneDividerImageWidth: settings.sceneDividerImageWidth,
+        }; } catch {}
+        // Let node views update themselves based on latest settings
+        try { window.dispatchEvent(new CustomEvent('as:typography:updated', { detail: settings })); } catch {}
+    // No document mutations here; node views will update themselves
         setOriginalSettings(settings);
         onApply(settings);
         onClose();
@@ -2536,7 +2700,105 @@ const TypographySettingsPopup: React.FC<{
                                         <option value="boxes">■ ■ ■</option>
                                         <option value="lines">— — —</option>
                                         <option value="dots">• • •</option>
+                                        <option value="image">Image…</option>
                                     </select>
+
+                                    {settings.sceneDivider === 'image' && (
+                                        <div className="space-y-2">
+                                            <label className="text-xs text-gray-600 dark:text-gray-400">Upload divider image</label>
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={async (e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (!file) return;
+                                                    let urlForEditor: string | undefined;
+                                                    // Try persisting to Tauri app data and convert path to URL
+                                                    try {
+                                                        if ((window as any).__TAURI__) {
+                                                            const [{ writeFile, mkdir, exists, BaseDirectory }, { appDataDir, join }, { convertFileSrc }] = await Promise.all([
+                                                                import('@tauri-apps/plugin-fs'),
+                                                                import('@tauri-apps/api/path'),
+                                                                import('@tauri-apps/api/core'),
+                                                            ] as any);
+                                                            const base = await appDataDir();
+                                                            const dirAbs = await join(base, 'scene-dividers');
+                                                            try {
+                                                                // ensure logical folder exists as relative path under AppData as well
+                                                                const relDir = 'scene-dividers';
+                                                                if (!(await exists(relDir, { baseDir: BaseDirectory.AppData }))) {
+                                                                    await mkdir(relDir, { baseDir: BaseDirectory.AppData, recursive: true });
+                                                                }
+                                                            } catch {}
+                                                            const safeName = `${Date.now()}_${file.name.replace(/[^\w.\-]+/g, '_')}`;
+                                                            const fullAbs = await join(dirAbs, safeName);
+                                                            const relPath = `scene-dividers/${safeName}`;
+                                                            const buf = new Uint8Array(await file.arrayBuffer());
+                                                            await writeFile(relPath, buf, { baseDir: BaseDirectory.AppData });
+                                                            urlForEditor = convertFileSrc(fullAbs);
+                                                        }
+                                                    } catch {}
+                                                    if (!urlForEditor) {
+                                                        const reader = new FileReader();
+                                                        reader.onload = async () => {
+                                                            const dataUrl = String(reader.result || '');
+                                                            setSettings(prev => ({ ...prev, sceneDividerImage: dataUrl }));
+                                                            // Add to gallery in user settings
+                                                            try {
+                                                                const us = await loadUserSettings();
+                                                                const prevG = (us.settings.project?.typographySettings?.sceneDividerImageAssets || []) as string[];
+                                                                const gallery = Array.from(new Set([dataUrl, ...prevG])).slice(0, 12);
+                                                                setDividerGallery(gallery);
+                                                                await updateTypographySettings({ sceneDividerImage: dataUrl, sceneDividerImageAssets: gallery });
+                                                            } catch {}
+                                                        };
+                                                        reader.readAsDataURL(file);
+                                                    } else {
+                                                        setSettings(prev => ({ ...prev, sceneDividerImage: urlForEditor }));
+                                                        try {
+                                                            const us = await loadUserSettings();
+                                                            const prevG = (us.settings.project?.typographySettings?.sceneDividerImageAssets || []) as string[];
+                                                            const gallery = Array.from(new Set([urlForEditor, ...prevG])).slice(0, 12);
+                                                            setDividerGallery(gallery);
+                                                            await updateTypographySettings({ sceneDividerImage: urlForEditor, sceneDividerImageAssets: gallery });
+                                                        } catch {}
+                                                    }
+                                                }}
+                                                className="block w-full text-xs"
+                                            />
+                                            <div className="flex items-center gap-2">
+                                                <label className="text-xs text-gray-600 dark:text-gray-400">Width (px)</label>
+                                                <input
+                                                    type="number"
+                                                    min={50}
+                                                    max={2000}
+                                                    step={10}
+                                                    value={settings.sceneDividerImageWidth || 400}
+                                                    onChange={(e) => setSettings(prev => ({ ...prev, sceneDividerImageWidth: Math.max(50, Math.min(2000, Number(e.target.value) || 400)) }))}
+                                                    className="w-24 p-1 text-xs border border-gray-300/50 dark:border-gray-600/50 rounded bg-white/70 dark:bg-gray-700/70"
+                                                />
+                                            </div>
+                                            {/* Gallery of previous images */}
+                                            {dividerGallery.length > 0 && (
+                                                <div className="space-y-1">
+                                                    <div className="text-xs text-gray-600 dark:text-gray-400">Your images</div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {dividerGallery.map((src: string, i: number) => (
+                                                            <button key={i} type="button" className="border rounded p-1 hover:ring-2 hover:ring-purple-400" onClick={() => setSettings(prev => ({ ...prev, sceneDividerImage: src }))}>
+                                                                <img src={src} className="h-10 w-auto" />
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {settings.sceneDividerImage && (
+                                                <div className="border rounded p-2 bg-white/60 dark:bg-gray-700/40">
+                                                    <img src={settings.sceneDividerImage} alt="Scene divider preview" style={{ width: (settings.sceneDividerImageWidth || 400) + 'px', height: 'auto' }} className="mx-auto" />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Checkboxes */}
@@ -2796,9 +3058,100 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor; currentChapter?: any;
                 editor.chain().focus().deleteRange({ from: editor.state.selection.from - 1, to: editor.state.selection.from }).insertContent('<h2>New Section</h2><p></p>').run();
             },
             description: 'Add a new section to your manuscript'
-        }
+        },
+        // Scene Divider option (moved here to avoid push() duplication)
+        { 
+            name: 'Scene Divider',
+            icon: MinusIcon,
+            action: () => insertSceneDivider(),
+            description: 'Insert a scene divider at cursor'
+        } as any
     ];
 
+    // Outside click to dismiss floating menu and tooltip
+    useEffect(() => {
+        const onDocDown = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            // If click is outside editor and menu, hide everything
+            const inEditor = (editor.view.dom as HTMLElement).contains(target);
+            const isMenu = target.closest('.as-floating-menu');
+            // If click lands inside menu or its nested submenus, keep it open
+            if (!inEditor && !isMenu) {
+                setIsVisible(false);
+                setShowTooltip(false);
+            }
+        };
+        // Use capture=false so menu can handle clicks first
+        document.addEventListener('mousedown', onDocDown, false);
+        return () => document.removeEventListener('mousedown', onDocDown, false);
+    }, [editor]);
+
+    // Track last intended insertion position
+    const [lastMenuPos, setLastMenuPos] = useState<number | null>(null);
+    
+    // Seed cache of typography settings so divider insertion works after reloads
+    useEffect(() => {
+        (async () => {
+            try {
+                const us = await loadUserSettings();
+                const ts = us.settings?.project?.typographySettings as any;
+                if (ts) {
+                    (window as any).__typography_last__ = {
+                        sceneDivider: ts.sceneDivider,
+                        sceneDividerImage: ts.sceneDividerImage,
+                        sceneDividerImageWidth: ts.sceneDividerImageWidth,
+                    };
+                }
+            } catch {}
+        })();
+    }, []);
+
+    // Right-click opens floating menu at cursor
+    useEffect(() => {
+        const onContext = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if ((editor.view.dom as HTMLElement).contains(target)) {
+                e.preventDefault();
+                setIsVisible(true);
+                setShowTooltip(false);
+                setSelectedIndex(0);
+                setPosition({ top: e.clientY, left: Math.max(8, e.clientX - 80) });
+                // Compute document position from click
+                try {
+                    const pos = editor.view.posAtCoords({ left: e.clientX, top: e.clientY } as any)?.pos ?? null;
+                    if (pos != null) setLastMenuPos(pos);
+                } catch {}
+            }
+        };
+        document.addEventListener('contextmenu', onContext);
+        return () => document.removeEventListener('contextmenu', onContext);
+    }, [editor]);
+
+    // Insert a scene divider node or text (prefers user settings, falls back gracefully)
+    function insertSceneDivider() {
+        try { console.log('[FloatingMenu] insertSceneDivider called'); } catch {}
+        const chain = (pos?: number | null) => (pos != null ? editor.chain().setTextSelection(pos).focus() : editor.chain().focus());
+        const proceed = async () => {
+            // Clean "/" placeholder paragraph if present at insertion point
+            try {
+                const pos = lastMenuPos ?? editor.state.selection.from;
+                const $pos = editor.state.doc.resolve(pos);
+                const start = $pos.start();
+                const end = $pos.end();
+                const txt = editor.state.doc.textBetween(start, end, '');
+                if (txt.trim() === '/') {
+                    editor.chain().setTextSelection({ from: start, to: end }).deleteSelection().run();
+                }
+            } catch {}
+            // Insert the dedicated SceneDivider node; rendering is handled by node view using current settings
+            chain(lastMenuPos).setSceneDivider().run();
+            try { console.log('[FloatingMenu] inserted SceneDivider node'); } catch {}
+        };
+        proceed();
+    }
+
+    // Scene Divider now included directly in floatingMenuOptions above to avoid duplication
+    
     useEffect(() => {
         const updateMenu = () => {
             const { $from, from } = editor.state.selection;
@@ -2828,6 +3181,7 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor; currentChapter?: any;
                 setIsVisible(true);
                 setSelectedIndex(0);
                 setShowTooltip(false);
+                try { setLastMenuPos(from); } catch {}
             } else {
                 // Hide both menu and tooltip
                 setIsVisible(false);
@@ -2940,13 +3294,14 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor; currentChapter?: any;
             )}
 
             {/* Floating menu */}
-            {isVisible && (
+    {isVisible && (
                 <div 
-                    className="fixed z-40 bg-gray-800 text-white dark:bg-gray-100 dark:text-black rounded-lg shadow-lg border border-gray-700/50 dark:border-gray-200/50 min-w-[200px]"
+            className="fixed z-40 bg-gray-800 text-white dark:bg-gray-100 dark:text-black rounded-lg shadow-lg border border-gray-700/50 dark:border-gray-200/50 min-w-[200px] as-floating-menu"
                     style={{
                         top: position.top,
                         left: position.left,
                     }}
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 >
                     {/* Header */}
                     <div className="px-3 py-2 border-b border-gray-700/50 dark:border-gray-200/50">
@@ -2961,7 +3316,9 @@ const EditorFloatingMenu: React.FC<{ editor: TipTapEditor; currentChapter?: any;
                         {floatingMenuOptions.map((option, index) => (
                             <button
                                 key={option.name}
-                                onClick={() => {
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
                                     option.action();
                                     setIsVisible(false);
                                 }}
@@ -3223,6 +3580,7 @@ const Editor: React.FC<{
             
             // Custom Node Extensions
             SceneBeatExtension,
+            SceneDividerExtension,
             NoteSectionExtension,
             CharacterImpersonationExtension,
             TestExtension,
@@ -3336,6 +3694,26 @@ const Editor: React.FC<{
     } else {
         console.log('Editor content:', editor.getJSON());
     }
+
+    // Ensure scene divider images are always centered, even after route changes
+    useEffect(() => {
+        const styleId = 'as-scene-divider-global-style';
+        if (!document.getElementById(styleId)) {
+            const el = document.createElement('style');
+            el.id = styleId;
+            el.innerHTML = `
+                /* Global centering for scene divider images inside the editor */
+                .book-prose img[alt="Scene Divider"] {
+                    display: block !important;
+                    margin: 1.25em auto !important;
+                    background: transparent !important;
+                    border: 0 !important;
+                    box-shadow: none !important;
+                }
+            `;
+            document.head.appendChild(el);
+        }
+    }, []);
 
     // Debug logging - remove in production
     //console.log('Editor extensions loaded:', editor.extensionManager.extensions.map(ext => ext.name));
@@ -3689,7 +4067,7 @@ const Editor: React.FC<{
                         searchQuery={planningSearchQuery}
                     />
                 ) : (
-                    <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-16">
+                    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 pb-16">
                         {/* Show CreateChapterPage if no chapters exist */}
                         {chapters.length === 0 ? (
                             <CreateChapterPage 
@@ -3698,7 +4076,16 @@ const Editor: React.FC<{
                             />
                         ) : (
                             <>
-                                <EditorContent editor={editor} />
+                                <div className="relative">
+                                    <EditorContent editor={editor} />
+                                    {/* Fixed right overlay minimap (portaled to body to avoid transform/scroll issues) */}
+                                    {typeof document !== 'undefined' && createPortal(
+                                        <div className="hidden lg:block fixed right-2 top-24 bottom-6 z-30 pointer-events-auto">
+                                            <ScrollMinimap editor={editor} />
+                                        </div>,
+                                        document.body
+                                    )}
+                                </div>
                                 
                                 {/* Tool Manager - Show tools available for this book/version */}
                                 <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700">

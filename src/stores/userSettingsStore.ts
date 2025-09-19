@@ -52,6 +52,10 @@ export interface TypographySettingsJSON {
   pageWidth: string;
   textAlignment: string;
   sceneDivider: string;
+  // Divider image persistence (optional)
+  sceneDividerImage?: string; // URL (data: or convertFileSrc)
+  sceneDividerImageWidth?: number; // px width for image
+  sceneDividerImageAssets?: string[]; // previously uploaded images gallery
   typewriterMode: boolean;
   rememberPosition: boolean;
 }
@@ -183,6 +187,9 @@ Rules: Avoid copyrighted proper nouns; keep generic; no code fences.`, customPro
         pageWidth: 'medium',
         textAlignment: 'left',
         sceneDivider: 'asterisks',
+  sceneDividerImage: undefined,
+  sceneDividerImageWidth: 400,
+  sceneDividerImageAssets: [],
         typewriterMode: false,
         rememberPosition: true,
       },
@@ -248,4 +255,23 @@ export async function saveUserSettings(settings: UserSettings): Promise<void> {
 
 export function getDefaultUserSettings(): UserSettings {
   return structuredClone(DEFAULT_SETTINGS);
+}
+
+// Convenience: patch and persist only typography settings
+export async function updateTypographySettings(patch: Partial<TypographySettingsJSON>): Promise<UserSettings> {
+  const current = await loadUserSettings();
+  const prev = current.settings?.project?.typographySettings ?? DEFAULT_SETTINGS.settings.project!.typographySettings;
+  const next: TypographySettingsJSON = { ...prev, ...patch } as TypographySettingsJSON;
+  const updated: UserSettings = {
+    ...current,
+    settings: {
+      ...current.settings,
+      project: {
+        ...(current.settings.project || {}),
+        typographySettings: next,
+      }
+    }
+  };
+  await saveUserSettings(updated);
+  return updated;
 }

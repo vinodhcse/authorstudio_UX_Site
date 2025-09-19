@@ -126,5 +126,6 @@ export async function decryptSceneContent(contentEnc: string, contentIv: string,
   const jsonString = new TextDecoder().decode(decrypted);
   
   console.log('✅ [DecryptScene] JSON string length:', jsonString.length);
+  console.log('✅ [DecryptScene] JSON:', JSON.parse(jsonString));
   return JSON.parse(jsonString);
 }

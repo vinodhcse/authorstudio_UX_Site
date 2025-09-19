@@ -46,7 +46,7 @@ const ScrollMinimap: React.FC<ScrollMinimapProps> = ({ editor }) => {
     scrollToItem(item);
   };
 
-  // Calculate scroll position percentage
+  // Calculate scroll position percentage relative to editor container
   const scrollPercentage = documentHeight > 0 ? (currentViewY / documentHeight) * 100 : 0;
 
   return (

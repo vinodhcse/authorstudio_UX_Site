@@ -61,6 +61,16 @@ export const useScrollMap = ({
   const [documentHeight, setDocumentHeight] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
 
+  // Create a stable dependency key for the types array to avoid re-creating callbacks/effects
+  // Default param creates a new array each render; using a string key prevents infinite loops
+  const typesKey = useMemo(() => {
+    try {
+      return JSON.stringify(types);
+    } catch {
+      return '';
+    }
+  }, [JSON.stringify(types)]);
+
   // Update scroll map items
   const updateScrollMap = useCallback(() => {
     if (!editor?.view?.dom) return;
@@ -74,19 +84,22 @@ export const useScrollMap = ({
     const items: ScrollMapItem[] = [];
 
     // Get document dimensions
-    const documentHeight = editorContainer.scrollHeight;
-    const viewportHeight = window.innerHeight;
-    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+  const documentHeight = editorContainer.scrollHeight;
+  const viewportHeight = window.innerHeight;
+  const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+  const editorRect = editorContainer.getBoundingClientRect();
+  const editorTopAbs = editorRect.top + scrollTop; // absolute Y of the editor container in page coords
 
     elements.forEach((element, index) => {
       const nodeType = element.getAttribute('data-node-type');
       const nodeId = element.getAttribute('data-node-id') || `${nodeType}-${index}`;
       
-      if (!nodeType || !types.includes(nodeType)) return;
+  if (!nodeType || !types.includes(nodeType)) return;
 
-      const rect = element.getBoundingClientRect();
-      const absoluteY = rect.top + scrollTop;
-      const relativeY = absoluteY / documentHeight;
+  const rect = element.getBoundingClientRect();
+  const absoluteY = rect.top + scrollTop; // absolute in page
+  const yWithinEditor = Math.max(0, absoluteY - editorTopAbs);
+  const relativeY = documentHeight > 0 ? yWithinEditor / documentHeight : 0;
 
       // Generate label inline to avoid dependency issues
       let label = 'Unknown';
@@ -118,7 +131,7 @@ export const useScrollMap = ({
       items.push({
         id: nodeId,
         type: nodeType as ScrollMapItem['type'],
-        y: absoluteY,
+    y: yWithinEditor,
         label,
         element,
         relativeY
@@ -128,8 +141,10 @@ export const useScrollMap = ({
     setScrollMapItems(items);
     setDocumentHeight(documentHeight);
     setViewportHeight(viewportHeight);
-    setCurrentViewY(scrollTop);
-  }, [editor, selector, types]); // Removed getNodeLabel dependency
+  // Current top of viewport within the editor doc (not the page)
+  const currentY = Math.max(0, Math.min(documentHeight, scrollTop - editorTopAbs));
+  setCurrentViewY(currentY);
+  }, [editor, selector, typesKey]); // depend on stable key, not array identity
 
   // Throttled scroll handler - use useMemo to prevent recreation
   const throttledUpdateScrollMap = useMemo(
@@ -151,10 +166,14 @@ export const useScrollMap = ({
 
     // Initial update
     updateScrollMap();
+    // Re-run after paint and shortly after mount to catch late DOM
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => updateScrollMap());
+    }
+    const t1 = setTimeout(() => updateScrollMap(), 80);
 
     // Listen for scroll events
     const handleScroll = () => {
-      setCurrentViewY(window.pageYOffset || document.documentElement.scrollTop);
       throttledUpdateScrollMap();
     };
 
@@ -169,14 +188,37 @@ export const useScrollMap = ({
       updateScrollMap();
     };
 
+    // Observe editor container DOM and size changes to refresh markers
+    const editorElement = editor.view.dom;
+    const editorContainer = editorElement.closest('.prose') || editorElement.parentElement;
+    let mo: MutationObserver | null = null;
+    let ro: ResizeObserver | null = null;
+    if (editorContainer) {
+      try {
+        mo = new MutationObserver(() => throttledUpdateScrollMap());
+        mo.observe(editorContainer, { childList: true, subtree: true, attributes: true, characterData: true });
+      } catch {}
+      try {
+        ro = new (window as any).ResizeObserver(() => throttledUpdateScrollMap());
+        if (ro) ro.observe(editorContainer as Element);
+      } catch {}
+    }
+
+    const onVisibility = () => updateScrollMap();
+    document.addEventListener('visibilitychange', onVisibility);
+
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('resize', handleResize);
     editor.on('transaction', handleTransaction);
 
     return () => {
+      clearTimeout(t1);
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', handleResize);
       editor.off('transaction', handleTransaction);
+      document.removeEventListener('visibilitychange', onVisibility);
+      if (mo) try { mo.disconnect(); } catch {}
+      if (ro) try { ro.disconnect(); } catch {}
       throttledUpdateScrollMap.cancel();
     };
   }, [editor, updateScrollMap]); // Keep updateScrollMap since it's memoized with useCallback

@@ -812,12 +812,11 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
   }, [loadChapters]);
 
   // Import DOCX → TipTap JSON → local chapters, mark for sync
-  const importDocx = useCallback(async (file: File, opts?: { sceneDivider?: string; actId?: string }) => {
+  const importDocx = useCallback(async (file: File, opts?: { actId?: string }) => {
     if (!bookId || !versionId || !user?.id) throw new Error('Missing book/version/user');
     const { startImportDocxJob } = await import('../services/import/persist');
     const result = await startImportDocxJob({
       file,
-      sceneDivider: opts?.sceneDivider,
       bookId,
       versionId,
       userId: user.id,

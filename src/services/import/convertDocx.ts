@@ -8,9 +8,10 @@ import Italic from '@tiptap/extension-italic';
 import Underline from '@tiptap/extension-underline';
 import Blockquote from '@tiptap/extension-blockquote';
 import HardBreak from '@tiptap/extension-hard-break';
-import HorizontalRule from '@tiptap/extension-horizontal-rule';
+import { SceneDividerExtension } from '../../extensions/SceneDividerExtension';
+import { v4 as uuidv4 } from 'uuid';
 
-// Minimal SceneDivider as horizontal rule mapping; can be swapped with project's custom extension when available
+// Include custom SceneDivider so TipTap parses our divider markup
 const baseExtensions = [
   Document,
   Paragraph,
@@ -20,7 +21,7 @@ const baseExtensions = [
   Underline,
   Blockquote,
   HardBreak,
-  HorizontalRule,
+  SceneDividerExtension,
 ];
 
 export interface ConvertedChapter {
@@ -28,12 +29,11 @@ export interface ConvertedChapter {
   content: any; // TipTap JSON
 }
 
-export async function convertDocxToChapters(arrayBuffer: ArrayBuffer, sceneDivider = '***'): Promise<ConvertedChapter[]> {
+export async function convertDocxToChapters(arrayBuffer: ArrayBuffer): Promise<ConvertedChapter[]> {
   // Convert DOCX to HTML via mammoth (browser build)
   console.log('Converting DOCX to HTML, size:', arrayBuffer.byteLength);
   let html = '';
   try {
-    // Primary attempt: let mammoth handle images normally (unknown tags will be dropped later by TipTap)
     const result = await mammoth.convertToHtml({ arrayBuffer }, {
       styleMap: [
         'b => strong',
@@ -50,7 +50,6 @@ export async function convertDocxToChapters(arrayBuffer: ArrayBuffer, sceneDivid
       const stripElements = transforms && transforms.element
         ? transforms.element(function (el: any) {
             if (!el) return el;
-            // Drop problematic structures entirely
             if (el.type === 'image' || el.type === 'table' || el.type === 'footnote' || el.type === 'endnote' || el.type === 'noteReference') {
               return [];
             }
@@ -69,7 +68,6 @@ export async function convertDocxToChapters(arrayBuffer: ArrayBuffer, sceneDivid
       html = result2.value || '';
     } catch (e2) {
       console.warn('[import] mammoth.convertToHtml failed (pass 2). Falling back to raw text...', e2);
-      // Last resort: extract raw text and wrap into one chapter
       const raw = await mammoth.extractRawText({ arrayBuffer }).catch(() => ({ value: '' } as any));
       const text = (raw as any)?.value || '';
       const safeContent = generateJSON(`<p>${escapeHtml(text)}</p>`, baseExtensions);
@@ -78,16 +76,12 @@ export async function convertDocxToChapters(arrayBuffer: ArrayBuffer, sceneDivid
   }
 
   console.log('Mammoth conversion completed, HTML length:', html.length);
-  // Normalize scene divider lines into <hr data-scene-divider>
-  const dividerRegex = new RegExp(`(^|<p[^>]*>)\\s*${sceneDivider.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(</p>|$)`, 'gmi');
-  html = html.replace(dividerRegex, '$1<hr data-scene-divider="true" />$2');
+  // No HTML markers. We'll convert to TipTap JSON and then replace pattern paragraphs with sceneDivider nodes.
 
-  // Split chapters by H1 heading blocks; keep heading text as title
-  // Create a virtual root to safely parse
+  // Split chapters by H1/H2 headings; keep title
   const segments: { title: string; bodyHtml: string }[] = [];
   const temp = document.createElement('div');
   temp.innerHTML = html;
-  // Only start after the first proper chapter heading
   let capturing = false;
   let currentTitle: string | null = null;
   let currentBodyParts: string[] = [];
@@ -107,7 +101,6 @@ export async function convertDocxToChapters(arrayBuffer: ArrayBuffer, sceneDivid
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement;
       if (isChapterHeading(el)) {
-        // Flush previous segment (if any)
         if (capturing && currentTitle && currentBodyParts.length) {
           const bodyHtml = currentBodyParts.join('');
           if (hasMeaningfulText(bodyHtml)) segments.push({ title: currentTitle, bodyHtml });
@@ -123,23 +116,39 @@ export async function convertDocxToChapters(arrayBuffer: ArrayBuffer, sceneDivid
       currentBodyParts.push(htmlPart);
     }
   }
-  // Push last captured
   if (capturing && currentTitle && currentBodyParts.length) {
     const bodyHtml = currentBodyParts.join('');
     if (hasMeaningfulText(bodyHtml)) segments.push({ title: currentTitle, bodyHtml });
   }
-  // Fallback: if still empty, take the whole document as one chapter (but strip image-only content)
   if (segments.length === 0 && hasMeaningfulText(html)) {
     segments.push({ title: 'Imported Document', bodyHtml: html });
   }
 
-  // Convert each segment's HTML to TipTap JSON using base extensions
+  const isDividerPara = (txt: string) => {
+    const s = (txt || '').replace(/[\s\u200B]+/g, '').trim();
+    return s === '***' || s === '•••' || s === '■■■' || s === '———' || s === '*•*' || s === '—•—';
+  };
+
   const chapters: ConvertedChapter[] = segments.map(seg => {
     try {
-      return {
-        title: seg.title,
-        content: generateJSON(seg.bodyHtml, baseExtensions),
-      };
+      // First, plain JSON from HTML
+      const raw = generateJSON(seg.bodyHtml, baseExtensions);
+      // Then, scan its content and replace any divider-style paragraphs with sceneDivider nodes
+      if (raw && Array.isArray((raw as any).content)) {
+        const out: any[] = [];
+        for (const node of (raw as any).content) {
+          if (node?.type === 'paragraph') {
+            const txt = collectText(node);
+            if (isDividerPara(txt)) {
+              out.push({ type: 'sceneDivider', attrs: { id: uuidv4() } });
+              continue;
+            }
+          }
+          out.push(node);
+        }
+        (raw as any).content = out;
+      }
+      return { title: seg.title, content: raw };
     } catch (segErr) {
       console.warn('[import] Failed to convert segment to TipTap JSON, falling back to plain paragraph', segErr);
       const textOnly = stripHtml(seg.bodyHtml).trim();
@@ -177,4 +186,21 @@ function hasMeaningfulText(html: string): boolean {
   tmp.querySelectorAll('img, figure, hr, br').forEach(n => n.parentElement?.removeChild(n));
   const text = (tmp.textContent || '').replace(/\s+/g, ' ').trim();
   return text.length > 20; // threshold to skip metadata/title pages
+}
+
+// Collect text content from a TipTap paragraph-like node
+function collectText(node: any): string {
+  try {
+    const texts: string[] = [];
+    const walk = (n: any) => {
+      if (!n) return;
+      if (n.type === 'text' && typeof n.text === 'string') texts.push(n.text);
+      const content = Array.isArray(n.content) ? n.content : [];
+      for (const c of content) walk(c);
+    };
+    walk(node);
+    return texts.join(' ');
+  } catch {
+    return '';
+  }
 }
