@@ -539,6 +539,8 @@ const ChapterProgressBar: React.FC<{
     // Pointer-based fallback DnD for chapters (works even if HTML5 DnD is blocked)
     useEffect(() => {
         const onPointerMove = (e: PointerEvent) => {
+            // If the dropdown is closed, ignore and reset any stale drag state
+            if (!isOpen) { pointerDragRef.current = null; return; }
             const pd = pointerDragRef.current;
             if (!pd) return;
             const dx = Math.abs(e.clientX - pd.startX);
@@ -578,6 +580,8 @@ const ChapterProgressBar: React.FC<{
             }
         };
         const onPointerUp = async (e: PointerEvent) => {
+            // If the dropdown is closed, ignore and reset any stale drag state
+            if (!isOpen) { pointerDragRef.current = null; return; }
             const pd = pointerDragRef.current;
             if (!pd) return;
             const wasActive = pd.started;
@@ -629,7 +633,38 @@ const ChapterProgressBar: React.FC<{
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
         };
-    }, [groupedChapters, onReorderChapter, hoverActId]);
+    }, [groupedChapters, onReorderChapter, hoverActId, isOpen]);
+
+    // Close the dropdown when clicking outside or pressing Escape
+    useEffect(() => {
+        if (!isOpen) return;
+        const onDocMouseDown = (e: MouseEvent) => {
+            const t = e.target as HTMLElement;
+            if (triggerRef.current && triggerRef.current.contains(t)) return; // inside
+            setIsOpen(false);
+        };
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setIsOpen(false);
+        };
+        document.addEventListener('mousedown', onDocMouseDown, true);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('mousedown', onDocMouseDown, true);
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, [isOpen]);
+
+    // When the dropdown closes, ensure all drag state is reset so the editor area behaves normally
+    useEffect(() => {
+        if (isOpen) return;
+        pointerDragRef.current = null;
+        isDraggingRef.current = false;
+        setDraggingChapter(null);
+        setDraggingActId(null);
+        setHoverActId(null);
+        setHoverChapterId(null);
+        setInsertTarget(null);
+    }, [isOpen]);
 
     // Global debug: while dropdown is open and dragging, make window a permissive drop zone
     useEffect(() => {
@@ -1230,7 +1265,7 @@ const ChapterProgressBar: React.FC<{
                                  style={{ WebkitUserDrag: 'element' } as any}
                                  whileHover={{ x: 2 }}
                                  whileTap={{ scale: 0.995 }}
-                                         onClick={(e) => { if (isDraggingRef.current) { dlog('chapter click suppressed due to dragging', { chapterId: chapter.id }); e.preventDefault(); return; } dlog('chapter click', { chapterId: chapter.id }); onNavigateToChapter && onNavigateToChapter(chapter.id); }}
+                                         onClick={(e) => { if (isDraggingRef.current) { dlog('chapter click suppressed due to dragging', { chapterId: chapter.id }); e.preventDefault(); return; } dlog('chapter click', { chapterId: chapter.id }); onNavigateToChapter && onNavigateToChapter(chapter.id); setIsOpen(false); }}
                                                       onPointerDown={(e) => {
                                                           // set up fallback pointer drag; don't block normal click yet
                                                           pointerDragRef.current = { active: true, started: false, startX: e.clientX, startY: e.clientY, chapterId: chapter.id, sourceActId: actId };
