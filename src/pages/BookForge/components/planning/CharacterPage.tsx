@@ -4,7 +4,7 @@ import { Theme } from '../../../../types';
 import CharacterDetailsView from '../../../../components/CharacterDetailsView';
 import CharacterProfileBuilderWrapper from './CharacterProfileBuilderWrapper';
 import { PlusIcon } from '../../../../constants';
-import { useBookContext, useCurrentBookAndVersion } from '../../../../contexts/BookContext';
+import { useBookContextSafe, useCurrentBookAndVersion } from '../../../../contexts/BookContext';
 
 interface CharacterPageProps {
     theme: Theme;
@@ -74,7 +74,8 @@ const CharacterCard: React.FC<{
             case 'Tertiary':
                 return 'bg-green-500';
             default:
-                return 'bg-gray-500';
+                // Default to tertiary styling when importance is missing/unknown
+                return 'bg-green-500';
         }
     };
 
@@ -87,7 +88,8 @@ const CharacterCard: React.FC<{
             case 'Tertiary':
                 return '3';
             default:
-                return '?';
+                // Default to tertiary indicator when importance is missing/unknown
+                return '3';
         }
     };
 
@@ -121,7 +123,7 @@ const CharacterCard: React.FC<{
                         {/* Character Image */}
                         <motion.div layout className={`relative rounded-lg overflow-hidden flex-shrink-0 ${config.imageSize}`}>
                             <img 
-                                src={character.image} 
+                                src={character.image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(character.fullName || character.name || 'character')}`}
                                 alt={character.name}
                                 className="absolute w-full h-full object-cover"
                             />
@@ -159,7 +161,7 @@ const CharacterCard: React.FC<{
                                     ? 'text-blue-800 dark:text-blue-200 bg-blue-500/20 dark:bg-blue-900/50'
                                     : 'text-green-800 dark:text-green-200 bg-green-500/20 dark:bg-green-900/50'
                             }`}>
-                                {character.importance}
+                                {character.importance || 'Tertiary'}
                             </span>
                             {character.age && (
                                 <span className="text-gray-500 dark:text-gray-400 text-xs">
@@ -263,11 +265,16 @@ const HeroSection: React.FC<{
         >
             <div className="flex flex-col lg:flex-row">
                 {/* Character Image */}
-                <div className="lg:w-1/3 relative">
-                    <img
+                <div className="lg:w-1/3 relative h-64 lg:h-80 overflow-hidden">
+                    <motion.img
+                        key={currentHero?.image || currentHero?.id}
                         src={currentHero?.image || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&h=400&fit=crop&crop=face'}
                         alt={currentHero?.name || 'Character'}
-                        className="w-full h-64 lg:h-80 object-cover"
+                        className="absolute inset-0 w-full h-full object-cover"
+                        style={{ objectPosition: '50% 12%', transformOrigin: '50% 0%' }}
+                        initial={{ scale: 1 }}
+                        animate={{ scale: 1.12 }}
+                        transition={{ duration: 10, ease: 'easeOut' }}
                     />
                     <div className="absolute top-4 right-4 w-12 h-12 bg-yellow-500 rounded-full border-4 border-white flex items-center justify-center shadow-lg">
                         <span className="text-lg font-bold text-white">★</span>
@@ -349,14 +356,19 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
     const [editingCharacter, setEditingCharacter] = useState<any | null>(null);
     
     // Use BookContext to get current data
-    const { getCharacters, getCharacter, createCharacter, updateCharacter, deleteCharacter } = useBookContext();
+    const ctx = useBookContextSafe();
+    const getCharacters = ctx?.getCharacters || (async () => [] as any[]);
+    const getCharacter = ctx?.getCharacter || (async () => null as any);
+    const createCharacter = ctx?.createCharacter || (async () => { throw new Error('Context not ready'); });
+    const updateCharacter = ctx?.updateCharacter || (async () => {});
+    const deleteCharacter = ctx?.deleteCharacter || (async () => {});
     const { bookId, versionId } = useCurrentBookAndVersion();
 
     // Local characters state loaded asynchronously from context
     const [characters, setCharacters] = useState<any[]>([]);
     useEffect(() => {
         let mounted = true;
-        (async () => {
+        const load = async () => {
             try {
                 if (!bookId || !versionId) { if (mounted) setCharacters([]); return; }
                 const list = await getCharacters(bookId, versionId);
@@ -366,8 +378,15 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
             } catch {
                 if (mounted) setCharacters([]);
             }
-        })();
-        return () => { mounted = false; };
+        };
+        load();
+        const onVersionUpdated = (e: Event) => {
+            const detail = (e as CustomEvent).detail as any;
+            if (!detail || detail.bookId !== bookId || detail.versionId !== versionId) return;
+            load();
+        };
+        try { window.addEventListener('version:updated', onVersionUpdated as EventListener); } catch {}
+        return () => { mounted = false; try { window.removeEventListener('version:updated', onVersionUpdated as EventListener); } catch {} };
     }, [bookId, versionId, getCharacters]);
     
     // Find the selected character
@@ -396,7 +415,8 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
     // Group characters by importance
     const primaryCharacters = filteredCharacters.filter(char => char.importance === 'Primary');
     const secondaryCharacters = filteredCharacters.filter(char => char.importance === 'Secondary');
-    const tertiaryCharacters = filteredCharacters.filter(char => char.importance === 'Tertiary');
+    // Treat missing/unknown importance as 'Tertiary' for display purposes
+    const tertiaryCharacters = filteredCharacters.filter(char => char.importance !== 'Primary' && char.importance !== 'Secondary');
     
     // Handle character creation
     const handleCreateCharacter = () => {
@@ -413,13 +433,20 @@ const CharacterPage: React.FC<CharacterPageProps> = ({
     // Handle character save from Profile Builder
     const handleSaveCharacter = (characterData: any) => {
         if (!bookId || !versionId) return;
-        
+        // Default importance if missing/invalid
+        const normalized = {
+            ...characterData,
+            importance: (characterData?.importance === 'Primary' || characterData?.importance === 'Secondary' || characterData?.importance === 'Tertiary')
+                ? characterData.importance
+                : 'Tertiary',
+        };
+
         if (editingCharacter) {
             // Update existing character
-            updateCharacter(bookId, versionId, editingCharacter.id, characterData);
+            updateCharacter(bookId, versionId, editingCharacter.id, normalized);
         } else {
             // Create new character
-            createCharacter(bookId, versionId, characterData);
+            createCharacter(bookId, versionId, normalized);
         }
         
         setShowCharacterBuilder(false);

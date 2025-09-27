@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
-import { Character } from '../types';
-import AssetUploadButton from './AssetUploadButton';
+import { Character, FileRef } from '../types';
+import { useBookContextSafe, useCurrentBookAndVersion } from '../contexts/BookContext';
+import { SimpleAssetService } from '../services/SimpleAssetService';
+import { appLog } from '../auth/fileLogger';
+import CharacterImageGenerator from './CharacterImageGenerator';
 
 interface CharacterDetailsViewProps {
     character: Character | null;
@@ -26,6 +29,14 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState<CharacterTab>('details');
     const [showImageUpload, setShowImageUpload] = useState(false);
+    const [showImageGen, setShowImageGen] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState<string>('');
+    const [uploadError, setUploadError] = useState<string | null>(null);
+    const bookCtx = useBookContextSafe();
+    const { bookId: ctxBookId, versionId: ctxVersionId } = useCurrentBookAndVersion();
+    const effectiveBookId = bookId || ctxBookId || undefined;
+    const effectiveVersionId = ctxVersionId || undefined;
 
     // Motion values for 3D effect
     const x = useMotionValue(0);
@@ -39,10 +50,72 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
         y.set(event.clientY - rect.top - rect.height / 2);
     };
 
-    const handleImageUpload = (assetId: string, assetUrl: string) => {
-        // TODO: Update character with new image asset
-        console.log('Character image uploaded:', assetId, assetUrl);
-        setShowImageUpload(false);
+    // Mirror CoverPicker: use SimpleAssetService to persist locally and update current version character avatar/gallery
+    const handleCharacterFileSelect = async (file: File) => {
+        if (!file.type.startsWith('image/')) {
+            setUploadError('Please select an image file');
+            return;
+        }
+        try {
+            if (!character || !effectiveBookId || !effectiveVersionId || !bookCtx) return;
+            setIsUploading(true);
+            setUploadError(null);
+            setUploadProgress('Processing image...');
+
+            const result = await SimpleAssetService.uploadCover(file, effectiveBookId);
+
+            setUploadProgress('Updating character...');
+
+            const currentGallery = (character.galleryRefs || []) as (FileRef & { url?: string })[];
+            const alreadyInGallery = currentGallery.some(gr => gr.assetId === result.assetId);
+            const avatarRef: any = { ...result.fileRef, role: 'avatar', url: result.dataUrl };
+            const galleryRef: any = { ...result.fileRef, role: 'gallery', url: result.dataUrl };
+
+            await bookCtx.updateCharacter(effectiveBookId, effectiveVersionId, character.id, {
+                // Legacy image for immediate display fallbacks
+                image: result.dataUrl,
+                // New fields for avatar and gallery
+                avatarRef,
+                galleryRefs: alreadyInGallery ? currentGallery : [...currentGallery, galleryRef],
+            });
+
+            setUploadProgress('');
+            await appLog.success('character-image', 'Character image upload completed', {
+                assetId: result.assetId,
+                characterId: character.id,
+                bookId: effectiveBookId
+            });
+        } catch (err) {
+            console.error('Failed to upload character image:', err);
+            setUploadError(err instanceof Error ? err.message : 'Failed to upload image');
+            setUploadProgress('');
+            await appLog.error('character-image', 'Character image upload failed', {
+                fileName: (file as any)?.name,
+                characterId: character?.id,
+                bookId: effectiveBookId,
+                error: err
+            });
+        } finally {
+            setIsUploading(false);
+            setShowImageUpload(false);
+        }
+    };
+
+    const setAsPrimary = async (ref: (FileRef & { url?: string }) ) => {
+        try {
+            if (!character || !effectiveBookId || !effectiveVersionId || !bookCtx) return;
+            const avatarRef: any = { ...ref, role: 'avatar' };
+            let nextImage = ref.url || (ref as any).remoteUrl;
+            if (!nextImage && ref.assetId) {
+                try { nextImage = await SimpleAssetService.loadAssetForDisplay(ref.assetId); } catch {}
+            }
+            await bookCtx.updateCharacter(effectiveBookId, effectiveVersionId, character.id, {
+                avatarRef,
+                image: nextImage || character.image,
+            });
+        } catch (e) {
+            console.error('Failed to set primary image', e);
+        }
     };
 
     if (!character) {
@@ -84,6 +157,43 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
         </div>
     );
 
+    // Base URL computed from current character shape
+    const baseImageUrl = useMemo(() => {
+        if (!character) return undefined;
+        const url = (character as any).avatarRef?.url
+            || character.avatarRef?.remoteUrl
+            || character.image
+            || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(character.fullName || character.name || 'character')}`;
+        return url;
+    }, [character]);
+
+    // Lazy-resolved display URL if avatarRef only has an assetId (load from SimpleAssetService)
+    const [displayedImageUrl, setDisplayedImageUrl] = useState<string | undefined>(undefined);
+
+    useEffect(() => {
+        let cancelled = false;
+        const run = async () => {
+            // Default to base
+            setDisplayedImageUrl(baseImageUrl);
+            if (!character) return;
+            const avatar = (character as any).avatarRef || character.avatarRef;
+            const hasExplicitUrl = avatar?.url || avatar?.remoteUrl;
+            if (!hasExplicitUrl && avatar?.assetId) {
+                try {
+                    const url = await SimpleAssetService.loadAssetForDisplay(avatar.assetId);
+                    if (!cancelled && url) setDisplayedImageUrl(url);
+                } catch (e) {
+                    // Non-fatal; fall back to base url
+                    if (!cancelled) setDisplayedImageUrl(baseImageUrl);
+                }
+            }
+        };
+        run();
+        return () => { cancelled = true; };
+    }, [character?.id, (character as any)?.avatarRef?.assetId, character?.avatarRef?.assetId, baseImageUrl]);
+
+    const imageUrl = displayedImageUrl || baseImageUrl;
+
     const renderHeroSection = () => (
         <div className="bg-gradient-to-br from-gray-200 to-gray-50 dark:from-gray-900 dark:to-black rounded-2xl p-6 md:p-8 border border-black/10 dark:border-white/10 shadow-lg mb-8">
             <div className="flex flex-col md:flex-row gap-8 md:gap-12 items-start">
@@ -99,10 +209,17 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
                         className="relative aspect-[3/4] rounded-lg shadow-2xl overflow-hidden z-10"
                         style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
                     >
-                        <img 
-                            src={character.image} 
+                        <motion.img 
+                            key={imageUrl}
+                            src={imageUrl} 
                             alt={character.name}
                             className="absolute w-full h-full object-cover"
+                            // Bias the crop toward the upper area for face/shoulder framing
+                            style={{ objectPosition: '50% 12%', transformOrigin: '50% 0%' }}
+                        // Gente one-time zoom to draw focus to the upper portion
+                            initial={{ scale: 1 }}
+                            animate={{ scale: 1.12 }}
+                            transition={{ duration: 10, ease: 'easeOut' }}
                         />
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center z-20 cursor-pointer">
                             <div className="flex gap-3">
@@ -115,7 +232,7 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
                                     </svg>
                                     Edit
                                 </button>
-                                {bookId && (
+                                {effectiveBookId && (
                                     <button 
                                         onClick={() => setShowImageUpload(true)}
                                         className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-white/20 text-white backdrop-blur-md hover:bg-white/30 transition-colors"
@@ -127,18 +244,19 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
                                     </button>
                                 )}
                                 <button 
+                                    onClick={() => setShowImageGen(true)}
                                     className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full bg-white/20 text-white backdrop-blur-md hover:bg-white/30 transition-colors"
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                     </svg>
-                                    Arc
+                                    Generate
                                 </button>
                             </div>
                         </div>
 
                         {/* Upload Modal */}
-                        {showImageUpload && bookId && (
+                        {showImageUpload && effectiveBookId && (
                             <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-40 p-4">
                                 <div className="bg-white dark:bg-gray-800 rounded-lg p-4 max-w-sm w-full">
                                     <div className="flex justify-between items-center mb-4">
@@ -152,25 +270,42 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
                                             </svg>
                                         </button>
                                     </div>
-                                    <AssetUploadButton
-                                        entityType="character"
-                                        entityId={character.id}
-                                        bookId={bookId}
-                                        role="avatar"
-                                        onAssetUploaded={handleImageUpload}
-                                        className="w-full"
-                                        acceptedTypes={['image/*']}
-                                    >
-                                        <div className="w-full p-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center hover:border-blue-500 dark:hover:border-blue-400 transition-colors cursor-pointer">
-                                            <svg className="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                            </svg>
-                                            <p className="text-gray-600 dark:text-gray-400">Click to upload or drag & drop</p>
+                                    {/* Simple cover-like uploader */}
+                                    {uploadError && (
+                                        <div className="mb-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-600 dark:text-red-400">
+                                            {uploadError}
                                         </div>
-                                    </AssetUploadButton>
+                                    )}
+                                    <div
+                                        className={`w-full p-4 border-2 border-dashed rounded-lg text-center transition-colors cursor-pointer ${isUploading ? 'opacity-60 pointer-events-none' : ''} ${uploadError ? 'border-red-400' : 'border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-400'}`}
+                                        onClick={() => document.getElementById('character-image-file-input')?.click()}
+                                    >
+                                        <input
+                                            id="character-image-file-input"
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            disabled={isUploading}
+                                            onChange={(e) => {
+                                                const f = e.target.files?.[0];
+                                                if (f) handleCharacterFileSelect(f);
+                                            }}
+                                        />
+                                        <svg className="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                        </svg>
+                                        <p className="text-gray-600 dark:text-gray-400">Click to upload character image</p>
+                                        {isUploading && (
+                                            <div className="mt-3 flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                                                <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                                                <span>{uploadProgress || 'Processing...'}</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}
+                        {/* Image Generator Modal moved to root-level below */}
                         
                         {/* Importance Badge */}
                         <div className="absolute top-3 right-3 w-10 h-10 bg-purple-500 rounded-full border-3 border-white flex items-center justify-center shadow-lg z-30">
@@ -389,6 +524,37 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
                             </div>
                         </div>
 
+                        {/* Gallery Section */}
+                        {(character.galleryRefs && character.galleryRefs.length > 0) && (
+                            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-lg">
+                                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Gallery</h3>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                    {character.galleryRefs.map((ref, idx) => {
+                                        const src = (ref as any).url || ref.remoteUrl || imageUrl;
+                                        const isCurrent = (character as any).avatarRef?.assetId && ((character as any).avatarRef.assetId === ref.assetId);
+                                        return (
+                                            <div key={ref.assetId + '_' + idx} className="relative group">
+                                                <img src={src} alt={`Gallery ${idx+1}`} className="w-full aspect-[3/4] object-cover rounded-md border border-black/10 dark:border-white/10" />
+                                                <div className="absolute inset-0 rounded-md bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2">
+                                                    {!isCurrent && (
+                                                        <button
+                                                            onClick={() => setAsPrimary(ref as any)}
+                                                            className="opacity-0 group-hover:opacity-100 px-3 py-1.5 text-xs font-semibold rounded-full bg-white/90 text-gray-900 hover:bg-white"
+                                                        >
+                                                            Set as Primary
+                                                        </button>
+                                                    )}
+                                                    {isCurrent && (
+                                                        <span className="px-2 py-1 text-[10px] font-semibold rounded-full bg-green-600 text-white">Current</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Detailed Sections */}
                         {character.backstory && (
                             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-lg">
@@ -529,8 +695,53 @@ const CharacterDetailsView: React.FC<CharacterDetailsViewProps> = ({
                     </div>
                 </div>
             </div>
+
+            {/* Image Generator Modal (root-level overlay) */}
+            {showImageGen && effectiveBookId && effectiveVersionId && (
+                <CharacterImageGenerator
+                    isOpen={showImageGen}
+                    onClose={() => setShowImageGen(false)}
+                    character={character}
+                    bookId={effectiveBookId}
+                    versionId={effectiveVersionId}
+                    onApplied={async (ref, url) => {
+                        try {
+                            const currentGallery = (character.galleryRefs || []) as (FileRef & { url?: string })[];
+                            let avatarRef: any = ref ? { ...ref } : undefined;
+                            let galleryRef: any = ref ? { ...ref } : undefined;
+                            let finalUrl = url;
+
+                            // If no assetId but we have a data URL, persist it via SimpleAssetService
+                            if ((!ref || !ref.assetId) && url && url.startsWith('data:')) {
+                                const resp = await fetch(url);
+                                const blob = await resp.blob();
+                                const file = new File([blob], 'ai-generated.png', { type: blob.type || 'image/png' });
+                                const upload = await SimpleAssetService.uploadCover(file, effectiveBookId);
+                                avatarRef = { ...upload.fileRef, role: 'avatar', url: upload.dataUrl };
+                                galleryRef = { ...upload.fileRef, role: 'gallery', url: upload.dataUrl };
+                                finalUrl = upload.dataUrl;
+                            } else {
+                                if (avatarRef) { avatarRef.role = 'avatar'; avatarRef.url = (avatarRef as any).url || url; }
+                                if (galleryRef) { galleryRef.role = 'gallery'; galleryRef.url = (galleryRef as any).url || url; }
+                            }
+
+                            const alreadyInGallery = galleryRef?.assetId ? currentGallery.some(g => g.assetId === galleryRef.assetId) : false;
+
+                            await bookCtx?.updateCharacter(effectiveBookId, effectiveVersionId, character.id, {
+                                image: finalUrl || character.image,
+                                ...(avatarRef ? { avatarRef } : {}),
+                                ...(galleryRef ? { galleryRefs: alreadyInGallery ? currentGallery : [...currentGallery, galleryRef] } : {}),
+                            });
+                        } catch (e) {
+                            console.warn('Failed to persist generated image onto character', e);
+                        }
+                    }}
+                />
+            )}
         </div>
     );
 };
 
 export default CharacterDetailsView;
+// Root-level modal render to ensure it overlays the entire window
+// Note: Kept inside component return above for proper state scope

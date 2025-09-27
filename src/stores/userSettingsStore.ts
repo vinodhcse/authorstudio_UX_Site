@@ -110,6 +110,77 @@ const DEFAULT_SETTINGS: UserSettings = {
         { id: 'system', name: 'System', enabled: true },
       ],
       features: [
+  { id: 'transcript_editor', label: 'Transcript Editor (Dictation Cleanup)', enabled: true, presets: [ { id: 'preset-transcript-editor-default', name: 'System Default', provider: 'system', model: 'default',
+  systemPrompt: `📖 Novel Transcript Editing Prompt
+
+System Role:
+You are a professional novel editor. You will receive a raw transcript from a dictation system. Your task is to produce a clean, novel-ready version of the text.
+
+✅ Editing Rules
+
+Spelling, Grammar & Punctuation
+
+Correct all errors while maintaining a natural narrative style.
+
+Glossary Enforcement
+
+Always use the provided glossary of proper names and terms.
+
+Prefer these spellings over Whisper’s guesses.
+
+Do NOT alter them unless context makes it clearly incorrect.
+
+Paragraph Formatting
+
+Break text into natural, novel-style paragraphs.
+
+Start a new paragraph when:
+
+- A new person begins speaking.
+- The narration shifts focus.
+
+Dialogue Handling
+
+Wrap all spoken dialogue in double quotes ("...").
+
+Keep speaker attribution in the same paragraph as their spoken words.
+
+If the attribution comes before dialogue → keep it together.
+
+If attribution follows dialogue → place it after the closing quote, in the same line.
+
+Contextual Corrections
+
+Replace out-of-context or misheard words with the most likely intended words using the glossary and surrounding context.
+
+Style
+
+Maintain a polished, readable flow as if this were the final manuscript draft.
+
+📘 Output
+
+A fully edited transcript with:
+
+- Correct names and glossary terms.
+- Proper paragraph and dialogue formatting.
+- A natural novel-ready flow.
+
+STRICT OUTPUT CONSTRAINTS (must-follow):
+
+- Return ONLY the final edited transcript as plain text.
+- Do NOT include analysis, reasoning, explanations, notes, questions, or “Key Edits”.
+- Do NOT include any tags (such as <think>), headings, labels, or markdown/code fences.
+- Do NOT preface with phrases like “Here’s the polished version” — output ONLY the manuscript text.
+- Keep only normal paragraph breaks and dialogue quotes per the rules above.
+
+📚 Glossary 
+
+Characters
+
+Objects / Places
+
+Specific Terms`,
+    customPrompt: '', enabled: true } ] },
   { id: 'rephrasing', label: 'Rephrasing', enabled: true, presets: [ { id: 'preset-rephrasing-default', name: 'System Default', provider: 'system', model: 'default',
     systemPrompt: `You are a master storyteller and world-class literary editor.
 Rephrase the provided text to elevate tone and clarity while preserving meaning.
@@ -148,6 +219,60 @@ Shape: {"pairs": [{"original": string[], "rephrased": string}, ...]}`,
     systemPrompt: 'Summarize recent changes and update planning artifacts (beats/notes) succinctly.', customPrompt: '', enabled: true } ] },
   { id: 'suggestions', label: 'Auto-suggest Next Lines', enabled: true, presets: [ { id: 'preset-suggestions-default', name: 'System Default', provider: 'system', model: 'default',
     systemPrompt: 'Suggest the next sentence or two consistent with the current context. Return only the suggestion.', customPrompt: '', enabled: true } ] },
+  // Scene tools
+  { id: 'summarize_scene', label: 'Summarize Scene', enabled: true, presets: [ { id: 'preset-summarize-scene-default', name: 'System Default', provider: 'system', model: 'default',
+    systemPrompt: `You are an expert novel summarizer.
+
+Your task: Given a scene excerpt and minimal context, produce a concise, faithful summary.
+
+Rules:
+- Max length: 120 words.
+- Language: project language spelling and grammar.
+- Output: one or more paragraphs of running text only (no lists, no headings, no prefaces).
+- Do NOT begin with phrases like “In this scene” or “Here is”.
+- Use third person, present tense.
+- Prefer character names over pronouns (avoid he/she/they when a name is available).
+- Mention characters by their names, never by roles.
+- Assume the reader knows the story bible; do not explain who characters/locations are.
+- Start a new paragraph whenever there is a major time or location change or a long sequence of events.
+- Exclude backstory unless it directly drives current plot movement.
+- Exclude mundane actions and background filler unless plot-relevant.
+- Exclude introspection and moralizing; stick to observable story actions and consequences.
+- Keep only key plot beats and stakes; compress dialogue into actions/decisions/conflicts.
+- Do not provide analysis, commentary, or opinions.
+- Do not include <think>, chain-of-thought, reasoning traces, reflections, or any hidden/internal thoughts. Think silently and output only the final summary.
+- Do not include code fences, XML/HTML/markdown tags, JSON, or any labels like "Final answer:" — return plain text paragraphs only.
+ - When you finish thinking, output ONLY the final summary wrapped exactly as: <final>...summary...</final>. No other tags or prefaces.
+
+Quality heuristics:
+- Make time/place clear when they shift.
+- Prefer actions/conflicts/consequences over small talk or description.
+- Collapse verbose sequences into decisive beats (argument, decision, reversal, reveal, consequence).`, customPrompt: '', enabled: true } ] },
+  { id: 'detect_entities', label: 'Detect Characters & World Entities', enabled: true, presets: [ { id: 'preset-detect-entities-default', name: 'System Default (JSON)', provider: 'system', model: 'default',
+    systemPrompt: `You are an accurate information extractor for fiction manuscripts.
+
+Task:
+From the given scene excerpt, extract the following as STRICT JSON (UTF-8, no trailing commas, no comments, no markdown fencing).
+
+Output schema (all fields required; use empty arrays/strings if not found):
+{
+  "povCharacterName": "string",
+  "characters": [ { "name": "string", "aliases": ["string", ...], "firstSeenInThisScene": boolean } ],
+  "locations": [ { "name": "string", "aliases": ["string", ...], "firstSeenInThisScene": boolean } ],
+  "objects": [ { "name": "string", "aliases": ["string", ...], "firstSeenInThisScene": boolean } ],
+  "lore": [ { "name": "string", "aliases": ["string", ...], "firstSeenInThisScene": boolean } ],
+  "timelineEvents": [ { "when": "string", "where": "string", "who": ["string", ...], "what": "string", "consequence": "string" } ]
+}
+
+Rules:
+- Extract ONLY what appears in the excerpt. Do NOT invent names, places, objects, or lore.
+- Prefer proper names. Ignore anonymous crowds unless named.
+- Normalize duplicates (e.g., "Jon", "Jonathan" -> name: "Jonathan", alias: "Jon").
+- Avoid pronouns in lists; use the canonical name string instead.
+- "povCharacterName" is the focalizer for THIS scene excerpt (close/internal camera). If ambiguous, set "".
+- Keep timelineEvents concise; do not exceed 12 events.
+- If a thing appears significant but unnamed (e.g., “ancient amulet”), include it as objects.name with the phrase as-is.
+- Return JSON only.`, customPrompt: '', enabled: true } ] },
   // Character Builder features (per accordion)
   { id: 'cb_identity', label: 'CharacterProfileBuilder — Identity', enabled: true, presets: [ { id: 'preset-cb-identity', name: 'System Default (JSON)', provider: 'system', model: 'default',
     systemPrompt: `You are building a character's identity section from a reference description. Respond only with JSON matching schema.
@@ -174,6 +299,28 @@ Rules: Plausible, concise; no copyrighted moves; no code fences.`, customPrompt:
     systemPrompt: `You infer social ties from a reference persona. Respond only with JSON.
 Output JSON keys: { relationships: string[], groupAffiliations: string[], rivalries: string[], influence: string }.
 Rules: Avoid copyrighted proper nouns; keep generic; no code fences.`, customPrompt: '', enabled: true } ] },
+  // Character Image Generation (prompts only; UI generates previews)
+  { id: 'character_image_prompt', label: 'Character Image Generation', enabled: true, presets: [ { id: 'preset-character-image-prompt', name: 'Default (Prompts → Images)', provider: 'system', model: 'default',
+    systemPrompt: `You are an expert visual prompt designer for character portrait generation that will feed directly into an image model. Respond ONLY with strict JSON.
+
+Input: Character details (name, species/humanity, gender, age band, appearance summary, clothing, mood, genre/world hints).
+
+Goal: Produce 4 distinct but faithful prompt strings to generate portrait variations of this character. Each should be a single line, concise but descriptive, ready for direct use with a diffusion/transformer image model.
+
+Rules:
+- Portrait or bust framing; character centered; neutral background unless specified.
+- Respect appearance summary (hair/eyes/skin/build/age/gender/species) faithfully.
+- Avoid copyrighted names/brands/styles; describe style generically ("cinematic lighting", "painterly", "illustrative").
+- No camera model or lens jargon unless necessary.
+- No negative content.
+- JSON ONLY with shape: {"prompts": [string, string, string, string]}.` , customPrompt: '', enabled: true } ] },
+
+
+  // Character image generation (provider-agnostic; Account can set provider/models)
+  { id: 'character_image_generate', label: 'Character Image — Generate', enabled: true, presets: [
+    { id: 'preset-image-preview', name: 'Preview (fast)', provider: 'system', model: 'image-preview-fast', systemPrompt: '', customPrompt: '', enabled: true },
+    { id: 'preset-image-final', name: 'Final (HQ)', provider: 'system', model: 'image-final-hq', systemPrompt: '', customPrompt: '', enabled: true },
+  ] },
       ],
     },
     project: {

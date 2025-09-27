@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -7,6 +7,9 @@ import { PlusIcon, SparklesIcon, GitCommitIcon, ListIcon, FilePlusIcon } from '.
 import { Theme } from '../../../types';
 import { MicrophoneIcon, BookOpenIcon, PencilIcon, EyeIcon, ChartBarIcon, ClockIcon, CogIcon } from '@heroicons/react/24/outline';
 import { insertDictationSection, updateDictationSection } from '../../../lib/dictationHelpers';
+import { loadUserSettings, type AISettings } from '../../../stores/userSettingsStore';
+import { runFeature } from '../../../ai/runFeature';
+import { useCurrentBookAndVersion } from '../../../contexts/BookContext';
 
 interface FloatingActionButtonProps {
     theme?: Theme;
@@ -26,6 +29,34 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
     const [isTranscribing, setIsTranscribing] = useState(false);
     const [currentDictationId, setCurrentDictationId] = useState<string | null>(null);
     const [accumulatedPreviewText, setAccumulatedPreviewText] = useState<string>('');
+    const abortRef = useRef<AbortController | null>(null);
+    const [aiSettings, setAISettings] = useState<AISettings | null>(null);
+    // Track dictation sections we've already post-processed with AI to avoid duplicate runs
+    const processedAIRef = useRef<Set<string>>(new Set());
+
+    // Defensive: sanitize any provider leaks (e.g., <think>, code fences, prefaces)
+    const sanitizeAIOutput = (s: string) => {
+        if (!s) return s;
+        let out = s;
+        // Remove code fences and their contents (best-effort during streaming)
+        out = out.replace(/```[\s\S]*?```/g, '');
+        // Remove explicit <think>...</think> blocks
+        out = out.replace(/<think[\s\S]*?<\/think>/gi, '');
+        // Trim common prefaces
+        out = out.replace(/^\s*(Final answer:|Here is(?: the)? (?:polished|edited) version:?|Final edited transcript:|Answer:)\s*/i, '');
+        // Ensure we keep plain text only (strip lone backticks)
+        out = out.replace(/`{1,2}/g, '');
+        return out;
+    };
+
+    // Resolve glossary from current version via BookContext
+    const { currentVersion } = useCurrentBookAndVersion();
+
+    useEffect(() => {
+        let mounted = true;
+        loadUserSettings().then(s => { if (mounted) setAISettings(s.settings.aiSettings); });
+        return () => { mounted = false; };
+    }, []);
     
     // Periodically check and adjust positions to maintain spacing
     useEffect(() => {
@@ -166,17 +197,148 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
                 });
 
                 // Listen for dictation processing complete (final transcription)
-                const unlistenProcessingComplete = await listen<{ status: string; message?: string; text?: string }>('dictation-processing-complete', (event) => {
+                const unlistenProcessingComplete = await listen<{ status: string; message?: string; text?: string }>('dictation-processing-complete', async (event) => {
                     const { status, message, text } = event.payload;
                     console.log('🎤 Processing complete:', { status, message, text });
                     
                     // Update the DictationSection with the final transcription
                     if (editorInstance && currentDictationId && text) {
+                        // Guard: avoid duplicate AI processing for the same dictation section
+                        if (processedAIRef.current.has(currentDictationId)) {
+                            console.log('⏭️ Duplicate processing-complete ignored for', currentDictationId);
+                            return;
+                        }
+                        processedAIRef.current.add(currentDictationId);
+
                         updateDictationSection(editorInstance, currentDictationId, {
                             status: 'complete',
-                            finalText: text
+                            finalText: text,
+                            originalText: text
                         });
                         console.log('✅ Updated DictationSection with final transcription:', text.substring(0, 50) + '...');
+
+                        // Invoke AI transcript editor to clean up transcript with streaming
+                        try {
+                            if (!aiSettings) {
+                                const s = await loadUserSettings();
+                                setAISettings(s.settings.aiSettings);
+                            }
+                            const settingsLocal = aiSettings ?? (await loadUserSettings()).settings.aiSettings;
+                            const feature = settingsLocal.features.find(f => f.id === 'transcript_editor' && (f.enabled ?? true));
+                            if (!feature) {
+                                console.log('ℹ️ transcript_editor feature disabled or not configured');
+                                return;
+                            }
+                            // Build glossary from currentVersion
+                            const glossaryParts: string[] = [];
+                            try {
+                                const cv: any = currentVersion;
+                                if (cv?.characters && Array.isArray(cv.characters)) {
+                                    const names = cv.characters.map((c: any) => c?.name).filter(Boolean);
+                                    if (names.length) glossaryParts.push(`Characters:\n${names.join(', ')}`);
+                                }
+                                if (cv?.worlds && Array.isArray(cv.worlds)) {
+                                    const locs: string[] = [];
+                                    const objs: string[] = [];
+                                    const lores: string[] = [];
+                                    for (const w of cv.worlds) {
+                                        if (Array.isArray(w?.locations)) locs.push(...w.locations.map((l: any) => l?.name).filter(Boolean));
+                                        if (Array.isArray(w?.objects)) objs.push(...w.objects.map((o: any) => o?.name).filter(Boolean));
+                                        if (Array.isArray(w?.lore)) lores.push(...w.lore.map((lr: any) => lr?.name || lr?.title).filter(Boolean));
+                                    }
+                                    if (locs.length) glossaryParts.push(`Objects / Places:\n${locs.join(', ')}`);
+                                    if (objs.length) glossaryParts.push(`Objects:\n${objs.join(', ')}`);
+                                    if (lores.length) glossaryParts.push(`Specific Terms:\n${lores.join(', ')}`);
+                                }
+                            } catch (e) {
+                                console.warn('Failed to build glossary from currentVersion', e);
+                            }
+                            const glossaryText = glossaryParts.join('\n\n');
+
+                            // Show AI editing indicator on the dictation section
+                            updateDictationSection(editorInstance, currentDictationId, {
+                                status: 'processing',
+                                previewText: (text || '') + '\n\n[AI editing transcript…]',
+                                originalText: text,
+                                aiStreaming: true
+                            });
+
+                            // Prepare streaming edit: replace content progressively
+                            abortRef.current?.abort();
+                            abortRef.current = new AbortController();
+                            let streamedRaw = '';
+                            // Set global streaming flag so autosave and other systems can coordinate
+                            try { (window as any).__AI_TRANSCRIPT_STREAMING = true; } catch {}
+                            await runFeature({
+                                featureId: 'transcript_editor',
+                                settings: settingsLocal,
+                                selectionText: text,
+                                contextText: glossaryText ? `Glossary:\n${glossaryText}` : undefined,
+                                stream: true,
+                                signal: abortRef.current.signal,
+                                onDelta: (d: string) => {
+                                    streamedRaw += d;
+                                    // Update live preview in the dictation section
+                                    try {
+                                        updateDictationSection(editorInstance, currentDictationId!, {
+                                            status: 'processing',
+                                            previewText: sanitizeAIOutput(streamedRaw),
+                                        });
+                                    } catch {}
+                                },
+                                onDone: (finalOut: string) => {
+                                    try {
+                                        // Guard: only update if node still exists (user might have accepted early)
+                                        const stillExists = (() => {
+                                            try {
+                                                const { state } = editorInstance;
+                                                let found = false;
+                                                state.doc.descendants((n) => {
+                                                    if (n.type.name === 'dictationSection' && n.attrs.id === currentDictationId) { found = true; return false; }
+                                                });
+                                                return found;
+                                            } catch { return false; }
+                                        })();
+                                        if (!stillExists) {
+                                            console.log('⚠️ Dictation node removed before final AI output; skipping final update');
+                                        } else {
+                                        updateDictationSection(editorInstance, currentDictationId!, {
+                                            status: 'complete',
+                                            finalText: sanitizeAIOutput(finalOut),
+                                            errorMessage: undefined,
+                                            aiStreaming: false
+                                        });
+                                        }
+                                    } finally {
+                                        // Clear streaming flag
+                                        try { (window as any).__AI_TRANSCRIPT_STREAMING = false; } catch {}
+                                        // Trigger a single save now that streaming is finished
+                                        try { (window as any).__REQUEST_CHAPTER_SAVE?.(); } catch {}
+                                    }
+                                },
+                                onError: (e: any) => {
+                                    console.error('Transcript editor AI error:', e);
+                                    // Revert to original dictation text and surface error separately
+                                    updateDictationSection(editorInstance, currentDictationId!, {
+                                        status: 'complete',
+                                        finalText: text,
+                                        errorMessage: String(e).slice(0, 180),
+                                        aiStreaming: false
+                                    });
+                                    try { (window as any).__AI_TRANSCRIPT_STREAMING = false; } catch {}
+                                    try { (window as any).__REQUEST_CHAPTER_SAVE?.(); } catch {}
+                                }
+                            } as any);
+                            // Safety: ensure flag cleared if provider didn't call callbacks
+                            try { (window as any).__AI_TRANSCRIPT_STREAMING = false; } catch {}
+                            try { updateDictationSection(editorInstance, currentDictationId!, { aiStreaming: false }); } catch {}
+                            try { (window as any).__REQUEST_CHAPTER_SAVE?.(); } catch {}
+                        } catch (e) {
+                            console.error('Failed to run transcript editor after dictation', e);
+                            try { (window as any).__AI_TRANSCRIPT_STREAMING = false; } catch {}
+                            try { updateDictationSection(editorInstance, currentDictationId!, { aiStreaming: false }); } catch {}
+                            try { (window as any).__REQUEST_CHAPTER_SAVE?.(); } catch {}
+                        }
                     }
                 });
 
@@ -223,6 +385,13 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({ theme = 'da
             cleanupPromise.then(cleanup => cleanup());
         };
     }, [onInsertText, editorInstance, currentDictationId, accumulatedPreviewText]);
+
+    // Abort any in-flight AI stream when unmounting this component
+    useEffect(() => {
+        return () => {
+            try { abortRef.current?.abort(); } catch {}
+        };
+    }, []);
     
     // Theme-aware contrasting colors with better visibility
     const isDarkTheme = theme === 'dark';

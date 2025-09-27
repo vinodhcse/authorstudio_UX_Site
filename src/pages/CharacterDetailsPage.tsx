@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Theme } from '../types';
 import CharacterDetailsView from '../components/CharacterDetailsView';
@@ -21,9 +21,29 @@ const CharacterDetailsPage: React.FC<CharacterDetailsPageProps> = ({ theme, setT
     const finalBookId = bookId || contextBookId;
     const finalVersionId = versionId || contextVersionId;
     
-    const character = characterId && finalBookId && finalVersionId 
-        ? getCharacter(finalBookId, finalVersionId, characterId) 
-        : null;
+    const [character, setCharacter] = useState<any>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        const load = async () => {
+            if (characterId && finalBookId && finalVersionId) {
+                const c = await getCharacter(finalBookId, finalVersionId, characterId);
+                if (!cancelled) setCharacter(c);
+            } else {
+                setCharacter(null);
+            }
+        };
+        load();
+        const onVersionUpdated = (e: Event) => {
+            const detail = (e as CustomEvent).detail as any;
+            if (!detail) return;
+            if (detail.bookId === finalBookId && detail.versionId === finalVersionId) {
+                load();
+            }
+        };
+        try { window.addEventListener('version:updated', onVersionUpdated as EventListener); } catch {}
+        return () => { cancelled = true; try { window.removeEventListener('version:updated', onVersionUpdated as EventListener); } catch {} };
+    }, [characterId, finalBookId, finalVersionId]);
 
     const renderBreadcrumbs = () => (
         <nav className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 mb-8">

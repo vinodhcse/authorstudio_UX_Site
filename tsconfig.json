@@ -31,6 +31,8 @@
   ,
   "exclude": [
   "src/data/migrations*.ts",
+  "src/data/surrealDal.ts",
+  "src/utils/dataTransform.ts",
   "src/pages/BookForge/components/planning/characterScreentime/CharacterScreenTimeLayout.backup.tsx",
   "src/pages/BookForge/components/planning/worldEntityScreentime/LoreAppearanceHeatMap.tsx",
   "src/pages/BookForge/components/planning/worldEntityScreentime/ObjectAppearanceHeatMap.tsx",

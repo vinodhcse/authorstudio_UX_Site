@@ -3749,6 +3749,15 @@ const Editor: React.FC<{
         if (autoSaveTimeout) {
             clearTimeout(autoSaveTimeout);
         }
+
+        // If transcript editor streaming is in progress, suppress autosave scheduling to avoid
+        // rapid saves and potential reversion loops caused by saving intermediate AI states.
+        let isTranscriptStreaming = false;
+        try { isTranscriptStreaming = Boolean((window as any).__AI_TRANSCRIPT_STREAMING); } catch {}
+        if (isTranscriptStreaming) {
+            console.log('⏸️ Autosave suppressed during transcript streaming');
+            return; // We'll rely on a final save when streaming finishes
+        }
         
         // Set new timeout for auto-save
         const timeout = setTimeout(async () => {
@@ -3761,10 +3770,32 @@ const Editor: React.FC<{
             } catch (error) {
                 console.error('Auto-save failed:', error);
             }
-        }, isAIRunning ? 5 * 60 * 1000 : 2000); // 5 min debounce if AI is running, else 2s
+        }, isAIRunning ? 10 * 60 * 1000 : 10 * 60 * 1000); // 10 min debounce across the board now
         
         setAutoSaveTimeout(timeout);
     }, [editor, currentChapter, saveChapterContent, autoSaveTimeout, isAIRunning]);
+
+    // Ensure a final save attempt on page unload if there is a pending timeout (unless streaming)
+    useEffect(() => {
+        const handler = () => {
+            if (!editor || !currentChapter) return;
+            let isTranscriptStreaming = false;
+            try { isTranscriptStreaming = Boolean((window as any).__AI_TRANSCRIPT_STREAMING); } catch {}
+            if (isTranscriptStreaming) return; // skip saving partial AI states
+            if (autoSaveTimeout) {
+                // Perform a synchronous best-effort save
+                try {
+                    const content = editor.getJSON();
+                    // Use navigator.sendBeacon style if available; fallback to direct call (async ignored)
+                    saveChapterContent(currentChapter.id, content, true);
+                } catch (e) {
+                    console.warn('Final unload save failed (ignored):', e);
+                }
+            }
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [editor, currentChapter, autoSaveTimeout, saveChapterContent]);
     
     // Set up content change listener for auto-save
     useEffect(() => {

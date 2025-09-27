@@ -8,12 +8,13 @@ export const generateHierarchicalLayout = (nodes: NarrativeFlowNode[]): Narrativ
   // Enhanced configuration for better spacing and collision avoidance
   const config = {
     levelHeight: 450,      // Increased vertical spacing between levels
-    nodeSpacing: 500,      // Much larger horizontal spacing between siblings to prevent overlap
-    arcSpacing: 600,       // Spacing for arc nodes from main tree
+  nodeSpacing: 620,      // Wider horizontal spacing between siblings (chapters)
+  actGap: 1500,          // Extra horizontal gap between acts to prevent mixing
+    arcSpacing: 700,       // Spacing for arc nodes from main tree
     sceneOffset: 250,      // Additional spacing for scenes
     minNodeWidth: 320,     // Minimum node width for collision calculation
     collisionPadding: 50,  // Extra padding to prevent visual overlap
-    arcStartX: 1200,       // Starting X position for arc columns
+    arcStartX: 1400,       // Starting X position for arc columns
     arcStartY: 50          // Starting Y position for arc nodes
   };
 
@@ -77,7 +78,7 @@ export const generateHierarchicalLayout = (nodes: NarrativeFlowNode[]): Narrativ
   };
 
   // Calculate tree layout for plot structure with proper hierarchy
-  const calculateTreeLayout = (nodeId: string, level: number, siblingIndex: number, siblingCount: number, parentX: number = 0) => {
+  const calculateTreeLayout = (nodeId: string, level: number, siblingIndex: number, siblingCount: number, parentX: number = 0, actIndex: number = 0) => {
     const node = nodeMap.get(nodeId);
     if (!node || positionedNodes.has(nodeId)) return;
 
@@ -104,12 +105,18 @@ export const generateHierarchicalLayout = (nodes: NarrativeFlowNode[]): Narrativ
       // All other levels - position relative to parent
       if (siblingCount === 1) {
         // Single child stays centered under parent
-        preferredX = parentX;
+        preferredX = parentX + (node.type === 'act' ? actIndex * config.actGap : 0);
       } else {
         // Multiple siblings - spread them evenly
         const totalWidth = (siblingCount - 1) * config.nodeSpacing;
-        const startX = parentX - totalWidth / 2;
-        preferredX = startX + siblingIndex * config.nodeSpacing;
+        const startXBase = parentX - totalWidth / 2;
+        // For acts, also apply per-act band gap using the sibling index itself
+        if (node.type === 'act') {
+          preferredX = startXBase + siblingIndex * (config.nodeSpacing + config.actGap);
+        } else {
+          const startX = startXBase + (node.type === 'chapter' ? actIndex * config.actGap : 0);
+          preferredX = startX + siblingIndex * config.nodeSpacing;
+        }
       }
       
       // Add extra spacing for scenes to create clear hierarchy
@@ -118,8 +125,14 @@ export const generateHierarchicalLayout = (nodes: NarrativeFlowNode[]): Narrativ
       }
     }
 
-    // Find available position to avoid collisions
-    const position = findAvailablePosition(preferredX, preferredY);
+    // Use strict positions for ACT and CHAPTER to keep bands clean; apply collision search for others
+    let position: { x: number; y: number };
+    if (node.type === 'act' || node.type === 'chapter') {
+      position = { x: preferredX, y: preferredY };
+      markSpaceOccupied(position.x, position.y);
+    } else {
+      position = findAvailablePosition(preferredX, preferredY);
+    }
     positionedNodes.set(nodeId, position);
 
     // If we built children from childIds they're already in the right order.
@@ -133,8 +146,32 @@ export const generateHierarchicalLayout = (nodes: NarrativeFlowNode[]): Narrativ
         });
     
     // Recursively position children
+    // Determine act index this subtree belongs to (walk up to nearest act)
+    const currentActIndex = (() => {
+      // if current node is an act, actIndex = siblingIndex
+      if (node.type === 'act') return siblingIndex;
+      // else, try to find parent act by scanning ancestors (approx by parentId links)
+      let cur: NarrativeFlowNode | undefined = node;
+      let guard = 0;
+      while (cur && guard++ < 50) {
+        const parentId = (cur as any).data?.parentId as string | undefined;
+        if (!parentId) break;
+        const parent = nodeMap.get(parentId);
+        if (!parent) break;
+        if (parent.type === 'act') {
+          // compute parent's sibling index among its siblings
+          const gpId = (parent as any).data?.parentId as string | undefined;
+          const siblings = gpId ? nodes.filter(n => n.data.parentId === gpId && n.type === 'act') : nodes.filter(n => n.type === 'act');
+          const idx = siblings.findIndex(n => n.id === parent.id);
+          return Math.max(0, idx);
+        }
+        cur = parent;
+      }
+      return actIndex;
+    })();
+
     sortedChildren.forEach((child, index) => {
-      calculateTreeLayout(child.id, level + 1, index, sortedChildren.length, position.x);
+      calculateTreeLayout(child.id, level + 1, index, sortedChildren.length, position.x, currentActIndex);
     });
   };
 

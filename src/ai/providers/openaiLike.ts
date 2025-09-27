@@ -14,6 +14,19 @@ function buildPayload(messages: ChatMessage[], opts: ProviderCallOptions, stream
     // OpenAI-compatible providers accept { response_format: { type: 'json_schema'|'json_object', json_schema?: {...} } }
     body.response_format = opts.responseFormat;
   }
+  // Allow callers to pass provider-specific fields (e.g., Together reasoning options)
+  if (opts.extra && typeof opts.extra === 'object') {
+    Object.assign(body, opts.extra);
+  }
+  // Together reasoning models benefit from an explicit effort hint; add if not provided
+  try {
+    const base = (opts.baseUrl || '').toLowerCase();
+    const model = (opts.model || '').toLowerCase();
+    if (base.includes('together') && /think|reason/.test(model) && !body.reasoning) {
+      body.reasoning = { effort: 'medium' };
+      // Do not set stop tokens by default; providers may manage this server-side
+    }
+  } catch {}
   return JSON.stringify(body);
 }
 
@@ -30,7 +43,7 @@ export function makeOpenAICompatibleClient(id: string, name: string, defaultBase
     async complete(messages, opts) {
       const url = `${opts.baseUrl || base}/v1/chat/completions`;
       const hdrs = headers(opts.apiKey);
-      const body = buildPayload(messages, opts, false);
+  const body = buildPayload(messages, opts, false);
       // Log request with masked auth
       const maskedHeaders = { ...hdrs, ...(hdrs.Authorization ? { Authorization: 'Bearer ***' } : {}) };
       try { console.log('[AI HTTP REQUEST]', { url, method: 'POST', headers: maskedHeaders, body: JSON.parse(body) }); } catch { console.log('[AI HTTP REQUEST]', { url, method: 'POST', headers: maskedHeaders }); }
@@ -47,7 +60,7 @@ export function makeOpenAICompatibleClient(id: string, name: string, defaultBase
     async stream(messages, opts) {
       const url = `${opts.baseUrl || base}/v1/chat/completions`;
       const hdrs = headers(opts.apiKey);
-      const body = buildPayload(messages, opts, true);
+  const body = buildPayload(messages, opts, true);
       // Log request with masked auth
       const maskedHeaders = { ...hdrs, ...(hdrs.Authorization ? { Authorization: 'Bearer ***' } : {}) };
       try { console.log('[AI HTTP REQUEST]', { url, method: 'POST', headers: maskedHeaders, body: JSON.parse(body) }); } catch { console.log('[AI HTTP REQUEST]', { url, method: 'POST', headers: maskedHeaders }); }
@@ -108,5 +121,5 @@ export function makeOpenAICompatibleClient(id: string, name: string, defaultBase
 }
 
 export const OpenAIClient = makeOpenAICompatibleClient('openai', 'OpenAI', 'https://api.openai.com');
-export const TogetherClient = makeOpenAICompatibleClient('together', 'Together', 'https://api.together.xyz');
+export const TogetherClient = makeOpenAICompatibleClient('together', 'Together', 'https://api.together.ai');
 export const OpenRouterClient = makeOpenAICompatibleClient('openrouter', 'OpenRouter', 'https://openrouter.ai/api');

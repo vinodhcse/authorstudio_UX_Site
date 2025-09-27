@@ -57,24 +57,52 @@ export async function httpFetch(input: string, init: RequestInit): Promise<Respo
       console.log('[AI HTTP RAW]', { url: input, method: init.method, headers: masked });
     }
   } catch {}
-  // For validation/debug: bypass Tauri HTTP plugin and use native fetch directly.
-  // To re-enable Tauri HTTP (CORS-free) path, restore the dynamic import block below.
-  // try {
-  //   // @ts-ignore
-  //   const mod = await import('@tauri-apps/plugin-http');
-  //   if (mod && mod.fetch) {
-  //     const res = await mod.fetch(input, {
-  //       method: init.method as any,
-  //       headers: init.headers as any,
-  //       body: init.body as any,
-  //       // @ts-ignore
-  //       signal: init.signal,
-  //     });
-  //     const bodyText = await res.text();
-  //     const headers = new Headers();
-  //     Object.entries(res.headers || {}).forEach(([k, v]) => headers.set(k, String(v)));
-  //     return new Response(bodyText, { status: res.status, headers });
-  //   }
-  // } catch (_) {}
-  return fetch(input, init);
+  // Prefer Tauri HTTP plugin if available (avoids CORS), else fall back to native fetch
+  try {
+    // @ts-ignore
+    const mod = await import('@tauri-apps/plugin-http');
+    if (mod && mod.fetch) {
+      const res = await mod.fetch(input, {
+        method: init.method as any,
+        headers: init.headers as any,
+        body: init.body as any,
+        // @ts-ignore
+        signal: init.signal,
+      });
+      const bodyText = await res.text();
+      try {
+        if ((globalThis as any).__AI_DEBUG_HTTP) {
+          const preview = bodyText?.slice(0, 500);
+          const maskedHeaders: Record<string, any> = {};
+          Object.entries(res.headers || {}).forEach(([k, v]) => {
+            if (k.toLowerCase() === 'authorization' || k.toLowerCase() === 'x-api-key') {
+              maskedHeaders[k] = '***';
+            } else {
+              maskedHeaders[k] = v;
+            }
+          });
+          console.log('[AI HTTP RES]', { url: input, status: res.status, headers: maskedHeaders, preview });
+        }
+      } catch {}
+      const headers = new Headers();
+      Object.entries(res.headers || {}).forEach(([k, v]) => headers.set(k, String(v)));
+      return new Response(bodyText, { status: res.status, headers });
+    }
+  } catch (_) {}
+  const r = await fetch(input, init);
+  try {
+    if ((globalThis as any).__AI_DEBUG_HTTP) {
+      const preview = await r.clone().text().then(t => t.slice(0, 500)).catch(()=>'');
+      const maskedHeaders: Record<string, any> = {};
+      r.headers.forEach((v, k) => {
+        if (k.toLowerCase() === 'authorization' || k.toLowerCase() === 'x-api-key') {
+          maskedHeaders[k] = '***';
+        } else {
+          maskedHeaders[k] = v;
+        }
+      });
+      console.log('[AI HTTP RES/fetch]', { url: input, status: r.status, headers: maskedHeaders, preview });
+    }
+  } catch {}
+  return r;
 }

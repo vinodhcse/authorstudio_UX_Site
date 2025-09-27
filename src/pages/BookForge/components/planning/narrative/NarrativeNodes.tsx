@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Handle, Position } from 'reactflow';
 import { 
@@ -14,6 +14,7 @@ import {
   MinusIcon
 } from '@heroicons/react/24/outline';
 import { NarrativeNode } from '../../../../../types/narrative-layout';
+import { useBookContextSafe, useCurrentBookAndVersion } from '../../../../../contexts/BookContext';
 
 interface BaseNodeProps {
   data: NarrativeNode;
@@ -811,98 +812,6 @@ const ExpandedNode: React.FC<BaseNodeProps & {
   );
 };
 
-// Main node type components using the new design system
-export const OutlineNodeComponent: React.FC<BaseNodeProps> = (props) => {
-  const { data, selected, expandedNodes } = props;
-  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
-  
-  const nodeConfig = {
-    type: 'Outline',
-    color: 'from-violet-600 via-purple-600 to-indigo-700',
-    icon: SparklesIcon
-  };
-
-  if (isExpanded) {
-    return (
-      <ExpandedNode 
-        {...props} 
-        nodeType={nodeConfig.type}
-        color={nodeConfig.color}
-        icon={nodeConfig.icon}
-      />
-    );
-  }
-
-  return (
-    <CompactNode 
-      {...props} 
-      nodeType={nodeConfig.type}
-      color={nodeConfig.color}
-    />
-  );
-};
-
-export const ActNodeComponent: React.FC<BaseNodeProps> = (props) => {
-  const { data, selected, expandedNodes } = props;
-  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
-  
-  const nodeConfig = {
-    type: 'Act',
-    color: 'from-blue-600 via-indigo-600 to-purple-700',
-    icon: SparklesIcon
-  };
-
-  if (isExpanded) {
-    return (
-      <ExpandedNode 
-        {...props} 
-        nodeType={nodeConfig.type}
-        color={nodeConfig.color}
-        icon={nodeConfig.icon}
-      />
-    );
-  }
-
-  return (
-    <CompactNode 
-      {...props} 
-      nodeType={nodeConfig.type}
-      color={nodeConfig.color}
-    />
-  );
-};
-
-export const ChapterNodeComponent: React.FC<BaseNodeProps & { allNodes?: any[] }> = (props) => {
-  const { data, selected, expandedNodes, allNodes } = props;
-  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
-  
-  const nodeConfig = {
-    type: 'Chapter',
-    color: 'from-teal-600 via-cyan-600 to-blue-700',
-    icon: SparklesIcon
-  };
-
-  if (isExpanded) {
-    return (
-      <ExpandedChapterNode 
-        {...props} 
-        nodeType={nodeConfig.type}
-        color={nodeConfig.color}
-        icon={nodeConfig.icon}
-        narrativeNodes={allNodes}
-      />
-    );
-  }
-
-  return (
-    <CompactNode 
-      {...props} 
-      nodeType={nodeConfig.type}
-      color={nodeConfig.color}
-    />
-  );
-};
-
 // Specialized expanded scene node with POV character and chips
 const ExpandedSceneNode: React.FC<BaseNodeProps & { 
   nodeType: string; 
@@ -924,50 +833,81 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
   const locations = sceneData.locations || [];
   const objects = sceneData.objects || [];
   const lore = sceneData.lore || [];
+  const worlds = sceneData.worlds || [];
   const timelineEvents = sceneData.timelineEvents || [];
 
-  // Mock character data - in real app, this would come from context
-  const getCharacterInfo = (characterId: string) => {
-    // Enhanced character mock data that corresponds to modal selections
-    const characterMap = {
-      'char1': { 
-        id: 'char1', 
-        name: 'Aria Blackthorne', 
-        role: 'protagonist',
-        image: `https://api.dicebear.com/7.x/avataaars/svg?seed=char1`
-      },
-      'char2': { 
-        id: 'char2', 
-        name: 'Marcus Steel', 
-        role: 'deuteragonist',
-        image: `https://api.dicebear.com/7.x/avataaars/svg?seed=char2`
-      },
-      'char3': { 
-        id: 'char3', 
-        name: 'The Shadow King', 
-        role: 'antagonist',
-        image: `https://api.dicebear.com/7.x/avataaars/svg?seed=char3`
-      },
-      'char4': { 
-        id: 'char4', 
-        name: 'Elena Brightwater', 
-        role: 'supporting',
-        image: `https://api.dicebear.com/7.x/avataaars/svg?seed=char4`
-      },
-      'char5': { 
-        id: 'char5', 
-        name: 'Tobias the Wise', 
-        role: 'mentor',
-        image: `https://api.dicebear.com/7.x/avataaars/svg?seed=char5`
+  // Resolve live data from context
+  const ctx = useBookContextSafe();
+  const getCharacters = ctx?.getCharacters || (async () => []);
+  const getWorlds = ctx?.getWorlds || (async () => []);
+  const getLocations = ctx?.getLocations || (async () => []);
+  const getWorldObjects = ctx?.getWorldObjects || (async () => []);
+  const getLore = ctx?.getLore || (async () => []);
+  const { bookId, versionId } = useCurrentBookAndVersion();
+  const [charMap, setCharMap] = useState<Record<string, any>>({});
+  const [locMap, setLocMap] = useState<Record<string, any>>({});
+  const [objMap, setObjMap] = useState<Record<string, any>>({});
+  const [loreMap, setLoreMap] = useState<Record<string, any>>({});
+  const [worldMap, setWorldMap] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (bookId && versionId) {
+          // Characters
+          const chars = await getCharacters(bookId, versionId).catch(() => [] as any[]);
+          if (!cancelled) {
+            const map: Record<string, any> = {};
+            for (const c of chars) map[c.id] = c;
+            setCharMap(map);
+          }
+          // Worlds
+          const ws = await getWorlds(bookId, versionId).catch(() => [] as any[]);
+          if (!cancelled) {
+            const wmap: Record<string, any> = {};
+            for (const w of ws) wmap[w.id] = w;
+            setWorldMap(wmap);
+          }
+          // Resolve one world (prefer first in scene)
+          const worldId = Array.isArray(worlds) && worlds.length ? worlds[0] : null;
+          if (worldId) {
+            const [locs, objs, loreItems] = await Promise.all([
+              getLocations(bookId, versionId, worldId).catch(()=>[] as any[]),
+              getWorldObjects(bookId, versionId, worldId).catch(()=>[] as any[]),
+              getLore(bookId, versionId, worldId).catch(()=>[] as any[]),
+            ]);
+            if (!cancelled) {
+              const lmap: Record<string, any> = {}; for (const x of locs) lmap[x.id] = x;
+              const omap: Record<string, any> = {}; for (const x of objs) omap[x.id] = x;
+              const lrmap: Record<string, any> = {}; for (const x of loreItems) lrmap[x.id] = x;
+              setLocMap(lmap); setObjMap(omap); setLoreMap(lrmap);
+            }
+          } else {
+            if (!cancelled) { setLocMap({}); setObjMap({}); setLoreMap({}); }
+          }
+        }
+      } catch { /* noop */ }
+    };
+    load();
+    const onVersionUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail as any;
+      if (!detail || !bookId || !versionId) return;
+      if (detail.bookId === bookId && detail.versionId === versionId) {
+        load();
       }
     };
-    
-    return characterMap[characterId as keyof typeof characterMap] || {
-      id: characterId,
-      name: `Character ${characterId.slice(-1)}`,
-      role: 'unknown',
-      image: `https://api.dicebear.com/7.x/avataaars/svg?seed=${characterId}`
-    };
+    try { window.addEventListener('version:updated', onVersionUpdated as EventListener); } catch {}
+    return () => { cancelled = true; try { window.removeEventListener('version:updated', onVersionUpdated as EventListener); } catch {} };
+  }, [bookId, versionId, JSON.stringify(worlds)]);
+
+  const getCharacterInfo = (characterId: string) => {
+    const c = charMap[characterId];
+    if (c) {
+      const img = c.avatarRef?.url || c.image || `https://api.dicebear.com/7.x/avataaars/svg?seed=${characterId}`;
+      return { id: c.id, name: c.name || c.fullName || characterId, role: 'unknown', image: img };
+    }
+    return { id: characterId, name: characterId, role: 'unknown', image: `https://api.dicebear.com/7.x/avataaars/svg?seed=${characterId}` };
   };
 
   // Mock timeline event data - in real app, this would come from context
@@ -1023,6 +963,8 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
 
   // Debug log to check character data
   console.log('Scene Data:', { povCharacterId, characters, sceneData });
+
+  const [showAllCharacters, setShowAllCharacters] = useState(false);
 
   return (
     <motion.div
@@ -1086,7 +1028,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
           transition: { duration: 0.3 }
         }}
       >
-        {/* Header */}
+  {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="bg-white/30 backdrop-blur-sm rounded-xl p-2">
@@ -1111,10 +1053,13 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
           </div>
         </div>
 
-        {/* Description */}
-        <p className="text-white/90 text-sm leading-relaxed mb-4 line-clamp-3">
-          {sceneData.description}
-        </p>
+        {/* Summary / Description */}
+        <div className="mb-4">
+          <div className="text-white/80 text-xs font-semibold mb-1">Summary</div>
+          <p className="text-white/90 text-sm leading-relaxed line-clamp-4">
+            {sceneData.description}
+          </p>
+        </div>
 
         {/* Chips for Characters, Locations, Objects, Lore */}
         <div className="space-y-3">
@@ -1122,7 +1067,7 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
             <div>
               <div className="text-white/80 text-xs font-semibold mb-2">Characters</div>
               <div className="flex flex-wrap gap-2">
-                {characters.slice(0, 4).map((charId: string) => {
+                {(showAllCharacters ? characters : characters.slice(0, 3)).map((charId: string) => {
                   const character = getCharacterInfo(charId);
                   return (
                     <motion.button
@@ -1146,40 +1091,41 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
                     </motion.button>
                   );
                 })}
-                {characters.length > 4 && (
-                  <div 
+                {characters.length > 3 && !showAllCharacters && (
+                  <button 
                     className="flex items-center justify-center w-8 h-8 bg-white/20 rounded-full text-white/70 text-xs cursor-pointer border-2 border-white/30"
-                    title={`Other characters: ${characters.slice(4).map((id: string) => getCharacterInfo(id).name).join(', ')}`}
+                    onClick={(e)=>{ e.stopPropagation(); setShowAllCharacters(true); }}
+                    title={`Show all (${characters.length})`}
                   >
-                    +{characters.length - 4}
-                  </div>
+                    +{characters.length - 3}
+                  </button>
                 )}
               </div>
             </div>
           )}
 
-          {locations.length > 0 && (
+      {locations.length > 0 && (
             <div>
               <div className="text-white/80 text-xs font-semibold mb-2">Locations</div>
               <div className="flex flex-wrap gap-2">
-                {locations.slice(0, 3).map((locId: string) => (
+        {locations.slice(0, 3).map((loc: string) => (
                   <motion.button
-                    key={locId}
+          key={String(loc)}
                     onClick={(e) => {
                       e.stopPropagation();
-                      console.log('Open location modal for:', locId);
+                      console.log('Open location modal for:', loc);
                     }}
                     className="bg-green-100 text-green-900 text-xs px-3 py-1.5 rounded-full border-2 border-green-400 hover:bg-green-200 transition-colors font-medium shadow-md"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
-                    📍 Location {locId.slice(-1)}
+          📍 {locMap[String(loc)]?.name || String(loc)}
                   </motion.button>
                 ))}
                 {locations.length > 3 && (
                   <div 
                     className="bg-green-50 text-green-800 text-xs px-3 py-1.5 rounded-full cursor-pointer border border-green-300 shadow-sm"
-                    title={`Other locations: ${locations.slice(3).map((id: string) => `Location ${id.slice(-1)}`).join(', ')}`}
+                    title={`Other locations: ${locations.slice(3).map((x: string) => String(x)).join(', ')}`}
                   >
                     +{locations.length - 3}
                   </div>
@@ -1188,28 +1134,28 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
             </div>
           )}
 
-          {objects.length > 0 && (
+      {objects.length > 0 && (
             <div>
               <div className="text-white/80 text-xs font-semibold mb-2">Objects</div>
               <div className="flex flex-wrap gap-2">
-                {objects.slice(0, 3).map((objId: string) => (
+        {objects.slice(0, 3).map((obj: string) => (
                   <motion.button
-                    key={objId}
+          key={String(obj)}
                     onClick={(e) => {
                       e.stopPropagation();
-                      console.log('Open object modal for:', objId);
+                      console.log('Open object modal for:', obj);
                     }}
                     className="bg-blue-100 text-blue-900 text-xs px-3 py-1.5 rounded-full border-2 border-blue-400 hover:bg-blue-200 transition-colors font-medium shadow-md"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
-                    🔮 Object {objId.slice(-1)}
+          🔮 {objMap[String(obj)]?.name || String(obj)}
                   </motion.button>
                 ))}
                 {objects.length > 3 && (
                   <div 
                     className="bg-blue-50 text-blue-800 text-xs px-3 py-1.5 rounded-full cursor-pointer border border-blue-300 shadow-sm"
-                    title={`Other objects: ${objects.slice(3).map((id: string) => `Object ${id.slice(-1)}`).join(', ')}`}
+                    title={`Other objects: ${objects.slice(3).map((x: string) => String(x)).join(', ')}`}
                   >
                     +{objects.length - 3}
                   </div>
@@ -1218,30 +1164,51 @@ const ExpandedSceneNode: React.FC<BaseNodeProps & {
             </div>
           )}
 
-          {lore.length > 0 && (
+      {lore.length > 0 && (
             <div>
               <div className="text-white/80 text-xs font-semibold mb-2">Lore</div>
               <div className="flex flex-wrap gap-2">
-                {lore.slice(0, 3).map((loreId: string) => (
+        {lore.slice(0, 3).map((l: string) => (
                   <motion.button
-                    key={loreId}
+          key={String(l)}
                     onClick={(e) => {
                       e.stopPropagation();
-                      console.log('Open lore modal for:', loreId);
+                      console.log('Open lore modal for:', l);
                     }}
                     className="bg-purple-100 text-purple-900 text-xs px-3 py-1.5 rounded-full border-2 border-purple-400 hover:bg-purple-200 transition-colors font-medium shadow-md"
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                   >
-                    📜 Lore {loreId.slice(-1)}
+          📜 {loreMap[String(l)]?.title || loreMap[String(l)]?.name || String(l)}
                   </motion.button>
                 ))}
                 {lore.length > 3 && (
                   <div 
                     className="bg-purple-50 text-purple-800 text-xs px-3 py-1.5 rounded-full cursor-pointer border border-purple-300 shadow-sm"
-                    title={`Other lore: ${lore.slice(3).map((id: string) => `Lore ${id.slice(-1)}`).join(', ')}`}
+                    title={`Other lore: ${lore.slice(3).map((x: string) => String(x)).join(', ')}`}
                   >
                     +{lore.length - 3}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {worlds.length > 0 && (
+            <div>
+              <div className="text-white/80 text-xs font-semibold mb-2">Worlds</div>
+              <div className="flex flex-wrap gap-2">
+                {worlds.slice(0, 2).map((w: string) => (
+                  <div
+                    key={String(w)}
+                    className="bg-orange-100 text-orange-900 text-xs px-3 py-1.5 rounded-full border-2 border-orange-400 font-medium shadow-md"
+                  >
+                    🌐 {worldMap[String(w)]?.name || String(w)}
+                  </div>
+                ))}
+                {worlds.length > 2 && (
+                  <div className="bg-orange-50 text-orange-800 text-xs px-3 py-1.5 rounded-full border border-orange-300 shadow-sm">
+                    +{worlds.length - 2}
                   </div>
                 )}
               </div>
@@ -1974,6 +1941,100 @@ export const LoreArcNodeComponent: React.FC<BaseNodeProps> = (props) => {
   return (
     <CompactNode 
       {...props} 
+      nodeType={nodeConfig.type}
+      color={nodeConfig.color}
+    />
+  );
+};
+
+// Outline node component wrapper
+export const OutlineNodeComponent: React.FC<BaseNodeProps> = (props) => {
+  const { data, selected, expandedNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
+
+  const nodeConfig = {
+    type: 'Outline',
+    color: 'from-violet-600 via-purple-600 to-indigo-700',
+    icon: SparklesIcon
+  };
+
+  if (isExpanded) {
+    return (
+      <ExpandedNode
+        {...props}
+        nodeType={nodeConfig.type}
+        color={nodeConfig.color}
+        icon={nodeConfig.icon}
+      />
+    );
+  }
+
+  return (
+    <CompactNode
+      {...props}
+      nodeType={nodeConfig.type}
+      color={nodeConfig.color}
+    />
+  );
+};
+
+// Act node component wrapper
+export const ActNodeComponent: React.FC<BaseNodeProps> = (props) => {
+  const { data, selected, expandedNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
+
+  const nodeConfig = {
+    type: 'Act',
+    color: 'from-emerald-600 via-teal-600 to-cyan-700',
+    icon: UserGroupIcon
+  };
+
+  if (isExpanded) {
+    return (
+      <ExpandedNode
+        {...props}
+        nodeType={nodeConfig.type}
+        color={nodeConfig.color}
+        icon={nodeConfig.icon}
+      />
+    );
+  }
+
+  return (
+    <CompactNode
+      {...props}
+      nodeType={nodeConfig.type}
+      color={nodeConfig.color}
+    />
+  );
+};
+
+// Chapter node component wrapper (uses specialized ExpandedChapterNode)
+export const ChapterNodeComponent: React.FC<BaseNodeProps> = (props) => {
+  const { data, selected, expandedNodes, allNodes } = props;
+  const isExpanded = selected || (expandedNodes && expandedNodes.has(data.id)) || data.isExpanded;
+
+  const nodeConfig = {
+    type: 'Chapter',
+    color: 'from-blue-600 via-indigo-600 to-purple-700',
+    icon: PencilIcon
+  };
+
+  if (isExpanded) {
+    return (
+      <ExpandedChapterNode
+        {...props}
+        nodeType={nodeConfig.type}
+        color={nodeConfig.color}
+        icon={nodeConfig.icon}
+        narrativeNodes={allNodes || []}
+      />
+    );
+  }
+
+  return (
+    <CompactNode
+      {...props}
       nodeType={nodeConfig.type}
       color={nodeConfig.color}
     />

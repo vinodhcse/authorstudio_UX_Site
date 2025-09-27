@@ -3,12 +3,28 @@ import { Node } from 'reactflow';
 // Scene Beat Node Data Structure
 export interface SceneBeatData {
   id: string;
+  chapterId?: string | null;
+  sceneId?: string | null;
   chapterName: string;
   sceneBeatIndex: number;
   summary: string;
   goal: string;
   characters: string[];
   worldEntities: string[];
+  // Optional override: which world this scene belongs to
+  worldId?: string;
+  // Enhanced linking fields for entity extraction
+  povCharacterId?: string;
+  locations?: string[];
+  objects?: string[];
+  lore?: string[];
+  timelineEvents?: Array<{
+    when: string;
+    where: string;
+    who: string[];
+    what: string;
+    consequence: string;
+  }>;
   timelineEvent?: string;
   status: 'Draft' | 'Edited' | 'Finalized';
   isExpanded?: boolean;

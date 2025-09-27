@@ -14,7 +14,9 @@ import ReactFlow, {
     ConnectionLineType,
     ReactFlowInstance,
     SmoothStepEdge,
-    EdgeLabelRenderer
+    EdgeLabelRenderer,
+    StepEdge,
+    Position
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Book, Version, Theme } from '../../../../types';
@@ -26,17 +28,8 @@ import SceneEditModal from './SceneEditModal';
 
 
 
-// Import narrative components
-import { 
-    OutlineNodeComponent,
-    ActNodeComponent,
-    ChapterNodeComponent,
-    SceneNodeComponent,
-    CharacterArcNodeComponent,
-    LocationArcNodeComponent,
-    ObjectArcNodeComponent,
-    LoreArcNodeComponent
-} from './narrative/NarrativeNodes';
+// Import narrative components (namespace import to avoid named export resolution issues during bundling)
+import * as NarrativeNodes from './narrative/NarrativeNodes';
 import { EnhancedCreateNodeModal } from './narrative/EnhancedCreateNodeModal';
 import { CharacterPopup } from './narrative/CharacterPopup';
 import { AISuggestions } from './narrative/AISuggestions';
@@ -75,7 +68,7 @@ import {
     NarrativeNode
 } from '../../../../types/narrative-layout';
 
-import { useBookContext, useCurrentBookAndVersion } from '../../../../contexts/BookContext';
+import { useBookContextSafe, useCurrentBookAndVersion } from '../../../../contexts/BookContext';
 
 
 interface PlotArcsBoardProps {
@@ -99,7 +92,14 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const location = useLocation();
-    const { getPlotCanvas, updatePlotCanvas } = useBookContext();
+    const bookCtx = useBookContextSafe();
+    const getPlotCanvas = useCallback(async (bId: string, vId: string) => {
+        return bookCtx ? bookCtx.getPlotCanvas(bId, vId) : null;
+    }, [bookCtx]);
+    const updatePlotCanvas = useCallback(async (bId: string, vId: string, canvas: any) => {
+        if (!bookCtx) return;
+        await bookCtx.updatePlotCanvas(bId, vId, canvas);
+    }, [bookCtx]);
     const { bookId, versionId } = useCurrentBookAndVersion();
 
     const [plotCanvas, setPlotCanvas] = useState<any>(null);
@@ -107,14 +107,32 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     useEffect(() => {
         const fetchPlotCanvas = async () => {
             if (bookId && versionId) {
+                setIsPlotInitializing(true);
                 const canvas = await getPlotCanvas(bookId, versionId);
                 setPlotCanvas(canvas);
             } else {
                 setPlotCanvas(null);
             }
         };
-        fetchPlotCanvas();
-    }, [bookId, versionId, getPlotCanvas]);
+            fetchPlotCanvas();
+
+            // Listen for external updates to plot canvas and refresh
+            const onCanvasUpdated = (e: Event) => {
+                const detail = (e as CustomEvent).detail as any;
+                if (!detail || !bookId || !versionId) return;
+                if (detail.bookId === bookId && detail.versionId === versionId) {
+                    fetchPlotCanvas();
+                }
+            };
+            if (typeof window !== 'undefined') {
+                window.addEventListener('plot_canvas:updated', onCanvasUpdated as EventListener);
+            }
+            return () => {
+                if (typeof window !== 'undefined') {
+                    window.removeEventListener('plot_canvas:updated', onCanvasUpdated as EventListener);
+                }
+            };
+        }, [bookId, versionId, getPlotCanvas]);
     
     
     
@@ -152,6 +170,22 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         viewMode: 'hierarchy',
         autoLayout: true
     });
+
+    // Auto-expand scenes when their parent is the selected node
+    useEffect(() => {
+        if (!layoutConfig.selectedNode) return;
+        setNarrativeNodes(prev => {
+            const selectedId = layoutConfig.selectedNode!;
+            // Expand immediate children of selected node (especially scenes)
+            return prev.map(n => {
+                const shouldExpand = n.data.parentId === selectedId;
+                if (shouldExpand && !n.data.isExpanded) {
+                    return { ...n, data: { ...n.data, isExpanded: true } };
+                }
+                return n;
+            });
+        });
+    }, [layoutConfig.selectedNode]);
 
     // Modal and AI state
     const [createNodeModal, setCreateNodeModal] = useState<CreateNodeModalData>({
@@ -194,6 +228,9 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     const reactFlowPaneRef = useRef<HTMLDivElement | null>(null);
     const connectStartNodeIdRef = useRef<string | null>(null);
     const lastConnectParentRef = useRef<string | null>(null);
+    const [isPlotInitializing, setIsPlotInitializing] = useState<boolean>(true);
+    // Track last computed stacking map to align after RF measures exact widths
+    const [lastStackingMap, setLastStackingMap] = useState<Record<string, string[]>>({});
 
     // Mock data for filters
     const availableCharacters = [
@@ -314,6 +351,8 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     setAiSuggestions([]);
     // Allow subsequent saves; debounced saver has guards against empty wipes
     didHydrateRef.current = true;
+    // Let ReactFlow mount the nodes before hiding the spinner
+    requestAnimationFrame(() => setIsPlotInitializing(false));
     }, [plotCanvas]);
 
     
@@ -401,23 +440,164 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             status: statusFilter === 'all' ? [] : [statusFilter as any]
         };
 
-        const filteredNodes = filterNodes(visibleNodes, filters, searchQuery);
+    const filteredNodes = filterNodes(visibleNodes, filters, searchQuery);
+        // Build a map of current positions for all visible nodes; use this as the single source of truth
+        const basePosMap = new Map<string, { x: number; y: number }>();
+        for (const n of filteredNodes) {
+            const p = ((n as any).data?.position ?? (n as any).position) as { x: number; y: number } | undefined;
+            if (p && typeof p.x === 'number' && typeof p.y === 'number') basePosMap.set((n as any).id, p);
+        }
         
-        // Preserve positions when filtering - don't regenerate layout
-        // Only use existing positions from the original nodes
-        const layoutNodes = filteredNodes.map(node => ({
-            ...node,
-            position: node.data.position // Use stored position
-        }));
+        // Preserve positions for most nodes; when Outline is selected OR no node is selected (default view),
+        // stack descendant scenes vertically under their nearest Chapter ancestor with a vertical spine (display-only).
+        const selectedId = layoutConfig.selectedNode || null;
+        const allById = new Map<string, NarrativeFlowNode>(narrativeNodes.map(n => [n.id, n]));
+        const selectedNodeObj = selectedId ? allById.get(selectedId) || null : null;
+        const stackingActive = (!selectedNodeObj) || !!(selectedNodeObj && (selectedNodeObj as any).data?.type === 'outline');
+        const isDescendantOfSelected = (node: NarrativeFlowNode): boolean => {
+            // In default view (no selection), treat nodes as eligible for stacking
+            if (!selectedId) return true;
+            let cur: NarrativeFlowNode | undefined | null = node;
+            const guard = new Set<string>();
+            while (cur && (cur as any).data?.parentId && !guard.has(cur.id)) {
+                guard.add(cur.id);
+                const parentId = (cur as any).data.parentId as string | null;
+                if (!parentId) break;
+                if (parentId === selectedId) return true;
+                cur = allById.get(parentId) as any;
+            }
+            return false;
+        };
+        // Helper: nearest Chapter ancestor
+        const getClosestChapterAncestor = (node: NarrativeFlowNode): NarrativeFlowNode | null => {
+            let cur: NarrativeFlowNode | undefined | null = node;
+            const seen = new Set<string>();
+            while (cur && (cur as any).data?.parentId && !seen.has(cur.id)) {
+                seen.add(cur.id);
+                const parentId = (cur as any).data?.parentId as string | null;
+                if (!parentId) break;
+                const parent = allById.get(parentId);
+                if (!parent) break;
+                if ((parent as any).data?.type === 'chapter') return parent;
+                cur = parent as any;
+            }
+            return null;
+        };
+
+    const sceneGroups = new Map<string, NarrativeFlowNode[]>();
+        // Helper to compute chapter center X based on ReactFlow's measured node width; falls back to a sane default
+        const getChapterCenterX = (chapterId: string): number | null => {
+            const base = basePosMap.get(chapterId);
+            if (!base) return null;
+            const inst = reactFlowInstanceRef.current as any;
+            const rfNode = inst?.getNode ? inst.getNode(chapterId) : null;
+            const width = (rfNode && typeof rfNode.width === 'number') ? rfNode.width : 280;
+            return base.x + width / 2;
+        };
+        if (stackingActive) {
+            for (const n of filteredNodes) {
+                if ((n as any).data?.type !== 'scene') continue;
+                if (!isDescendantOfSelected(n)) continue;
+                const chapter = getClosestChapterAncestor(n);
+                // Only stack scenes if their chapter is visible (has a position in basePosMap)
+                if (!chapter || !basePosMap.has(chapter.id)) continue;
+                const key = chapter.id;
+                if (!sceneGroups.has(key)) sceneGroups.set(key, []);
+                sceneGroups.get(key)!.push(n);
+            }
+            for (const [key, arr] of sceneGroups.entries()) {
+                arr.sort((a, b) => {
+                    const ay = ((a as any).data?.position?.y ?? (a as any).position?.y ?? 0);
+                    const by = ((b as any).data?.position?.y ?? (b as any).position?.y ?? 0);
+                    if (ay !== by) return ay - by;
+                    const at = ((a as any).data?.data?.title ?? '');
+                    const bt = ((b as any).data?.data?.title ?? '');
+                    return String(at).localeCompare(String(bt));
+                });
+                sceneGroups.set(key, arr);
+            }
+        }
+
+        const layoutNodes = filteredNodes.map(node => {
+            const basePos = (node as any).data?.position ?? (node as any).position;
+            let pos = basePos;
+            let __stacked = false as boolean;
+            if (stackingActive && (node as any).data?.type === 'scene' && isDescendantOfSelected(node)) {
+                const chapter = getClosestChapterAncestor(node);
+                if (chapter && basePosMap.has(chapter.id)) {
+                    const anchorPos = basePosMap.get(chapter.id)!;
+                    const centerX = getChapterCenterX(chapter.id) ?? (anchorPos.x + 140);
+                    const group = sceneGroups.get(chapter.id) || [];
+                    const sorted = [...group];
+                    sorted.sort((a, b) => {
+                        const ay = ((a as any).data?.position?.y ?? (a as any).position?.y ?? 0);
+                        const by = ((b as any).data?.position?.y ?? (b as any).position?.y ?? 0);
+                        if (ay !== by) return ay - by;
+                        const at = ((a as any).data?.data?.title ?? '');
+                        const bt = ((b as any).data?.data?.title ?? '');
+                        return String(at).localeCompare(String(bt));
+                    });
+                    const idx = Math.max(0, sorted.findIndex(g => g.id === (node as any).id));
+                    const spacingY = 160; // vertical gap between scenes
+                    const offsetY = 120;  // distance below chapter card where spine starts
+                    const branchLen = 16; // short horizontal branch so scenes sit just under the chapter
+                    pos = { x: centerX + branchLen, y: anchorPos.y + offsetY + idx * spacingY } as any;
+                    __stacked = true;
+                }
+            }
+            return { ...node, position: pos, __stacked } as any;
+        });
         
+        // Update last stacking map for post-measure alignment pass
+        if (stackingActive) {
+            const mapObj: Record<string, string[]> = {};
+            for (const [cid, arr] of sceneGroups.entries()) mapObj[cid] = arr.map(v => v.id);
+            const prevJson = JSON.stringify(lastStackingMap);
+            const nextJson = JSON.stringify(mapObj);
+            if (prevJson !== nextJson) setLastStackingMap(mapObj);
+        } else if (Object.keys(lastStackingMap).length) {
+            setLastStackingMap({});
+        }
+
         // Convert to ReactFlow format
-        const reactFlowNodes: Node[] = layoutNodes.map(narrativeNode => ({
+        const chapterIdsWithStacks = new Set<string>(Array.from(sceneGroups.keys()));
+        const reactFlowNodesBase: Node[] = layoutNodes.map((narrativeNode: any) => ({
             id: narrativeNode.id,
             type: narrativeNode.data.type,
             position: narrativeNode.position,
             data: narrativeNode.data,
-            selected: layoutConfig.selectedNode === narrativeNode.id
+            selected: layoutConfig.selectedNode === narrativeNode.id,
+            draggable: narrativeNode.__stacked ? false : true,
+            // improve orthogonal routing: edges go out of chapter bottom, into scene top
+            sourcePosition: stackingActive && chapterIdsWithStacks.has(narrativeNode.id) && (narrativeNode.data?.type === 'chapter') ? Position.Bottom : undefined,
+            targetPosition: stackingActive && narrativeNode.__stacked ? Position.Left : undefined,
         }));
+
+        // Create invisible spine nodes under each chapter (one per stacked scene row)
+        const spineNodes: Node[] = [];
+        if (stackingActive) {
+            for (const [chapterId, scenes] of sceneGroups.entries()) {
+                if (!basePosMap.has(chapterId)) continue;
+                const chPos = basePosMap.get(chapterId)!;
+                const centerX = getChapterCenterX(chapterId) ?? (chPos.x + 160);
+                for (const s of scenes) {
+                    const sLayout = layoutNodes.find(nn => (nn as any).id === (s as any).id) as any;
+                    if (!sLayout) continue;
+                    spineNodes.push({
+                        id: `spine-${chapterId}-${(s as any).id}`,
+                        type: 'default',
+                        position: { x: centerX, y: sLayout.position.y },
+                        data: { label: '' },
+                        draggable: false,
+                        selectable: false,
+                        style: { width: 2, height: 2, opacity: 0, pointerEvents: 'none' },
+                        sourcePosition: Position.Right,
+                        targetPosition: Position.Top,
+                    } as any);
+                }
+            }
+        }
+        const reactFlowNodes: Node[] = [...reactFlowNodesBase, ...spineNodes];
 
         // Generate edges for visible nodes with selection state
         const selectedNodeAncestors = layoutConfig.selectedNode ? 
@@ -432,15 +612,52 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             selectedNodeDescendants
         );
         
-        const reactFlowEdges: Edge[] = narrativeEdges.map(narrativeEdge => ({
-            id: narrativeEdge.id,
-            source: narrativeEdge.source,
-            target: narrativeEdge.target,
-            type: 'toggle',
-            style: narrativeEdge.style,
-            animated: narrativeEdge.animated,
-            data: { relationship: (narrativeEdge as any).data?.relationship, onToggle: toggleEdgeType }
-        }));
+        const stackedSceneIds = new Set<string>(layoutNodes.filter((n: any) => n.__stacked).map((n: any) => n.id));
+        let reactFlowEdges: Edge[] = narrativeEdges.map(narrativeEdge => {
+            const useStep = stackingActive && stackedSceneIds.has(narrativeEdge.target);
+            return ({
+                id: narrativeEdge.id,
+                source: narrativeEdge.source,
+                target: narrativeEdge.target,
+                type: 'toggle',
+                style: useStep ? { ...narrativeEdge.style, stroke: '#6b7280' } : narrativeEdge.style,
+                animated: narrativeEdge.animated,
+                data: { relationship: (narrativeEdge as any).data?.relationship, onToggle: toggleEdgeType, useStep }
+            });
+        });
+
+        // In stacked mode, route Chapter->Scene as two edges via the invisible spine node for a clean vertical spine + horizontal branch
+        if (stackingActive) {
+            // Remove direct edges to stacked scenes
+            reactFlowEdges = reactFlowEdges.filter(e => !stackedSceneIds.has(e.target));
+            for (const [chapterId, scenes] of sceneGroups.entries()) {
+                for (const s of scenes) {
+                    const spineId = `spine-${chapterId}-${(s as any).id}`;
+                    reactFlowEdges.push({
+                        id: `edge-cs-${chapterId}-${(s as any).id}`,
+                        source: chapterId,
+                        target: spineId,
+                        type: 'toggle', // will render StepEdge via data.useStep
+                        style: { stroke: '#6b7280' },
+                        animated: false,
+                        sourceHandle: 'bottom',
+                        targetHandle: 'top',
+                        data: { onToggle: toggleEdgeType, useStep: true }
+                    } as any);
+                    reactFlowEdges.push({
+                        id: `edge-ss-${chapterId}-${(s as any).id}`,
+                        source: spineId,
+                        target: (s as any).id,
+                        type: 'toggle', // Step edge
+                        style: { stroke: '#6b7280' },
+                        animated: false,
+                        sourceHandle: 'right',
+                        targetHandle: 'left',
+                        data: { onToggle: toggleEdgeType, useStep: true }
+                    } as any);
+                }
+            }
+        }
 
         // Include hub nodes with regular nodes for ReactFlow
         const allReactFlowNodes: Node[] = [
@@ -464,7 +681,40 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
 
         setNodes(allReactFlowNodes);
         setEdges(reactFlowEdges);
-    }, [narrativeNodes, narrativeEdges, layoutConfig, searchQuery, statusFilter, setNodes, setEdges]);
+    }, [narrativeNodes, narrativeEdges, layoutConfig, searchQuery, statusFilter, setNodes, setEdges, lastStackingMap]);
+
+    // After nodes render and widths are known, realign scene and spine X precisely under chapter centers
+    useEffect(() => {
+        if (!Object.keys(lastStackingMap).length) return;
+        const inst = reactFlowInstanceRef.current as any;
+        if (!inst || typeof inst.getNode !== 'function') return;
+        const branchLen = 16;
+        // schedule after paint
+        const raf = requestAnimationFrame(() => {
+            const updates: Record<string, number> = {};
+            for (const [chapterId, sceneIds] of Object.entries(lastStackingMap)) {
+                const chNode = inst.getNode(chapterId);
+                if (!chNode || typeof chNode.width !== 'number') continue;
+                const cx = (chNode.position?.x ?? chNode.positionAbsolute?.x ?? 0) + (chNode.width || 0) / 2;
+                // scenes
+                for (const sid of sceneIds) {
+                    updates[sid] = cx + branchLen;
+                }
+                // spines
+                for (const sid of sceneIds) {
+                    updates[`spine-${chapterId}-${sid}`] = cx;
+                }
+            }
+            if (Object.keys(updates).length === 0) return;
+            setNodes(prev => prev.map(n => {
+                const newX = updates[n.id];
+                if (typeof newX !== 'number') return n;
+                if (Math.abs((n.position?.x ?? 0) - newX) < 0.5) return n;
+                return { ...n, position: { ...n.position, x: newX } } as any;
+            }));
+        });
+        return () => cancelAnimationFrame(raf);
+    }, [lastStackingMap, setNodes]);
 
     // Fit view when nodes are first loaded (after hydration) or when transitioning from 0 -> N
     useEffect(() => {
@@ -474,11 +724,24 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         const curr = nodes.length;
         if (curr > 0 && prev === 0) {
             requestAnimationFrame(() => {
-                try { inst.fitView({ padding: 0.2 }); } catch {}
+                try { inst.fitView({ padding: 0.2, includeHiddenNodes: true, duration: 300 }); } catch {}
             });
         }
         prevNodeCountRef.current = curr;
     }, [nodes.length]);
+
+    // Refit on state that materially changes viewport composition
+    useEffect(() => {
+        const inst = reactFlowInstanceRef.current;
+        if (!inst) return;
+        if (nodes.length === 0) return;
+        const t = window.setTimeout(() => {
+            try { inst.fitView({ padding: 0.2, includeHiddenNodes: true, duration: 250 }); } catch {}
+            // retry the post-measure alignment after fitView
+            requestAnimationFrame(() => setLastStackingMap(prev => ({ ...prev })));
+        }, 60);
+        return () => window.clearTimeout(t);
+    }, [layoutConfig.selectedNode, statusFilter, searchQuery, nodes.length]);
 
     // Event handlers
     const handleExpandNode = useCallback((nodeId: string) => {
@@ -827,7 +1090,7 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
         const hideToggle = String(source).startsWith('hub-') || String(target).startsWith('hub-');
         return (
             <>
-                <SmoothStepEdge id={id} {...edgeProps} />
+                {data?.useStep ? <StepEdge id={id} {...edgeProps} /> : <SmoothStepEdge id={id} {...edgeProps} />}
                 {!hideToggle && (
                     <EdgeLabelRenderer>
                         <div
@@ -998,14 +1261,14 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
             );
         };
         return {
-            outline: wrap(OutlineNodeComponent),
-            act: wrap(ActNodeComponent),
-            chapter: wrap(ChapterNodeComponent),
-            scene: wrap(SceneNodeComponent),
-            'character-arc': wrap(CharacterArcNodeComponent),
-            'location-arc': wrap(LocationArcNodeComponent),
-            'object-arc': wrap(ObjectArcNodeComponent),
-            'lore-arc': wrap(LoreArcNodeComponent),
+            outline: wrap(NarrativeNodes.OutlineNodeComponent),
+            act: wrap(NarrativeNodes.ActNodeComponent),
+            chapter: wrap(NarrativeNodes.ChapterNodeComponent),
+            scene: wrap(NarrativeNodes.SceneNodeComponent),
+            'character-arc': wrap(NarrativeNodes.CharacterArcNodeComponent),
+            'location-arc': wrap(NarrativeNodes.LocationArcNodeComponent),
+            'object-arc': wrap(NarrativeNodes.ObjectArcNodeComponent),
+            'lore-arc': wrap(NarrativeNodes.LoreArcNodeComponent),
         } as const;
     }, []);
 
@@ -1082,6 +1345,17 @@ const PlotArcsBoard: React.FC<PlotArcsBoardProps> = ({
     const renderBoardView = () => {
         return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }} ref={reactFlowPaneRef}>
+                {isPlotInitializing && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-sm">
+                        <div className="flex items-center gap-3 text-gray-800 dark:text-gray-100">
+                            <svg className="animate-spin h-6 w-6 text-indigo-600" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                            </svg>
+                            <span>Loading narrative…</span>
+                        </div>
+                    </div>
+                )}
                 <ReactFlow
                     nodes={nodes}
                     edges={edges}

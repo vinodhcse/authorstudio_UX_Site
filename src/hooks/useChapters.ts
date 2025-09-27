@@ -14,7 +14,7 @@ import {
 } from '../data/dal';
 import { useAuthStore } from '../auth/useAuthStore';
 // Note: encryptionService is imported dynamically to ensure singleton consistency
-import { useBookContext } from '../contexts/BookContext';
+import { useBookContextSafe } from '../contexts/BookContext';
 
 // Utility function to generate unique IDs
 const generateId = (): string => {
@@ -46,7 +46,15 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
   const [error, setError] = useState<string | null>(null);
 
   const { user } = useAuthStore();
-  const { getPlotCanvas, updatePlotCanvas } = useBookContext();
+  // Use the safe context to avoid crashes during React Fast Refresh
+  const bookCtx = useBookContextSafe();
+  const getPlotCanvas = useCallback(async (bId: string, vId: string) => {
+    return bookCtx ? bookCtx.getPlotCanvas(bId, vId) : null;
+  }, [bookCtx]);
+  const updatePlotCanvas = useCallback(async (bId: string, vId: string, canvas: { nodes: NarrativeFlowNode[]; edges: NarrativeEdge[] }) => {
+    if (!bookCtx) return;
+    await bookCtx.updatePlotCanvas(bId, vId, canvas);
+  }, [bookCtx]);
   // Cache encryptionService once per component instance
   const encryptionRef = useRef<any>(null);
 
@@ -238,7 +246,7 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
             }
           }
         };
-        narrativeNodes = [...narrativeNodes, outlineNode];
+  narrativeNodes = [...narrativeNodes, outlineNode as NarrativeFlowNode];
       }
 
       // Find existing act or create new one
@@ -382,6 +390,7 @@ export function useChapters(bookId?: string, versionId?: string): UseChaptersRet
               id: `sbeat_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
               chapterId: chapterId,
               sceneId: sceneNodeId,
+              sceneTitle: `${title} - Scene 1`,
               chapterName: title,
               sceneBeatIndex: 1,
               summary: '',
@@ -694,6 +703,44 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
   await dalDeleteChapter(chapterId);
 // Update local state
       setChapters(prev => prev.filter(chapter => chapter.id !== chapterId));
+      // Remove chapter and scenes from narrative plot canvas as well
+      try {
+        const plotCanvas = await getPlotCanvas(bookId, versionId);
+        if (plotCanvas) {
+          const nodes: any[] = [...(plotCanvas.nodes || [])];
+          const edges: any[] = [...(plotCanvas.edges || [])];
+          // Find scenes linked to this chapter
+          const sceneNodes = nodes.filter((n: any) => n.type === 'scene' && (n as any).data?.data?.chapter === chapterId);
+          const chapterNodeId: string | null = sceneNodes.length ? (sceneNodes[0] as any).data?.parentId || null : null;
+          const chapterNode = chapterNodeId ? nodes.find((n: any) => n.id === chapterNodeId && n.type === 'chapter') : null;
+          const actNodeId: string | null = chapterNode ? (chapterNode as any).data?.parentId || null : null;
+
+          const idsToDelete = new Set<string>([...sceneNodes.map((s: any) => s.id)]);
+          if (chapterNodeId) idsToDelete.add(chapterNodeId);
+
+          let nextNodes = nodes.filter((n: any) => !idsToDelete.has(n.id)).map((n: any) => {
+            const d = { ...(n.data || {}) } as any;
+            if (Array.isArray(d.childIds)) {
+              d.childIds = d.childIds.filter((cid: string) => !idsToDelete.has(cid));
+            }
+            return { ...n, data: d };
+          });
+          if (actNodeId && chapterNodeId) {
+            nextNodes = nextNodes.map((n: any) => {
+              if (n.id !== actNodeId) return n;
+              const d = { ...(n.data || {}) } as any;
+              const childIds: string[] = (d.childIds || []).filter((cid: string) => cid !== chapterNodeId);
+              return { ...n, data: { ...d, childIds } };
+            });
+          }
+          const nextEdges = edges.filter((e: any) => !idsToDelete.has(e.source) && !idsToDelete.has(e.target));
+          await updatePlotCanvas(bookId, versionId, { nodes: nextNodes as any, edges: nextEdges as any });
+          window.dispatchEvent(new CustomEvent('actUpdated'));
+          window.dispatchEvent(new CustomEvent('plotAutoArrange'));
+        }
+      } catch (e) {
+        appLog.warn('useChapters', 'deleteChapter: failed to update plot canvas (continuing)', { error: e as any, chapterId });
+      }
       
       // Sync chapters to version content_data after deletion
       if (bookId && versionId) {
@@ -834,13 +881,41 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
       setError(null);
       
       // Get current plot canvas
-  const plotCanvas = await getPlotCanvas(bookId, versionId);
-  let narrativeNodes: NarrativeFlowNode[] = (plotCanvas?.nodes as NarrativeFlowNode[]) || [];
-  let narrativeEdges: NarrativeEdge[] = (plotCanvas?.edges as NarrativeEdge[]) || [];
-      
-      // Find existing acts to calculate position
-  const existingActs = narrativeNodes.filter((node: NarrativeFlowNode) => (node as any).data.type === 'act');
-      
+      const plotCanvas = await getPlotCanvas(bookId, versionId);
+      let narrativeNodes: NarrativeFlowNode[] = (plotCanvas?.nodes as NarrativeFlowNode[]) || [];
+      let narrativeEdges: NarrativeEdge[] = (plotCanvas?.edges as NarrativeEdge[]) || [];
+
+      // Ensure outline exists
+      let outlineNode = narrativeNodes.find((n: any) => (n as any).data?.type === 'outline') as NarrativeFlowNode | undefined;
+      if (!outlineNode) {
+        const outlineId = generateId();
+        outlineNode = {
+          id: outlineId,
+          type: 'outline',
+          position: { x: 0, y: 0 },
+          data: {
+            id: outlineId,
+            type: 'outline',
+            status: 'not-completed',
+            position: { x: 0, y: 0 },
+            parentId: null,
+            childIds: [],
+            linkedNodeIds: [],
+            isExpanded: true,
+            data: {
+              title: 'Book Outline',
+              description: 'Main story outline',
+              goal: '',
+              timelineEventIds: []
+            }
+          } as any
+        } as any;
+  narrativeNodes = [...narrativeNodes, outlineNode as NarrativeFlowNode];
+      }
+
+      // Find existing acts under outline to calculate a basic position
+      const existingActs = narrativeNodes.filter((node: any) => (node as any).data?.type === 'act' && (node as any).data?.parentId === outlineNode!.id);
+
       const actId = generateId();
       const newActNode: NarrativeFlowNode = {
         id: actId,
@@ -851,7 +926,7 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
           type: 'act',
           status: 'not-completed',
           position: { x: -300, y: 200 + (existingActs.length * 150) },
-          parentId: 'outline-1', // TODO: Find actual outline node
+          parentId: outlineNode!.id,
           childIds: [],
           linkedNodeIds: [],
           isExpanded: true,
@@ -861,16 +936,28 @@ appLog.info('useChapters', 'Synced chapters to version content_data', {
             goal: '',
             timelineEventIds: []
           }
-        }
-      };
+        } as any
+      } as any;
 
       // Add new act to narrative nodes
       narrativeNodes = [...narrativeNodes, newActNode];
-      
+
+      // Update outline childIds (dedupe)
+      narrativeNodes = narrativeNodes.map((n: any) => {
+        if (n.id !== outlineNode!.id) return n;
+        const d = { ...(n.data || {}) } as any;
+        const childIds: string[] = Array.from(new Set([...(d.childIds || []), actId]));
+        return { ...n, data: { ...d, childIds } } as any;
+      });
+
       // Save updated plot canvas
-      updatePlotCanvas(bookId, versionId, { nodes: narrativeNodes, edges: narrativeEdges });
-      
-      appLog.info('useChapters', `Created act: ${title}`, { actId });
+      await updatePlotCanvas(bookId, versionId, { nodes: narrativeNodes, edges: narrativeEdges });
+
+      // Notify listeners
+      window.dispatchEvent(new CustomEvent('actCreated', { detail: { actId, bookId, versionId } }));
+      window.dispatchEvent(new CustomEvent('plotAutoArrange'));
+
+      appLog.info('useChapters', `Created act: ${title}`, { actId, outlineId: outlineNode!.id });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create act';
       setError(errorMessage);

@@ -612,6 +612,13 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
       }
 
       await appLog.success('book-context', 'Version updated', { bookId, versionId });
+
+      // Notify listeners that the version has been updated so UIs can refresh derived data (e.g., characters)
+      try {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('version:updated', { detail: { bookId, versionId } }));
+        }
+      } catch {}
     } catch (error) {
       await appLog.error('book-context', 'Failed to update version', { bookId, versionId, error });
       throw error;
@@ -875,6 +882,14 @@ export const BookContextProvider: React.FC<{ children: ReactNode }> = ({ childre
     };
 
     await updateVersion(bookId, versionId, updatedVersion);
+    try {
+      // Notify any listeners (e.g., PlotArcsBoard) that plot canvas changed
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('plot_canvas:updated', { detail: { bookId, versionId } })
+        );
+      }
+    } catch {}
   };
 
   // World operations

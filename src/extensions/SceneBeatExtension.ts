@@ -55,6 +55,27 @@ export const SceneBeatExtension = Node.create<SceneBeatOptions>({
           };
         },
       },
+      sceneTitle: {
+        default: '',
+        parseHTML: element => element.getAttribute('data-scene-title') || '',
+        renderHTML: attributes => {
+          return {
+            'data-scene-title': attributes.sceneTitle || '',
+          };
+        },
+      },
+      povCharacterId: {
+        default: null,
+        parseHTML: element => element.getAttribute('data-pov-character-id'),
+        renderHTML: attributes => {
+          if (!attributes.povCharacterId) {
+            return {};
+          }
+          return {
+            'data-pov-character-id': attributes.povCharacterId,
+          };
+        },
+      },
       chapterId: {
         default: null,
         parseHTML: element => element.getAttribute('data-chapter-id'),
@@ -127,6 +148,42 @@ export const SceneBeatExtension = Node.create<SceneBeatOptions>({
           };
         },
       },
+      locations: {
+        default: [],
+        parseHTML: element => {
+          const v = element.getAttribute('data-locations');
+          return v ? JSON.parse(v) : [];
+        },
+        renderHTML: attributes => {
+          return {
+            'data-locations': JSON.stringify(attributes.locations || []),
+          };
+        },
+      },
+      objects: {
+        default: [],
+        parseHTML: element => {
+          const v = element.getAttribute('data-objects');
+          return v ? JSON.parse(v) : [];
+        },
+        renderHTML: attributes => {
+          return {
+            'data-objects': JSON.stringify(attributes.objects || []),
+          };
+        },
+      },
+      lore: {
+        default: [],
+        parseHTML: element => {
+          const v = element.getAttribute('data-lore');
+          return v ? JSON.parse(v) : [];
+        },
+        renderHTML: attributes => {
+          return {
+            'data-lore': JSON.stringify(attributes.lore || []),
+          };
+        },
+      },
       worldEntities: {
         default: [],
         parseHTML: element => {
@@ -136,6 +193,26 @@ export const SceneBeatExtension = Node.create<SceneBeatOptions>({
         renderHTML: attributes => {
           return {
             'data-world-entities': JSON.stringify(attributes.worldEntities),
+          };
+        },
+      },
+      worldId: {
+        default: null,
+        parseHTML: element => element.getAttribute('data-world-id'),
+        renderHTML: attributes => {
+          if (!attributes.worldId) return {};
+          return { 'data-world-id': attributes.worldId };
+        },
+      },
+      timelineEvents: {
+        default: [],
+        parseHTML: element => {
+          const v = element.getAttribute('data-timeline-events');
+          return v ? JSON.parse(v) : [];
+        },
+        renderHTML: attributes => {
+          return {
+            'data-timeline-events': JSON.stringify(attributes.timelineEvents || []),
           };
         },
       },
@@ -182,7 +259,8 @@ export const SceneBeatExtension = Node.create<SceneBeatOptions>({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(SceneBeatNode);
+  // Cast to any to satisfy ReactNodeViewRenderer generic expectations with our custom props
+  return ReactNodeViewRenderer(SceneBeatNode as any);
   },
 
   addCommands() {
@@ -196,10 +274,17 @@ export const SceneBeatExtension = Node.create<SceneBeatOptions>({
           sceneBeatIndex: options.sceneBeatIndex || 1,
           chapterId: (options as any).chapterId || null,
           sceneId: (options as any).sceneId || null,
+          sceneTitle: (options as any).sceneTitle || '',
+          povCharacterId: (options as any).povCharacterId || null,
           summary: options.summary || '',
           goal: options.goal || '',
           characters: options.characters || [],
+          locations: (options as any).locations || [],
+          objects: (options as any).objects || [],
+          lore: (options as any).lore || [],
+          timelineEvents: (options as any).timelineEvents || [],
           worldEntities: options.worldEntities || [],
+          worldId: (options as any).worldId || null,
           timelineEvent: options.timelineEvent || '',
           status: options.status || 'Draft',
           isExpanded: false,

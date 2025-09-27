@@ -14,6 +14,9 @@ interface DictationSectionNodeProps {
       finalText: string;
       timestamp: number;
       isExpanded?: boolean;
+      errorMessage?: string;
+      originalText?: string;
+      aiStreaming?: boolean;
     };
   };
   updateAttributes: (attrs: any) => void;
@@ -30,7 +33,8 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
   selected,
   editor
 }) => {
-  const { status, previewText, finalText, timestamp, isExpanded = true } = node.attrs;
+  const { status, previewText, finalText, timestamp, isExpanded = true, aiStreaming = false } = node.attrs as any;
+  const errorMessage = (node as any).attrs.errorMessage as string | undefined;
   const [editableText, setEditableText] = useState(finalText || previewText || '');
   const [isEditing, setIsEditing] = useState(false);
   const [localExpanded, setLocalExpanded] = useState(isExpanded);
@@ -56,6 +60,10 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
   }, [editableText, isEditing]);
 
   const acceptTranscription = () => {
+    if (aiStreaming) {
+      // Prevent accepting while AI still streaming
+      return;
+    }
     // Update the finalText before accepting
     updateAttributes({ finalText: editableText });
     if (editor && acceptDictationSection(editor, node.attrs.id)) {
@@ -115,7 +123,7 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
       case 'preview':
         return '🎤';
       case 'processing': return '⚙️';
-      case 'complete': return '✅';
+      case 'complete': return aiStreaming ? '⚙️' : '✅';
       default: return '📝';
     }
   };
@@ -127,18 +135,18 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
     return previewText || 'Listening for your voice...';
   };
 
-  const shouldShowActions = status === 'complete' || (status === 'preview' && previewText);
+  const shouldShowActions = !aiStreaming && (status === 'complete' || (status === 'preview' && previewText));
   const hasTranscribedContent = previewText || finalText || editableText;
 
   return (
     <NodeViewWrapper className={`dictation-section-node ${selected ? 'ProseMirror-selectednode' : ''}`}>
       <motion.div 
-        className={`relative border-2 rounded-xl my-4 transition-all duration-300 shadow-lg hover:shadow-xl backdrop-blur-sm ${getStatusColor()}`}
+        className={`relative border-2 rounded-xl my-4 transition-all duration-300 shadow-lg hover:shadow-xl backdrop-blur-sm ${getStatusColor()} ${aiStreaming ? 'opacity-90' : ''}`}
         style={{
           transform: 'perspective(1000px) rotateX(1deg)',
           transformStyle: 'preserve-3d',
         }}
-        whileHover={{
+        whileHover={aiStreaming ? undefined : {
           y: -2,
           boxShadow: '0 10px 30px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.08)',
         }}
@@ -147,7 +155,7 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
         transition={{ duration: 0.4 }}
       >
         {/* 3D Card Inner Container */}
-        <div className="relative z-10 p-4">
+        <div className={`relative z-10 p-4 ${aiStreaming ? 'pointer-events-none select-none' : ''}`}>
           {/* Header */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -206,7 +214,7 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
               </motion.div>
             )}
             
-            {status === 'processing' && (
+            {(status === 'processing' || aiStreaming) && (
               <motion.div 
                 className="text-sm text-yellow-600 dark:text-yellow-400 mb-3 italic flex items-center gap-2"
                 initial={{ opacity: 0, y: -10 }}
@@ -225,7 +233,7 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
                   animate={{ opacity: [1, 0.5, 1] }}
                   transition={{ duration: 1.5, repeat: Infinity }}
                 >
-                  Processing complete transcription for better accuracy...
+                  {aiStreaming ? 'AI is editing and enhancing your transcript…' : 'Processing…'}
                 </motion.span>
               </motion.div>
             )}
@@ -277,7 +285,7 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5 }}
                   >
-                    {status === 'complete' ? (
+                    {status === 'complete' && !aiStreaming ? (
                       <div className="group cursor-pointer" onClick={handleEdit}>
                         <div className="p-3 rounded-lg bg-white/60 dark:bg-gray-800/60 border border-gray-200/50 dark:border-gray-600/50 group-hover:border-blue-300 dark:group-hover:border-blue-500 transition-all">
                           <div className="flex items-start justify-between gap-2">
@@ -286,6 +294,12 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
                               ✏️ Click to edit
                             </span>
                           </div>
+                          {errorMessage && (
+                            <div className="mt-3 text-xs text-red-600 dark:text-red-400 font-medium flex items-start gap-2">
+                              <span>⚠️</span>
+                              <span>AI edit failed – showing original transcript. {errorMessage}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -312,7 +326,7 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
           )}
 
           {/* Always Visible Action Buttons */}
-          {shouldShowActions && (
+          {shouldShowActions && !aiStreaming && (
             <motion.div 
               className="flex gap-2 pt-3 border-t border-gray-200/50 dark:border-gray-600/50"
               initial={{ opacity: 0, y: 10 }}
@@ -351,6 +365,20 @@ const DictationSectionNodeView: React.FC<DictationSectionNodeProps> = ({
 
         {/* 3D Card Shadow/Depth Effect */}
         <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent dark:from-white/5 dark:to-transparent rounded-xl pointer-events-none" />
+
+        {aiStreaming && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-xl backdrop-blur-sm bg-white/60 dark:bg-gray-900/60 border-2 border-yellow-300/50 dark:border-yellow-500/40">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-10 h-10 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+              <div className="text-sm font-medium text-yellow-700 dark:text-yellow-300 text-center px-4">
+                Refining transcript with AI…
+              </div>
+              <div className="text-[11px] text-yellow-600/80 dark:text-yellow-400/70 italic">
+                Please wait – actions will unlock when complete
+              </div>
+            </div>
+          </div>
+        )}
       </motion.div>
     </NodeViewWrapper>
   );
@@ -395,6 +423,15 @@ export const DictationSectionNode = Node.create({
       },
       isExpanded: {
         default: true,
+      },
+      errorMessage: {
+        default: undefined,
+      },
+      originalText: {
+        default: '',
+      },
+      aiStreaming: {
+        default: false,
       },
     };
   },
@@ -441,15 +478,17 @@ export const DictationSectionNode = Node.create({
 
         root.render(
           React.createElement(DictationSectionNodeView, {
-            node: { 
-              attrs: {
-                id: node.attrs.id || '',
-                status: node.attrs.status || 'recording',
-                previewText: node.attrs.previewText || '',
-                finalText: node.attrs.finalText || '',
-                timestamp: node.attrs.timestamp || Date.now(),
-              }
-            },
+            node: { attrs: {
+              id: (node as any).attrs.id || '',
+              status: (node as any).attrs.status || 'recording',
+              previewText: (node as any).attrs.previewText || '',
+              finalText: (node as any).attrs.finalText || '',
+              timestamp: (node as any).attrs.timestamp || Date.now(),
+              isExpanded: (node as any).attrs.isExpanded ?? true,
+              originalText: (node as any).attrs.originalText || '',
+              aiStreaming: (node as any).attrs.aiStreaming || false,
+              // errorMessage intentionally omitted from strict typing; accessed via (node as any)
+            } },
             updateAttributes,
             deleteNode,
             selected: false, // You might want to track selection state

@@ -225,7 +225,7 @@ const ProviderModal: React.FC<{ open:boolean; onClose:()=>void; onAdd:(p:AIProvi
     switch(id){
       case 'openai': return 'https://api.openai.com';
       case 'openrouter': return 'https://openrouter.ai/api';
-      case 'together': return 'https://api.together.xyz';
+  case 'together': return 'https://api.together.ai';
       case 'anthropic': return 'https://api.anthropic.com';
       case 'google': return 'https://generativelanguage.googleapis.com';
       case 'ollama': return 'http://localhost:11434';

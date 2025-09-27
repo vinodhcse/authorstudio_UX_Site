@@ -13,6 +13,8 @@ export type RunFeatureParams = {
   maxTokens?: number;
   // Provider-native response formatting (e.g., OpenAI json_schema)
   responseFormat?: any;
+  // Optional provider-specific extras (forwarded as-is to the provider payload)
+  extra?: Record<string, any>;
   signal?: AbortSignal;
   onDelta?: (s: string) => void;
   onDone?: (final: string) => void;
@@ -24,7 +26,7 @@ export type RunFeatureParams = {
 };
 
 export async function runFeature(params: RunFeatureParams) {
-  const { featureId, settings, selectionText, contextText, presetId, temperature, maxTokens, responseFormat, signal, onDelta, onDone, onError, stream = true, appendToUserPrompt } = params;
+  const { featureId, settings, selectionText, contextText, presetId, temperature, maxTokens, responseFormat, extra, signal, onDelta, onDone, onError, stream = true, appendToUserPrompt } = params;
   // We'll log a sanitized request payload below once preset/provider are resolved
   const feature = settings.features.find(f => f.id === featureId && f.enabled);
   if (!feature) { onError?.('Feature not enabled'); return; }
@@ -50,6 +52,7 @@ export async function runFeature(params: RunFeatureParams) {
     stream,
     hasAppendInstruction: !!appendToUserPrompt,
   hasResponseFormat: !!responseFormat,
+  hasExtra: !!extra,
   });
   console.log('[AI PROMPT MESSAGES]', messages);
 
@@ -68,6 +71,7 @@ export async function runFeature(params: RunFeatureParams) {
         temperature,
         maxTokens,
   responseFormat,
+        extra,
         signal,
         onToken: (d) => {
           final += d;
@@ -91,6 +95,7 @@ export async function runFeature(params: RunFeatureParams) {
         temperature,
         maxTokens,
   responseFormat,
+        extra,
         signal,
       });
       console.log('[AI RESPONSE]', final);
@@ -102,10 +107,28 @@ export async function runFeature(params: RunFeatureParams) {
     console.error('[AI ERROR]', errMsg);
   } finally {
     const durationMs = Math.round(performance.now() - started);
-    // naive token estimation
-    const inputTokens = Math.round((selectionText.length + (preset.systemPrompt?.length || 0) + (preset.customPrompt?.length || 0)) / 4);
+    // naive token estimation (include selection, context, system/custom prompts, and any appended instructions)
+    const inputTokens = Math.round((
+      (selectionText?.length || 0) +
+      (contextText?.length || 0) +
+      (preset.systemPrompt?.length || 0) +
+      (preset.customPrompt?.length || 0) +
+      ((appendToUserPrompt as string | undefined)?.length || 0)
+    ) / 4);
     const outputTokens = Math.round(final.length / 4);
     logUsage({ featureId, providerId: provider.id, model: preset.model, inputTokens, outputTokens, costUsd: null, durationMs, status, errorMessage: errMsg, meta: { presetId: preset.id } });
+    // Central concise usage summary in console
+    try {
+      console.log('[AI USAGE]', {
+        featureId,
+        providerId: provider.id,
+        model: preset.model,
+        inputTokens,
+        outputTokens,
+        durationMs,
+        status,
+      });
+    } catch {}
   }
 }
 
